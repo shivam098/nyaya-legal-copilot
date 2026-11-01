@@ -1,0 +1,172 @@
+[
+  {
+    "id": "tactic-hearing-date-compression",
+    "title": "Hearing-Date Compression Request (CPA s.38(7))",
+    "forums": ["consumer-commission"],
+    "triggerStages": ["written-version-stage", "rejoinder-and-complainant-evidence", "op-evidence", "final-arguments"],
+    "triggerConditions": {
+      "minDaysSinceNotice": 90,
+      "minGapDaysToNextHearing": 21
+    },
+    "move": "Politely request the bench for a shorter date (7-14 days) when the proposed date is ~30+ days out and the case has already crossed the 90-day statutory target under CPA 2019 s.38(7).",
+    "courtroomScript": "Sir/Ma'am, notice was served on {{serviceDate}} and {{daysSinceNotice}} days have elapsed against the 3-month statutory endeavour under Section 38(7) of the Consumer Protection Act. My filings and written arguments are ready on record. I humbly request a shorter date within 10 to 14 days, or an end-of-board slot.",
+    "legalBasis": [
+      "Consumer Protection Act, 2019 Section 38(7) (endeavour to decide complaint within 3 months from date of receipt of notice by opposite party)",
+      "Consumer Protection (Consumer Commission Procedure) Regulations, 2020 Regulation 11 (adjournments)"
+    ],
+    "successSignals": [
+      "Bench grants a nearer hearing date (within 7-15 days)",
+      "Bench records in the daily order that no further adjournment will be granted on the next date"
+    ],
+    "risks": [
+      "Do not interrupt or argue if the bench's board is genuinely full; make the submission once, crisply, when the next date is being announced."
+    ],
+    "fallbackIfRefused": "Humbly ask that your readiness and request for an early date be noted in the daily order sheet, or file a short Early Hearing Application with reasons.",
+    "reviewStatus": "draft-needs-lawyer-review"
+  },
+  {
+    "id": "tactic-forfeit-written-version-45-days",
+    "title": "Close Opposite Party's Right to File Written Version After 45 Days",
+    "forums": ["consumer-commission"],
+    "triggerStages": ["written-version-stage"],
+    "triggerConditions": {
+      "minDaysSinceService": 46,
+      "writtenVersionFiled": false
+    },
+    "move": "Move an immediate oral and written application to forfeit the Opposite Party's right to file its Written Version once 45 days (30 + 15 max extension) have expired from complete service of notice and complaint copy.",
+    "courtroomScript": "Sir/Ma'am, notice along with the complete complaint copy was served on the Opposite Party on {{serviceDate}} as proved by the India Post tracking report on record. Today is day {{daysSinceService}}, exceeding the mandatory 30 plus 15 day outer limit under Section 38(2)(a). Under the Constitution Bench judgment in New India Assurance v. Hilli Multipurpose Cold Storage, this Commission has no jurisdiction to extend time beyond 45 days. I pray that their right to file Written Version be closed today.",
+    "legalBasis": [
+      "Consumer Protection Act, 2019 Section 38(2)(a)",
+      "New India Assurance Co. Ltd. v. Hilli Multipurpose Cold Storage Pvt. Ltd., (2020) 5 SCC 757 (5-Judge Constitution Bench)"
+    ],
+    "successSignals": [
+      "Order sheet records that OP's right to file Written Version is closed / forfeited",
+      "Matter proceeds ex-parte or without OP defence pleadings"
+    ],
+    "risks": [
+      "Ensure proof of service shows the complete complaint paper-book (not just a bare notice) was delivered; otherwise the 45-day clock may be disputed."
+    ],
+    "fallbackIfRefused": "Insist that your objection and exact date of service be recorded in the order sheet; a post-45-day acceptance of Written Version is reversible in revision.",
+    "reviewStatus": "draft-needs-lawyer-review"
+  },
+  {
+    "id": "tactic-advance-copy-preempt-adjournment",
+    "title": "Advance Service of Rejoinder / Written Arguments to Block 'Copy Not Received' Adjournment",
+    "forums": ["consumer-commission"],
+    "triggerStages": ["rejoinder-and-complainant-evidence", "op-evidence", "final-arguments"],
+    "triggerConditions": {
+      "minOpponentAdjournments": 1
+    },
+    "move": "Serve the Rejoinder, Evidence Affidavit, or Written Arguments on opposing counsel by email/WhatsApp and Speed Post at least 7 days before the hearing, and carry printed proof of delivery to court.",
+    "courtroomScript": "Sir/Ma'am, to save this Commission's time, I already served the copy on learned counsel on {{advanceServiceDate}} by email and Speed Post—here is the delivery receipt on record. Therefore, no adjournment is needed for receiving copies.",
+    "legalBasis": [
+      "Consumer Protection (Consumer Commission Procedure) Regulations, 2020 Regulation 11"
+    ],
+    "successSignals": [
+      "Bench rejects OP's excuse of 'copy not received today' and proceeds with the stage"
+    ],
+    "risks": [
+      "None—always strengthens credibility with the bench."
+    ],
+    "fallbackIfRefused": "Ask the bench to impose costs for the adjournment under Regulation 11 and mark the next date as 'Last Opportunity'.",
+    "reviewStatus": "draft-needs-lawyer-review"
+  },
+  {
+    "id": "tactic-deemed-or-dasti-service-on-evasion",
+    "title": "Deemed Service on 'Refused/Unclaimed' or Immediate Dasti + Email Service",
+    "forums": ["consumer-commission"],
+    "triggerStages": ["service-of-notice"],
+    "triggerConditions": {
+      "postalRemarkIn": ["refused", "unclaimed", "door-locked", "left"]
+    },
+    "move": "When RPAD returns 'refused' or 'unclaimed', ask the bench to declare deemed service under CPA s.65; if 'door locked/left', request dasti notice + service on the company's official MCA21 registered email.",
+    "courtroomScript": "Sir/Ma'am, notice was sent to the Opposite Party's active Registered Office and official email as shown in the MCA21 Master Data attached. The postal endorsement reads '{{postalRemark}}'. Under Section 65 of the Consumer Protection Act, I pray that service be declared sufficient, or in the alternative, dasti notice along with electronic service on their MCA-registered email be permitted today.",
+    "legalBasis": [
+      "Consumer Protection Act, 2019 Section 65 (Service of notice, including electronic service and deemed service)"
+    ],
+    "successSignals": [
+      "Service declared complete without wasting another 30-45 day cycle",
+      "Dasti + email service granted on the spot"
+    ],
+    "risks": [
+      "Verify address matches MCA21 Master Data for companies before asking for deemed service."
+    ],
+    "fallbackIfRefused": "Take dasti notice the same day from registry and serve both physical office and MCA21 email with tracking.",
+    "reviewStatus": "draft-needs-lawyer-review"
+  },
+  {
+    "id": "tactic-dual-execution-s71-s72",
+    "title": "Parallel Section 71 (Recovery Certificate) & Section 72 (Penal Warrant Against Directors) Execution",
+    "forums": ["consumer-commission"],
+    "triggerStages": ["final-order-and-execution"],
+    "triggerConditions": {
+      "daysSinceFinalOrder": 45,
+      "orderComplied": false
+    },
+    "move": "As soon as the compliance window in the final order expires without payment, file parallel applications under CPA Section 71 (attachment / District Collector recovery certificate) and Section 72 (penal prosecution of directors).",
+    "courtroomScript": "Sir/Ma'am, the final order dated {{orderDate}} directed compliance within 45 days, which expired on {{complianceDeadline}}. No stay has been granted by any appellate commission. We have filed applications under Section 71 for attachment and under Section 72 for summoning the directors to face penal consequences for non-compliance.",
+    "legalBasis": [
+      "Consumer Protection Act, 2019 Section 71 (Enforcement of orders of District, State or National Commission)",
+      "Consumer Protection Act, 2019 Section 72 (Penalty for non-compliance of order — up to 3 years imprisonment and/or fine)"
+    ],
+    "successSignals": [
+      "Show-cause notice / bailable warrant issued to directors under s.72",
+      "Opposite Party pays decretal amount immediately to avoid personal appearance of directors"
+    ],
+    "risks": [
+      "Name the specific active Managing Director / Whole-Time Directors from MCA21 Master Data rather than only the corporate entity."
+    ],
+    "fallbackIfRefused": "Press for direction to OP to file an affidavit of assets and bank accounts within 15 days.",
+    "reviewStatus": "draft-needs-lawyer-review"
+  },
+  {
+    "id": "tactic-close-op-evidence-on-default",
+    "title": "Close Opposite Party's Right to Lead Evidence After Default (OP Evidence Stage)",
+    "forums": ["consumer-commission"],
+    "triggerStages": ["op-evidence"],
+    "triggerConditions": {
+      "complainantEvidenceFiled": true,
+      "opEvidenceFiled": false,
+      "minOpponentAdjournments": 1
+    },
+    "move": "When Complainant's Evidence Affidavit is already on record and the Opposite Party fails to file its Evidence Affidavit despite opportunities granted, request the bench to close OP's right to file evidence (or grant one short final date of 7-10 days with costs) and fix the matter directly for Final Arguments.",
+    "courtroomScript": "Sir/Ma'am, the Complainant's Evidence Affidavit has already been filed and served. The matter was listed for the Opposite Party's evidence, but they have failed to file their Evidence Affidavit despite opportunity granted, and {{daysSinceNotice}} days have already passed against the 90-day statutory target under Section 38(7). Under Section 38(3)(b) and Regulation 11, I humbly pray that the Opposite Party's right to file evidence be closed today and the matter be posted for Final Arguments at an early date.",
+    "legalBasis": [
+      "Consumer Protection Act, 2019 Section 38(3)(b) & Section 38(7) (summary procedure & 90-day disposal target)",
+      "Consumer Protection (Consumer Commission Procedure) Regulations, 2020 Regulation 11 (no routine adjournments; costs required)"
+    ],
+    "successSignals": [
+      "Bench closes OP's right to file evidence and posts matter for Final Arguments",
+      "Bench records 'Last and Final Opportunity with costs' and grants a short 7-14 day date"
+    ],
+    "risks": [
+      "Ensure Complainant's Evidence Affidavit proof of service on OP is on record so OP cannot claim they were waiting for Complainant's evidence copy."
+    ],
+    "fallbackIfRefused": "Request that the order sheet explicitly record 'Last and Final Opportunity for OP Evidence, failing which right shall stand closed automatically' and ask for a date within 10-14 days.",
+    "reviewStatus": "draft-needs-lawyer-review"
+  },
+  {
+    "id": "tactic-pre-filing-deficiency-cure-or-stop",
+    "title": "Pre-Filing Deficiency Gate: Cure Missing Legal Ground or Stop Premature Refund Filing",
+    "forums": ["consumer-commission"],
+    "triggerStages": ["day-zero-pre-litigation"],
+    "triggerConditions": {
+      "hasDeficiencyOrDefectGround": false
+    },
+    "move": "Before drafting a complaint for a user who simply says 'I want a refund', check whether a statutory defect (s.2(10)), deficiency in service (s.2(11)), or unfair trade practice (s.2(47)) is established with proof. If missing, halt premature filing, explain why the bench would dismiss it at admission, and either build the record first (targeted notice/inspection report) or advise out-of-court settlement.",
+    "courtroomScript": "Pre-filing advisory to client: Under the Consumer Protection Act 2019, a Commission cannot order a refund merely because you are dissatisfied or changed your mind. We must show either a 'defect' in the goods, a 'deficiency in service', an 'unfair trade practice', or a breach of the seller's stated return/warranty policy. Right now, that link is missing. Let us first check if we can establish it on record before spending time and money filing.",
+    "legalBasis": [
+      "Consumer Protection Act, 2019 Section 2(10) (Defect), Section 2(11) (Deficiency), Section 2(47) (Unfair Trade Practice)",
+      "Consumer Protection Act, 2019 Section 36(2) (Power to reject complaint at admission if no prima facie case)"
+    ],
+    "successSignals": [
+      "User either supplies/creates the missing proof of deficiency before filing, or avoids a doomed complaint and uses customer-escalation/settlement instead"
+    ],
+    "risks": [
+      "Filing a bare 'I want a refund' complaint without proving statutory deficiency leads to summary dismissal at admission (s.36) or after months of wasted hearings."
+    ],
+    "fallbackIfRefused": "If the user still insists on escalating, send a structured pre-litigation grievance notice and file an NCH INGRAM docket to test the seller's response without risking an adverse court dismissal.",
+    "reviewStatus": "draft-needs-lawyer-review"
+  }
+]
+

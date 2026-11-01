@@ -1,0 +1,109 @@
+{
+  "forumId": "consumer-commission",
+  "name": "District / State / National Consumer Disputes Redressal Commission",
+  "readinessTier": "tier-1-pilot",
+  "governingActs": [
+    "Consumer Protection Act, 2019",
+    "Consumer Protection (Consumer Commission Procedure) Regulations, 2020",
+    "Bharatiya Sakshya Adhiniyam, 2023 (Section 63 for electronic records)"
+  ],
+  "statutoryRules": {
+    "limitationDays": 730,
+    "scrutinyDecisionDays": 21,
+    "writtenVersionBaseDays": 30,
+    "writtenVersionMaxExtensionDays": 15,
+    "writtenVersionHardCapDays": 45,
+    "disposalTargetDaysStandard": 90,
+    "disposalTargetDaysTesting": 150,
+    "appealLimitationDays": 45,
+    "appealPreDepositPercent": 50
+  },
+  "stages": [
+    {
+      "id": "day-zero-pre-litigation",
+      "name": "Day-Zero Evidence Preservation & Pre-Litigation Escalation",
+      "nextStages": ["filing-and-scrutiny", "settled"],
+      "keyCheckpoints": [
+        "Preserve perishable evidence within 48 hours (invoices, raw chat/email exports, call logs, photos/videos)",
+        "Generate BSA 2023 Section 63 electronic evidence certificate",
+        "Run fast-track escalation (chargeback / RBI or sectoral Ombudsman / NCH INGRAM docket / Legal Notice)"
+      ]
+    },
+    {
+      "id": "filing-and-scrutiny",
+      "name": "e-Daakhil / e-Jagriti Filing & Registry Scrutiny",
+      "nextStages": ["admission-hearing"],
+      "keyCheckpoints": [
+        "Verify pecuniary and territorial jurisdiction (including complainant's residence/workplace under CPA 2019 s.34(2)(d))",
+        "Check pagination, index, list of dates, memo of parties, and notarized affidavit",
+        "Cure any registry scrutiny defects within statutory window"
+      ]
+    },
+    {
+      "id": "admission-hearing",
+      "name": "Admission & Issuance of Notice",
+      "nextStages": ["service-of-notice"],
+      "keyCheckpoints": [
+        "3-minute admission pitch establishing consumer status, deficiency/unfair trade practice, and limitation",
+        "Obtain order issuing notice to Opposite Party (OP)"
+      ]
+    },
+    {
+      "id": "service-of-notice",
+      "name": "Service of Notice & Proof of Service",
+      "nextStages": ["written-version-stage"],
+      "keyCheckpoints": [
+        "Track RPAD / Speed Post / approved electronic service",
+        "Pull corporate OP registered office and director email from MCA21 Master Data",
+        "File Affidavit of Service with India Post tracking report; seek deemed/dasti/substituted service if evaded"
+      ]
+    },
+    {
+      "id": "written-version-stage",
+      "name": "Opposite Party Written Version (Reply) — 30+15 Day Hard Cap",
+      "nextStages": ["rejoinder-and-evidence"],
+      "keyCheckpoints": [
+        "Track exact date of service of notice + copy of complaint on OP",
+        "If 45 days expire without Written Version, move application to forfeit OP's right to file reply (Hilli Multipurpose Constitution Bench rule)"
+      ]
+    },
+    {
+      "id": "rejoinder-and-complainant-evidence",
+      "name": "Rejoinder & Complainant's Evidence by Way of Affidavit",
+      "nextStages": ["op-evidence"],
+      "keyCheckpoints": [
+        "File Rejoinder and Complainant Evidence Affidavit with exhibited documents + BSA s.63 certificate",
+        "Serve advance copy on OP and file proof of service so OP cannot seek adjournment claiming non-receipt"
+      ]
+    },
+    {
+      "id": "op-evidence",
+      "name": "Opposite Party (OP) Evidence by Way of Affidavit",
+      "nextStages": ["final-arguments"],
+      "keyCheckpoints": [
+        "Verify whether OP filed its Evidence Affidavit within the time directed by the Commission",
+        "If OP defaults or seeks repeated adjournments after Complainant's evidence is already on record, move to close OP's right to file evidence (or impose heavy costs / 'Last Opportunity') and list directly for Final Arguments"
+      ]
+    },
+    {
+      "id": "final-arguments",
+      "name": "Written & Oral Final Arguments",
+      "nextStages": ["final-order-and-execution"],
+      "keyCheckpoints": [
+        "File concise Written Arguments in advance with binding precedent citations",
+        "Seek hearing-date compression citing CPA s.38(7) 90-day target if long dates are given",
+        "Oppose repeated adjournments and ask for costs or order-sheet recording"
+      ]
+    },
+    {
+      "id": "final-order-and-execution",
+      "name": "Final Order, Execution (ss.71-72) & Appeal Defence",
+      "nextStages": ["closed"],
+      "keyCheckpoints": [
+        "Track compliance period (typically 30-45 days from order)",
+        "If unpaid, file parallel CPA s.71 (Recovery Certificate / attachment) and s.72 (penal warrant against directors)",
+        "If OP appeals, enforce mandatory 50% pre-deposit under CPA s.41"
+      ]
+    }
+  ]
+}

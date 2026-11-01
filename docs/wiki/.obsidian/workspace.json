@@ -1,0 +1,207 @@
+{
+  "main": {
+    "id": "647df18f414c2f13",
+    "type": "split",
+    "children": [
+      {
+        "id": "05f03ae6a4590bfd",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "a6a61e8fe5560963",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "raw/conversations/2026-10-23-founder-brainstorm.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "2026-10-23-founder-brainstorm"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "3db0348a3187d875",
+    "type": "split",
+    "children": [
+      {
+        "id": "1c2163366ba3590b",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "36a510b94751a587",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "52db9107462dc7ab",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "64ebfec4ae8ef005",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "5b39f9164d039d81",
+    "type": "split",
+    "children": [
+      {
+        "id": "8fbb4c0b2dcc0e92",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "291c8de586c47eb0",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "raw/conversations/2026-10-23-founder-brainstorm.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks"
+            }
+          },
+          {
+            "id": "31366c6ab7850e55",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "raw/conversations/2026-10-23-founder-brainstorm.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links"
+            }
+          },
+          {
+            "id": "7e20669650808cd9",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "114918b4bc9c7ee3",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "33c7d75310f94463",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "raw/conversations/2026-10-23-founder-brainstorm.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "a6a61e8fe5560963",
+  "lastOpenFiles": [
+    "raw/specs/legal-copilot-spec-v0.5.md",
+    "wiki/concepts/any-stage-onboarding.md",
+    "wiki/overview.md",
+    "wiki/users/persona-complainant.md",
+    "Untitled.base",
+    "2026-10-24.md",
+    "Untitled.canvas",
+    "wiki/obsidian-quickstart.md",
+    "wiki/log.md",
+    "wiki/index.md",
+    "raw/conversations/2026-10-23-founder-brainstorm.md",
+    "AGENTS.md",
+    "wiki/roadmap.md"
+  ]
+}

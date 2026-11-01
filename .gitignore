@@ -1,0 +1,10 @@
+node_modules/
+.env
+data/billing-ledger.json
+data/response-cache.json
+data/cases/*.json
+data/nyaya.db*
+data/cloudflared.exe
+data/tunnel.log
+docs/wiki/Untitled.base
+docs/wiki/Untitled.canvas

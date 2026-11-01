@@ -1,0 +1,26 @@
+{
+  "id": "case-001-founder-consumer-midcase-delay",
+  "title": "Founder's 6.5-month consumer case at OP Evidence stage (Complainant evidence filed, OP has not filed evidence, 1-month hearing gaps)",
+  "forumId": "consumer-commission",
+  "caseState": {
+    "stage": "op-evidence",
+    "causeOfActionDate": "2026-01-15",
+    "serviceDate": "2026-04-05",
+    "evaluationDate": "2026-10-24",
+    "nextHearingDate": "2026-11-25",
+    "writtenVersionFiled": true,
+    "complainantEvidenceFiled": true,
+    "opEvidenceFiled": false,
+    "opponentAdjournments": 2
+  },
+  "expectedEngine": {
+    "exceededStatutoryTarget": true,
+    "shouldCompressDate": true,
+    "canForfeitRightToReply": false
+  },
+  "expectedTacticIds": [
+    "tactic-hearing-date-compression",
+    "tactic-advance-copy-preempt-adjournment",
+    "tactic-close-op-evidence-on-default"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PractitionerEvalCase",
+  "type": "object",
+  "required": ["id", "title", "forumId", "caseState", "expectedEngine", "expectedTacticIds"],
+  "properties": {
+    "id": { "type": "string" },
+    "title": { "type": "string" },
+    "forumId": { "type": "string" },
+    "caseState": { "type": "object" },
+    "expectedEngine": { "type": "object" },
+    "expectedTacticIds": { "type": "array", "items": { "type": "string" } }
+  }
+}

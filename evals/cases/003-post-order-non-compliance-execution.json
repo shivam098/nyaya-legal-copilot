@@ -1,0 +1,23 @@
+{
+  "id": "case-003-post-order-non-compliance-execution",
+  "title": "Final consumer order ignored by company for 50 days past order date",
+  "forumId": "consumer-commission",
+  "caseState": {
+    "stage": "final-order-and-execution",
+    "causeOfActionDate": "2025-08-01",
+    "serviceDate": "2025-10-01",
+    "evaluationDate": "2026-10-24",
+    "nextHearingDate": "2026-11-10",
+    "writtenVersionFiled": true,
+    "finalOrderDate": "2026-09-01",
+    "orderComplied": false
+  },
+  "expectedEngine": {
+    "exceededStatutoryTarget": true,
+    "shouldCompressDate": false,
+    "canForfeitRightToReply": false
+  },
+  "expectedTacticIds": [
+    "tactic-dual-execution-s71-s72"
+  ]
+}

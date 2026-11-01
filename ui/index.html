@@ -1,0 +1,1870 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nyaya — Legal Co-Pilot</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #FAF9F6;
+      color: #18181B;
+    }
+    .serif-heading {
+      font-family: 'Newsreader', Georgia, serif;
+    }
+    .markdown-body h1 {
+      font-family: 'Newsreader', Georgia, serif;
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: #18181B;
+      margin-top: 0.5rem;
+      margin-bottom: 0.75rem;
+      line-height: 1.3;
+    }
+    .markdown-body h2 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #18181B;
+      margin-top: 1.25rem;
+      margin-bottom: 0.6rem;
+      padding-bottom: 0.35rem;
+      border-bottom: 1px solid #F4F4F5;
+    }
+    .markdown-body h3 {
+      font-size: 0.98rem;
+      font-weight: 600;
+      color: #27272A;
+      margin-top: 1rem;
+      margin-bottom: 0.45rem;
+    }
+    .markdown-body p {
+      font-size: 0.9rem;
+      line-height: 1.65;
+      color: #27272A;
+      margin-bottom: 0.75rem;
+    }
+    .markdown-body ul, .markdown-body ol {
+      margin-left: 1.25rem;
+      margin-bottom: 0.85rem;
+      font-size: 0.9rem;
+      line-height: 1.6;
+      color: #27272A;
+    }
+    .markdown-body ul { list-style-type: disc; }
+    .markdown-body ol { list-style-type: decimal; }
+    .markdown-body li { margin-bottom: 0.3rem; }
+    .markdown-body blockquote {
+      border-left: 3px solid #18181B;
+      background: #FAFAFA;
+      padding: 0.65rem 1rem;
+      margin: 0.85rem 0;
+      border-radius: 0 0.5rem 0.5rem 0;
+      color: #27272A;
+      font-size: 0.9rem;
+    }
+    .markdown-body blockquote p:last-child { margin-bottom: 0; }
+    .markdown-body hr {
+      border: 0;
+      border-top: 1px solid #E4E4E7;
+      margin: 1.15rem 0;
+    }
+    .markdown-body table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0.9rem 0;
+      font-size: 0.84rem;
+    }
+    .markdown-body th {
+      background-color: #F4F4F5;
+      font-weight: 600;
+      text-align: left;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid #E4E4E7;
+      color: #18181B;
+    }
+    .markdown-body td {
+      padding: 0.55rem 0.75rem;
+      border: 1px solid #E4E4E7;
+      color: #27272A;
+      vertical-align: top;
+    }
+    .markdown-body tr:nth-child(even) td {
+      background-color: #FAFAFA;
+    }
+    .markdown-body code {
+      background: #F4F4F5;
+      padding: 0.15rem 0.35rem;
+      border-radius: 0.25rem;
+      font-size: 0.82rem;
+    }
+    .markdown-body pre {
+      background: #18181B;
+      color: #F4F4F5;
+      padding: 0.85rem 1rem;
+      border-radius: 0.75rem;
+      overflow-x: auto;
+      margin: 0.85rem 0;
+    }
+    .markdown-body pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+    }
+  </style>
+</head>
+<body class="min-h-screen antialiased selection:bg-amber-100">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function renderFormattedMarkdown(mdText) {
+      if (!mdText) return { __html: '' };
+      if (window.marked && typeof window.marked.parse === 'function') {
+        return { __html: window.marked.parse(mdText, { breaks: true, gfm: true }) };
+      }
+      return { __html: mdText.replace(/\n/g, '<br/>') };
+    }
+
+    /**
+     * Downscales high-res phone photos/screenshots (e.g. 4000x3000px, 5MB) to max 1100px JPEG
+     * on an offscreen canvas so the browser DOM never freezes and API uploads stay fast (<120KB/image).
+     */
+    function compressAndResizeImageFile(file, maxDim = 1100) {
+      return new Promise((resolve) => {
+        const objectUrl = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.78);
+          URL.revokeObjectURL(objectUrl);
+          resolve(dataUrl);
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          const reader = new FileReader();
+          reader.onload = (ev) => resolve(ev.target?.result || '');
+          reader.readAsDataURL(file);
+        };
+        img.src = objectUrl;
+      });
+    }
+
+    function readTextFileAsync(file) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve(String(ev.target?.result || '').slice(0, 18000));
+        reader.onerror = () => resolve('');
+        reader.readAsText(file);
+      });
+    }
+
+    function readFileAsBase64Async(file) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const res = String(ev.target?.result || '');
+          const idx = res.indexOf(',');
+          resolve(idx !== -1 ? res.slice(idx + 1) : res);
+        };
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(file);
+      });
+    }
+
+    const DEMO_STORY_TEXT = '[12/08/2026, 10:14 AM] Client: The website looks great, approved! Please push it live.\n[14/08/2026, 06:30 PM] Us: Live and deployed as agreed. Invoice #104 settled.\n[02/10/2026, 09:15 AM] Client: Give me 100% refund today or I am filing a Consumer Court case against you!';
+    const DEMO_MIDCASE_NOTES = 'I have already filed my Complainant Evidence Affidavit. Opposite Party was directed to file OP Evidence 2 hearings ago, still has not filed it, and keeps getting adjournments.';
+
+    function App() {
+      const [door, setDoor] = useState(null); // null | 'start' | 'midcase' | 'company'
+      const [showBilling, setShowBilling] = useState(false);
+      const [showHistory, setShowHistory] = useState(false);
+
+      // Per-User Identity & SQLite Session History state
+      const [userId, setUserId] = useState(() => {
+        let saved = localStorage.getItem('nyaya_user_id');
+        if (!saved) {
+          saved = 'founder-local';
+          localStorage.setItem('nyaya_user_id', saved);
+        }
+        return saved;
+      });
+      const [sessions, setSessions] = useState([]);
+      const [activeSession, setActiveSession] = useState(null);
+      const [caseTitle, setCaseTitle] = useState('');
+      const [followUpText, setFollowUpText] = useState('');
+
+      // Server config & billing state
+      const [models, setModels] = useState([
+        { id: 'auto', name: 'Auto Smart-Router (Haiku for Intake → Sonnet for Strategy/Vision)' },
+        { id: 'claude-sonnet-4.6', name: 'Claude Sonnet 4.6 (Balanced Practitioner + Vision)' },
+        { id: 'claude-opus-4.6', name: 'Claude Opus 4.6 (Deep Senior Counsel + Vision)' },
+        { id: 'gemini-4-argon', name: 'Gemini 4 Argon (Copilot Current Model)' },
+        { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol (High-Reasoning)' },
+        { id: 'claude-haiku-4.5', name: 'Claude Haiku 4.5 (Fast Text Intake)' }
+      ]);
+      const [selectedModel, setSelectedModel] = useState('auto');
+      const [billing, setBilling] = useState({
+        totals: { calls: 0, totalTokens: 0, estimatedUsd: 0, estimatedInr: 0 },
+        byModel: {},
+        byOperation: {},
+        recentCalls: []
+      });
+
+      // Shared attached images, ingested text files (kept OUT of textarea to prevent UI freeze!), and progress state
+      const [attachedImages, setAttachedImages] = useState([]); // [{ name, dataUrl, size }]
+      const [attachedTextDocs, setAttachedTextDocs] = useState([]); // [{ name, content, size }]
+      const [syncedDocNames, setSyncedDocNames] = useState([]); // Tracks which docs are already saved in SQLite for this session
+      const [syncedImageNames, setSyncedImageNames] = useState([]); // Tracks which images are already saved/OCR'd in SQLite for this session
+      const [showAllImages, setShowAllImages] = useState(false);
+      const [ingestProgress, setIngestProgress] = useState(null); // { current, total, currentFile }
+      const [folderPathInput, setFolderPathInput] = useState('');
+      const [folderScanSummary, setFolderScanSummary] = useState(null);
+      const [scanningFolder, setScanningFolder] = useState(false);
+
+      // Live Thinking & Progress Stepper state during analysis
+      const [thinkingSteps, setThinkingSteps] = useState([]);
+      const [streamingMarkdown, setStreamingMarkdown] = useState('');
+
+      // Door 1: Start or Defend state
+      const [role, setRole] = useState('complainant');
+      const [storyText, setStoryText] = useState('');
+
+      // Door 2: Mid-Case state
+      const [stage, setStage] = useState('op-evidence');
+      const [serviceDate, setServiceDate] = useState('2026-04-01');
+      const [nextHearingDate, setNextHearingDate] = useState('2026-11-18');
+      const [writtenVersionFiled, setWrittenVersionFiled] = useState(true);
+      const [complainantEvidenceFiled, setComplainantEvidenceFiled] = useState(true);
+      const [opEvidenceFiled, setOpEvidenceFiled] = useState(false);
+      const [opAdjournments, setOpAdjournments] = useState(2);
+      const [multiOpSummary, setMultiOpSummary] = useState('');
+      const [midcaseNotes, setMidcaseNotes] = useState(DEMO_MIDCASE_NOTES);
+
+      // Door 3: Company / Startup state
+      const [companyNeed, setCompanyNeed] = useState('choose-entity');
+      const [companyNotes, setCompanyNotes] = useState(
+        'Two co-founders launching a software + consulting business in Bengaluru. Bootstrapped initially (₹10L capital), might raise angel/VC funding in 12–18 months if the SaaS product takes off. Unsure between LLP and Private Limited.'
+      );
+
+      // Live output state
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState(null);
+      const [result, setResult] = useState(null);
+      const [copied, setCopied] = useState(false);
+
+      const refreshConfig = async (overrideUserId = null) => {
+        const activeUser = overrideUserId || userId;
+        try {
+          const res = await fetch('/api/config', {
+            headers: { 'x-nyaya-user-id': activeUser }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.models?.length) setModels(data.models);
+            if (data.billing) setBilling(data.billing);
+            if (Array.isArray(data.sessions)) setSessions(data.sessions);
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      };
+
+      const switchUserIdentity = async (nextUserId) => {
+        localStorage.setItem('nyaya_user_id', nextUserId);
+        setUserId(nextUserId);
+        setActiveSession(null);
+        setResult(null);
+        setCaseTitle('');
+        await refreshConfig(nextUserId);
+      };
+
+      useEffect(() => {
+        refreshConfig(userId);
+      }, [userId]);
+
+      const startNewBlankSession = (targetDoor = null) => {
+        setActiveSession(null);
+        setCaseTitle('');
+        setResult(null);
+        setError(null);
+        setAttachedImages([]);
+        setAttachedTextDocs([]);
+        setSyncedDocNames([]);
+        setSyncedImageNames([]);
+        setFolderScanSummary(null);
+        setThinkingSteps([]);
+        setStreamingMarkdown('');
+        setFollowUpText('');
+        setDoor(targetDoor);
+      };
+
+      const resumeSession = async (sessionId) => {
+        setError(null);
+        try {
+          const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+            headers: { 'x-nyaya-user-id': userId }
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not load session');
+          const s = data.session;
+          setActiveSession(s);
+          setCaseTitle(s.title || '');
+          setDoor(s.door || 'midcase');
+          setShowHistory(false);
+          setThinkingSteps([]);
+          setStreamingMarkdown('');
+
+          const cs = s.caseState || {};
+          const lastTurn = s.turns?.[s.turns.length - 1] || null;
+
+          if (s.door === 'start') {
+            if (cs.role) setRole(cs.role);
+            if (lastTurn?.userInput) setStoryText(lastTurn.userInput.slice(0, 4000));
+          } else if (s.door === 'midcase') {
+            if (cs.stage) setStage(cs.stage);
+            if (cs.serviceDate) setServiceDate(cs.serviceDate);
+            if (cs.nextHearingDate) setNextHearingDate(cs.nextHearingDate);
+            if (typeof cs.writtenVersionFiled === 'boolean') setWrittenVersionFiled(cs.writtenVersionFiled);
+            if (typeof cs.complainantEvidenceFiled === 'boolean') setComplainantEvidenceFiled(cs.complainantEvidenceFiled);
+            if (typeof cs.opEvidenceFiled === 'boolean') setOpEvidenceFiled(cs.opEvidenceFiled);
+            if (cs.opEvidenceAdjournmentsGranted !== undefined) setOpAdjournments(cs.opEvidenceAdjournmentsGranted);
+            if (lastTurn?.userInput) setMidcaseNotes(lastTurn.userInput.slice(0, 4000));
+          } else if (s.door === 'company') {
+            if (cs.companyNeed) setCompanyNeed(cs.companyNeed);
+            if (lastTurn?.userInput) setCompanyNotes(lastTurn.userInput.slice(0, 4000));
+          }
+
+          if (lastTurn) {
+            const rawTurnInput = String(lastTurn.userInput || '');
+            const marker = 'ATTACHED FOLDER / TEXT DOCUMENTS:';
+            const markerIdx = rawTurnInput.indexOf(marker);
+            const cleanNotesOnly = markerIdx !== -1 ? rawTurnInput.slice(0, markerIdx).trim() : rawTurnInput;
+
+            // Restore the attachedTextDocs pills when resuming a saved session!
+            if (markerIdx !== -1) {
+              const attachedBlock = rawTurnInput.slice(markerIdx + marker.length).trim();
+              const parts = attachedBlock.split(/\n*=== (.*?) ===\n/);
+              const restoredDocs = [];
+              for (let i = 1; i < parts.length; i += 2) {
+                const docName = parts[i];
+                const docBody = parts[i + 1] || '';
+                restoredDocs.push({ name: docName, size: docBody.length, content: docBody });
+              }
+              setAttachedTextDocs(restoredDocs);
+              setSyncedDocNames(restoredDocs.map(d => d.name));
+            } else {
+              setAttachedTextDocs([]);
+              setSyncedDocNames([]);
+            }
+
+            if (s.door === 'start') {
+              setStoryText(cleanNotesOnly.slice(0, 4000));
+            } else if (s.door === 'midcase') {
+              setMidcaseNotes(cleanNotesOnly.slice(0, 4000));
+            } else if (s.door === 'company') {
+              setCompanyNotes(cleanNotesOnly.slice(0, 4000));
+            }
+
+            setResult({
+              engineResult: lastTurn.engineResult,
+              adviceMarkdown: lastTurn.assistantMarkdown,
+              model: lastTurn.model,
+              billingEntry: {
+                totalTokens: lastTurn.tokens,
+                estimatedInr: lastTurn.costInr,
+                estimatedUsd: (lastTurn.costInr || 0) / 84,
+                latencyMs: lastTurn.latencyMs
+              }
+            });
+          }
+        } catch (err) {
+          setError(err.message);
+        }
+      };
+
+      const deleteSession = async (e, sessionId) => {
+        e.stopPropagation();
+        try {
+          const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+            method: 'DELETE',
+            headers: { 'x-nyaya-user-id': userId }
+          });
+          const data = await res.json();
+          if (Array.isArray(data.sessions)) setSessions(data.sessions);
+          if (activeSession?.id === sessionId) {
+            startNewBlankSession(door);
+          }
+        } catch (err) {
+          setError(err.message);
+        }
+      };
+
+      const applyInferredStateToForm = (inferred) => {
+        if (!inferred) return;
+        if (inferred.stage) setStage(inferred.stage);
+        if (inferred.serviceDate) setServiceDate(inferred.serviceDate);
+        if (inferred.nextHearingDate) setNextHearingDate(inferred.nextHearingDate);
+        if (typeof inferred.writtenVersionFiled === 'boolean') setWrittenVersionFiled(inferred.writtenVersionFiled);
+        if (typeof inferred.complainantEvidenceFiled === 'boolean') setComplainantEvidenceFiled(inferred.complainantEvidenceFiled);
+        if (typeof inferred.opEvidenceFiled === 'boolean') setOpEvidenceFiled(inferred.opEvidenceFiled);
+        if (inferred.opEvidenceAdjournmentsGranted !== undefined) setOpAdjournments(inferred.opEvidenceAdjournmentsGranted);
+        if (inferred.multiOpSummary) setMultiOpSummary(inferred.multiOpSummary);
+      };
+
+      const inferAndApplyFromClientCorpus = (allFileNames, textDocs) => {
+        const corpus = allFileNames.join('\n') + '\n' + textDocs.map(d => d.content).join('\n');
+        const nextState = {};
+        const reasons = [];
+
+        if (/files\s+vakalath\s+(?:and|along\s+with)\s+W\.?V\.?|OP-?2\s+files\s+Written\s+Version|Order\s+Sheet\s*-\s*OP\d*\s+files\s+vakalath\s+and\s+WV|OP\d*-WRITTEN-VERSION-verbatim/i.test(corpus)) {
+          nextState.writtenVersionFiled = true;
+          reasons.push('OP Written Version filed (06.07.2026)');
+        }
+        if (/Order\s+Sheet\s*-\s*Rejoinder,\s*evidence,\s*Ex\.P\.1|files\s+affidavit\s+evidence\s+along\s+with\s+certificate|Complainant\s+submits\s+that\s+the\s+evidence\s+from\s+his\s+side\s+closed|AFFIDAVIT\s+OF\s+EVIDENCE\s*-\s*notarised\s+copy/i.test(corpus)) {
+          nextState.complainantEvidenceFiled = true;
+          reasons.push('Complainant Evidence & Rejoinder filed & closed (05.08.2026, Ex.P.1–P.12)');
+        }
+        if (nextState.complainantEvidenceFiled && /prays\s+time\s+to\s+lead\s+evidence|For\s+affidavit\s+evidence\s+of\s+opposite\s+party|OP\d*\s+evidence\s+finally/i.test(corpus)) {
+          nextState.stage = 'op-evidence';
+          nextState.opEvidenceFiled = false;
+          reasons.push('Stage: OP Evidence');
+        }
+        const srv = corpus.match(/Notice\s+to\s+OP\.?No\.?1\s+was\s+served\s+on\s+(\d{2})[./-](\d{2})[./-](\d{4})/i);
+        if (srv) {
+          nextState.serviceDate = `${srv[3]}-${srv[2].padStart(2, '0')}-${srv[1].padStart(2, '0')}`;
+          reasons.push(`Notice Served: ${nextState.serviceDate}`);
+        }
+        const callMatches = [...corpus.matchAll(/call\s+on\s+(\d{2})[./-](\d{2})[./-](\d{4})/gi)];
+        if (callMatches.length > 0) {
+          const sortedDates = callMatches.map(m => `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`).sort();
+          nextState.nextHearingDate = sortedDates[sortedDates.length - 1];
+          reasons.push(`Next Hearing: ${nextState.nextHearingDate}`);
+        }
+        if (/finally\s+08[./-]10[./-]2026/i.test(corpus) && /call\s+on\s+03[./-]11[./-]2026/i.test(corpus)) {
+          nextState.opEvidenceAdjournmentsGranted = 2;
+        }
+        applyInferredStateToForm(nextState);
+        return reasons;
+      };
+
+      function rankClientTextDocs(docs) {
+        function score(name) {
+          const lower = name.toLowerCase();
+          if (lower.includes('10-court-record')) return 100;
+          if (lower.includes('hearing-prep-2026-11')) return 95;
+          if (lower.includes('03-timeline')) return 90;
+          if (lower.includes('order-sheets') || lower.includes('daily order')) return 85;
+          if (lower.includes('07-open-questions') || lower.includes('06-log')) return 80;
+          if (lower.includes('01-first-principles') || lower.includes('02-cast')) return 75;
+          if (lower.includes('case-llm-wiki') || lower.includes('readme')) return 70;
+          if (lower.includes('-draft')) return 20;
+          return 50;
+        }
+        return [...docs].sort((a, b) => score(b.name) - score(a.name));
+      }
+
+      /**
+       * Non-Blocking Chunked File / Folder Ingestion:
+       * Processes files in small async batches with `setTimeout(0)` yields, resizes images to lightweight thumbnails,
+       * captures the FULL file-tree manifest (including PDFs/DOCX order sheets), prioritizes court records over drafts,
+       * and auto-checks the UI checkboxes/dates from the folder record!
+       */
+      const ingestFileBatchNonBlocking = async (fileList) => {
+        const files = Array.from(fileList || []).filter(f => !f.name.startsWith('.') && !f.name.startsWith('~$'));
+        if (!files.length) return;
+
+        const MAX_IMAGES = 12;
+        const MAX_TEXT_DOCS = 35;
+        const newImages = [];
+        const rawTextDocs = [];
+        const allManifestNames = files.map(f => f.webkitRelativePath || f.name);
+
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const label = file.webkitRelativePath || file.name || `file-${i + 1}`;
+          setIngestProgress({
+            current: i + 1,
+            total: files.length,
+            currentFile: label
+          });
+
+          await new Promise(r => setTimeout(r, 8));
+
+          if (file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(file.name)) {
+            if (attachedImages.length + newImages.length < MAX_IMAGES) {
+              const compressedDataUrl = await compressAndResizeImageFile(file, 1100);
+              if (compressedDataUrl) {
+                newImages.push({ name: label, size: file.size, dataUrl: compressedDataUrl });
+              }
+            }
+          } else if (/\.(pdf|docx|zip)$/i.test(file.name)) {
+            // Send PDF / DOCX / WhatsApp ZIP to backend extractor (/api/extract-file)
+            if (file.size <= 15 * 1024 * 1024) {
+              try {
+                const base64 = await readFileAsBase64Async(file);
+                const extRes = await fetch('/api/extract-file', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ name: label, base64 })
+                });
+                if (extRes.ok) {
+                  const extData = await extRes.json();
+                  if (Array.isArray(extData.docs) && extData.docs.length) {
+                    rawTextDocs.push(...extData.docs);
+                  }
+                }
+              } catch {
+                // ignore single file extraction error
+              }
+            }
+          } else if (/\.(txt|md|csv|json|log|eml|html?)$/i.test(file.name) || file.type.startsWith('text/')) {
+            const content = await readTextFileAsync(file);
+            if (content.trim()) {
+              rawTextDocs.push({ name: label, size: file.size, content });
+            }
+          }
+        }
+
+        // Prioritize 10-court-record, 03-timeline, and hearing-prep BEFORE -draft files
+        const rankedDocs = rankClientTextDocs(rawTextDocs).slice(0, MAX_TEXT_DOCS);
+
+        // Prepend a synthetic File-Tree Manifest doc so PDF/DOCX order-sheet filenames are always visible to the AI!
+        const manifestDoc = {
+          name: `Folder File-Tree Manifest (${allManifestNames.length} files incl. PDFs/DOCX)`,
+          size: allManifestNames.join('\n').length,
+          content: `COMPLETE FOLDER FILE LIST (${allManifestNames.length} files):\n` + allManifestNames.map(n => `- ${n}`).join('\n')
+        };
+
+        const finalDocs = [manifestDoc, ...rankedDocs];
+
+        if (newImages.length) {
+          setAttachedImages(prev => [...prev, ...newImages]);
+        }
+        setAttachedTextDocs(prev => [...prev, ...finalDocs]);
+
+        const autoSyncedReasons = inferAndApplyFromClientCorpus(allManifestNames, rankedDocs);
+        if (allManifestNames.length > 1) {
+          setFolderScanSummary({
+            folderPath: files[0]?.webkitRelativePath?.split('/')[0] || 'Uploaded Folder',
+            textFilesCount: rankedDocs.length,
+            imagesCount: newImages.length,
+            totalFilesInFolder: allManifestNames.length,
+            autoSyncedReasons
+          });
+        }
+        setIngestProgress(null);
+      };
+
+      const handleFileUpload = async (e) => {
+        const files = Array.from(e.target.files || []);
+        e.target.value = '';
+        await ingestFileBatchNonBlocking(files);
+      };
+
+      const handleDrop = async (e) => {
+        e.preventDefault();
+        const files = Array.from(e.dataTransfer?.files || []);
+        await ingestFileBatchNonBlocking(files);
+      };
+
+      const handleScanFolderPath = async () => {
+        if (!folderPathInput.trim()) return;
+        setScanningFolder(true);
+        setError(null);
+        try {
+          const res = await fetch('/api/scan-folder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folderPath: folderPathInput.trim() })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not scan folder');
+
+          // Keep scanned folder text in `attachedTextDocs` instead of stuffing the textarea!
+          if (data.combinedText) {
+            setAttachedTextDocs(prev => [
+              ...prev,
+              {
+                name: `Folder: ${data.folderPath} (${data.textFilesCount} files)`,
+                size: data.combinedText.length,
+                content: data.combinedText
+              }
+            ]);
+          }
+          if (data.images?.length) {
+            setAttachedImages(prev => [...prev, ...data.images]);
+          }
+          if (data.inferredCaseState) {
+            applyInferredStateToForm(data.inferredCaseState);
+          }
+          setFolderScanSummary({
+            folderPath: data.folderPath,
+            totalFilesInFolder: data.totalFilesInFolder || data.fileNames?.length || 0,
+            textFilesCount: data.textFilesCount,
+            imagesCount: data.imagesCount,
+            autoSyncedReasons: data.inferredReasons || [],
+            fileNames: data.fileNames || []
+          });
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setScanningFolder(false);
+        }
+      };
+
+      const handlePasteEvent = async (e) => {
+        const items = Array.from(e.clipboardData?.items || []);
+        const imageFiles = [];
+        for (const item of items) {
+          if (item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (file) imageFiles.push(file);
+          }
+        }
+        if (imageFiles.length) {
+          e.preventDefault();
+          await ingestFileBatchNonBlocking(imageFiles);
+          return;
+        }
+        const pastedText = (e.clipboardData?.getData('text') || '').trim().replace(/^["']|["']$/g, '');
+        if (/^[a-zA-Z]:\\[^\n\r]+$/.test(pastedText)) {
+          setFolderPathInput(pastedText);
+        }
+      };
+
+      const handleClipboardButtonClick = async (textSetter) => {
+        try {
+          if (navigator.clipboard?.read) {
+            const items = await navigator.clipboard.read();
+            for (const item of items) {
+              const imageType = item.types.find(t => t.startsWith('image/'));
+              if (imageType) {
+                const blob = await item.getType(imageType);
+                await ingestFileBatchNonBlocking([new File([blob], 'pasted-screenshot.png', { type: imageType })]);
+                return;
+              }
+            }
+          }
+          if (navigator.clipboard?.readText) {
+            const clipText = await navigator.clipboard.readText();
+            if (clipText) {
+              const trimmed = clipText.trim().replace(/^["']|["']$/g, '');
+              if (/^[a-zA-Z]:\\[^\n\r]+$/.test(trimmed)) {
+                setFolderPathInput(trimmed);
+              }
+              textSetter(prev => (prev ? prev + '\n' + clipText : clipText));
+              return;
+            }
+          }
+        } catch {
+          const entered = window.prompt('Paste your text or folder path (e.g. C:\\Users\\...\\my-case-folder) here:');
+          if (entered) {
+            const trimmed = entered.trim().replace(/^["']|["']$/g, '');
+            if (/^[a-zA-Z]:\\[^\n\r]+$/.test(trimmed)) {
+              setFolderPathInput(trimmed);
+            } else {
+              textSetter(prev => (prev ? prev + '\n' + entered : entered));
+            }
+          }
+        }
+      };
+
+      const removeImage = (idx) => {
+        setAttachedImages(prev => prev.filter((_, i) => i !== idx));
+      };
+
+      const removeTextDoc = (idx) => {
+        setAttachedTextDocs(prev => prev.filter((_, i) => i !== idx));
+      };
+
+      /**
+       * Live SSE Streaming Analysis with Real-Time Thinking & Progress Stepper
+       */
+      const runAnalysis = async (modeOverride, customFollowUp = null, overrideModel = null) => {
+        setLoading(true);
+        setError(null);
+        setStreamingMarkdown('');
+        if (overrideModel) setSelectedModel(overrideModel);
+        setThinkingSteps([
+          { stepId: 'session', label: 'Session & Tenant Workspace', status: 'pending', detail: 'Waiting...', logs: [], liveText: '', expanded: false },
+          { stepId: 'rules', label: 'Deterministic CPA 2019 Statutory Engine', status: 'pending', detail: 'Waiting...', logs: [], liveText: '', expanded: true },
+          { stepId: 'clerk', label: 'Stage A: Junior Clerk Folder Digest (Haiku 4.5 / Flash)', status: 'pending', detail: 'Waiting...', logs: [], liveText: '', expanded: true },
+          { stepId: 'evidence', label: 'Evidence & Vision Payload Builder', status: 'pending', detail: 'Waiting...', logs: [], liveText: '', expanded: false },
+          { stepId: 'llm', label: 'Stage B: Senior Counsel Reasoning (Sonnet / Opus 4.6)', status: 'pending', detail: 'Waiting...', logs: [], liveText: '', expanded: true }
+        ]);
+
+        try {
+          let mode = modeOverride;
+          let caseState = {};
+          let baseNotes = '';
+
+          if (door === 'start') {
+            mode = 'messy-dump-intake';
+            caseState = { role };
+            baseNotes = customFollowUp || `User Role: ${role === 'complainant' ? 'Complainant (seeking refund/relief)' : 'Defender/Business (defending against unfair refund demand or claim)'}\n\nRaw Story / WhatsApp Chat:\n${storyText}`;
+          } else if (door === 'midcase') {
+            mode = 'midcase-battle-card';
+            caseState = {
+              stage,
+              serviceDate,
+              nextHearingDate,
+              writtenVersionFiled,
+              complainantEvidenceFiled,
+              opEvidenceFiled,
+              opEvidenceAdjournmentsGranted: Number(opAdjournments),
+              proposedGapDays: 45
+            };
+            baseNotes = customFollowUp || midcaseNotes;
+          } else if (door === 'company') {
+            mode = 'company-advisor';
+            caseState = { companyNeed };
+            baseNotes = customFollowUp || `Need Type: ${companyNeed}\nDetails:\n${companyNotes}`;
+          }
+
+          // Zero Re-Upload Optimization:
+          // If this session already exists in SQLite (`activeSession.id`), only upload NEW documents or NEW images
+          // that were added after the last turn! The backend already holds the full folder + Junior Clerk Digest in SQLite.
+          const unsyncedTextDocs = activeSession?.id
+            ? attachedTextDocs.filter(d => !syncedDocNames.includes(d.name))
+            : attachedTextDocs;
+
+          const unsyncedImages = activeSession?.id
+            ? attachedImages.filter(img => !syncedImageNames.includes(img.name))
+            : attachedImages;
+
+          const docsBundle = unsyncedTextDocs.length > 0
+            ? '\n\nATTACHED FOLDER / TEXT DOCUMENTS:\n' + unsyncedTextDocs.map(d => `=== ${d.name} ===\n${d.content}`).join('\n\n')
+            : '';
+
+          const rawInput = baseNotes + docsBundle;
+
+          const res = await fetch('/api/analyze-stream', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-nyaya-user-id': userId
+            },
+            body: JSON.stringify({
+              userId,
+              sessionId: activeSession?.id || null,
+              door,
+              mode,
+              model: overrideModel || selectedModel,
+              caseState,
+              rawInput,
+              images: unsyncedImages.slice(0, 10),
+              folderPath: folderScanSummary?.folderPath || '',
+              saveCaseTitle: caseTitle
+            })
+          });
+
+          if (!res.ok || !res.body) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || `Request failed (${res.status})`);
+          }
+
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let accumulatedMd = '';
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split('\n\n');
+            buffer = parts.pop() || '';
+
+            for (const part of parts) {
+              const line = part.trim();
+              if (!line.startsWith('data:')) continue;
+              let evt;
+              try {
+                evt = JSON.parse(line.slice(5).trim());
+              } catch {
+                continue;
+              }
+
+              if (evt.type === 'step') {
+                setThinkingSteps(prev =>
+                  prev.map(s =>
+                    s.stepId === evt.stepId
+                      ? {
+                          ...s,
+                          status: evt.status,
+                          detail: evt.detail,
+                          logs: evt.logs || s.logs || [],
+                          liveText: evt.liveText !== undefined ? evt.liveText : (s.liveText || ''),
+                          expanded: evt.status === 'running' ? true : s.expanded
+                        }
+                      : s
+                  )
+                );
+                if (evt.engineResult) {
+                  if (evt.engineResult.inferredCaseState) {
+                    applyInferredStateToForm(evt.engineResult.inferredCaseState);
+                  }
+                  setResult(prev => ({
+                    ...(prev || {}),
+                    engineResult: evt.engineResult,
+                    adviceMarkdown: accumulatedMd
+                  }));
+                }
+              } else if (evt.type === 'delta') {
+                accumulatedMd += evt.delta;
+                setStreamingMarkdown(accumulatedMd);
+              } else if (evt.type === 'complete') {
+                setResult(evt);
+                setStreamingMarkdown('');
+                setSyncedDocNames(attachedTextDocs.map(d => d.name));
+                setSyncedImageNames(attachedImages.map(i => i.name));
+                if (evt.session) {
+                  setActiveSession(evt.session);
+                  setCaseTitle(evt.session.title || '');
+                }
+                if (Array.isArray(evt.sessions)) {
+                  setSessions(evt.sessions);
+                }
+              } else if (evt.type === 'error') {
+                throw new Error(evt.error || 'Streaming error');
+              }
+            }
+          }
+
+          setFollowUpText('');
+          await refreshConfig();
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const copyText = (text) => {
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1800);
+      };
+
+      const downloadCourtWordDoc = (mdText, title = 'Nyaya-Legal-Draft') => {
+        const htmlBody = renderFormattedMarkdown(mdText).__html;
+        const wordHtml = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head><meta charset='utf-8'><title>${title}</title>
+<style>
+  body { font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.5; margin: 1in; color: #000; }
+  h1, h2, h3 { font-family: 'Times New Roman', serif; font-weight: bold; }
+  table { width: 100%; border-collapse: collapse; margin: 12pt 0; }
+  th, td { border: 1px solid #000; padding: 6pt; text-align: left; }
+</style></head>
+<body>${htmlBody}</body></html>`;
+        const blob = new Blob(['\ufeff', wordHtml], { type: 'application/msword' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${(title || 'Nyaya-Legal-Draft').replace(/[^a-zA-Z0-9_-]+/g, '-')}.doc`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      };
+
+      const printCourtReadyPdf = (mdText, title = 'Nyaya Legal Filing') => {
+        const htmlBody = renderFormattedMarkdown(mdText).__html;
+        const win = window.open('', '_blank');
+        if (!win) return;
+        win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
+<style>
+  @page { margin: 25mm; }
+  body { font-family: Georgia, 'Times New Roman', serif; font-size: 11.5pt; line-height: 1.6; color: #111; max-width: 720px; margin: 0 auto; padding: 20px; }
+  h1, h2, h3 { color: #000; margin-top: 18px; margin-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 10.5pt; }
+  th, td { border: 1px solid #333; padding: 7px 9px; text-align: left; vertical-align: top; }
+  blockquote { border-left: 3px solid #000; padding-left: 12px; margin-left: 0; }
+</style></head><body>${htmlBody}<script>window.onload = () => { window.print(); };<\/script></body></html>`);
+        win.document.close();
+      };
+
+      const avgCallCostInr = billing.totals.calls > 0
+        ? billing.totals.estimatedInr / billing.totals.calls
+        : 0.42;
+
+      const renderCaseTitleBar = () => (
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white border border-zinc-200/90 rounded-xl px-3.5 py-2.5 shadow-sm">
+          <div class="flex items-center gap-2 flex-1">
+            <span class="text-xs font-semibold px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-700">
+              {activeSession ? `Session · ${activeSession.turns?.length || 1} turn(s)` : 'New Session'}
+            </span>
+            <input
+              type="text"
+              value={caseTitle}
+              onChange={(e) => setCaseTitle(e.target.value)}
+              placeholder="Name this case / session (auto-named & saved in SQLite on run)..."
+              class="flex-1 text-xs font-medium text-zinc-900 placeholder-zinc-400 focus:outline-none bg-transparent"
+            />
+          </div>
+          {activeSession && (
+            <button
+              type="button"
+              onClick={() => startNewBlankSession(door)}
+              class="text-xs font-medium text-zinc-500 hover:text-zinc-900 whitespace-nowrap"
+            >
+              + Start Fresh Session
+            </button>
+          )}
+        </div>
+      );
+
+      /**
+       * Compact, Non-Blocking Attachment & Folder Summary Drawer
+       */
+      const renderAttachmentsAndProgress = () => {
+        const visibleImages = showAllImages ? attachedImages : attachedImages.slice(0, 6);
+        const hiddenImagesCount = Math.max(0, attachedImages.length - visibleImages.length);
+
+        return (
+          <div class="space-y-2.5">
+            {/* Live Non-Blocking Folder Ingestion Progress Bar */}
+            {ingestProgress && (
+              <div class="p-3 rounded-xl bg-amber-50 border border-amber-200 space-y-1.5">
+                <div class="flex items-center justify-between text-xs font-medium text-amber-900">
+                  <span>⚡ Processing & optimizing folder files ({ingestProgress.current} of {ingestProgress.total})...</span>
+                  <span>{Math.round((ingestProgress.current / ingestProgress.total) * 100)}%</span>
+                </div>
+                <div class="w-full h-1.5 bg-amber-200/70 rounded-full overflow-hidden">
+                  <div
+                    class="h-full bg-amber-700 transition-all duration-150"
+                    style={{ width: `${Math.round((ingestProgress.current / ingestProgress.total) * 100)}%` }}
+                  />
+                </div>
+                <div class="text-[11px] text-amber-700 truncate">
+                  Reading: {ingestProgress.currentFile}
+                </div>
+              </div>
+            )}
+
+            {/* Attached Text Documents Pill Strip (kept out of textarea so UI stays instant) */}
+            {attachedTextDocs.length > 0 && (
+              <div class="flex flex-wrap items-center gap-1.5 pt-1">
+                {attachedTextDocs.map((doc, idx) => (
+                  <span key={idx} class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-zinc-100 border border-zinc-200 text-zinc-800">
+                    <span>📄 {doc.name}</span>
+                    <span class="text-[10px] text-zinc-400">({Math.ceil((doc.size || doc.content.length) / 1024)}KB)</span>
+                    <button onClick={() => removeTextDoc(idx)} class="text-zinc-400 hover:text-zinc-900 ml-1">✕</button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Compact Image Previews (max 6 shown by default so 30 files never bloat the screen) */}
+            {attachedImages.length > 0 && (
+              <div class="pt-1 space-y-2">
+                <div class="flex items-center justify-between text-xs text-zinc-500">
+                  <span>🖼️ <strong>{attachedImages.length}</strong> screenshot(s) ready (auto-compressed for fast upload; up to 10 sent per turn)</span>
+                  {attachedImages.length > 1 && (
+                    <button onClick={() => setAttachedImages([])} class="text-zinc-400 hover:text-red-600">
+                      Remove all images
+                    </button>
+                  )}
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {visibleImages.map((img, idx) => (
+                    <div key={idx} class="relative group border border-zinc-200 rounded-xl p-1.5 bg-zinc-50 flex items-center gap-2 pr-6">
+                      <img src={img.dataUrl} alt={img.name} loading="lazy" class="w-10 h-10 object-cover rounded-lg border border-zinc-200 flex-shrink-0" />
+                      <div class="text-[11px] text-zinc-700 truncate">{img.name}</div>
+                      <button
+                        onClick={() => removeImage(idx)}
+                        class="absolute right-1.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-zinc-200 hover:bg-zinc-900 hover:text-white text-zinc-600 text-[10px] flex items-center justify-center transition"
+                        title="Remove image"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                {hiddenImagesCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllImages(true)}
+                    class="text-xs font-medium text-zinc-600 hover:text-zinc-900"
+                  >
+                    + Show {hiddenImagesCount} more image(s)
+                  </button>
+                )}
+                {showAllImages && attachedImages.length > 6 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllImages(false)}
+                    class="text-xs font-medium text-zinc-600 hover:text-zinc-900"
+                  >
+                    Show fewer images
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      };
+
+      const renderFolderScannerBar = () => (
+        <div class="pt-2 border-t border-zinc-100 space-y-2">
+          <div class="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={folderPathInput}
+              onChange={(e) => setFolderPathInput(e.target.value)}
+              placeholder="📂 Paste a local folder path (e.g. C:\Users\...\MyCaseFolder) to ingest all files & screenshots..."
+              class="flex-1 text-xs px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-800 placeholder-zinc-400 focus:outline-none focus:border-zinc-400"
+            />
+            <button
+              type="button"
+              onClick={handleScanFolderPath}
+              disabled={scanningFolder || !folderPathInput.trim()}
+              class="px-3.5 py-2 rounded-xl bg-zinc-800 text-white text-xs font-medium hover:bg-zinc-900 transition disabled:opacity-40 whitespace-nowrap"
+            >
+              {scanningFolder ? 'Scanning Folder...' : '📂 Scan Folder Path'}
+            </button>
+            <label class="px-3.5 py-2 rounded-xl border border-zinc-200 bg-white hover:border-zinc-400 text-zinc-700 text-xs font-medium cursor-pointer transition whitespace-nowrap text-center">
+              📁 Pick Folder
+              <input
+                type="file"
+                webkitdirectory=""
+                directory=""
+                multiple
+                class="hidden"
+                onChange={handleFileUpload}
+              />
+            </label>
+          </div>
+
+          {folderScanSummary && (
+            <div class="text-xs px-3.5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-1">
+              <div class="flex items-center justify-between">
+                <span>
+                  ✓ Loaded <strong>{folderScanSummary.totalFilesInFolder || folderScanSummary.textFilesCount} total file(s)</strong> ({folderScanSummary.textFilesCount} prioritized text docs, {folderScanSummary.imagesCount} screenshot(s)) from <code class="bg-emerald-100/80 px-1 rounded">{folderScanSummary.folderPath}</code>
+                </span>
+                <button onClick={() => setFolderScanSummary(null)} class="text-emerald-700 hover:text-emerald-950 ml-2">✕</button>
+              </div>
+              {folderScanSummary.autoSyncedReasons?.length > 0 && (
+                <div class="text-[11px] text-emerald-800 pt-1 border-t border-emerald-200/60">
+                  <strong>Auto-Synced from Court Record:</strong> {folderScanSummary.autoSyncedReasons.join(' · ')}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+
+      const toggleStepExpanded = (stepId) => {
+        setThinkingSteps(prev =>
+          prev.map(s => (s.stepId === stepId ? { ...s, expanded: !s.expanded } : s))
+        );
+      };
+
+      /**
+       * Detailed Live Thinking & Progress Stepper Card (Expandable per step with full logs & live Junior Clerk stream)
+       */
+      const renderLiveThinkingCard = () => {
+        if (!loading && thinkingSteps.length === 0) return null;
+        return (
+          <div class="mt-6 bg-white rounded-2xl border border-zinc-200/90 p-5 shadow-sm space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                {loading ? (
+                  <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping"></span>
+                ) : (
+                  <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                )}
+                <span class="text-xs font-semibold uppercase tracking-wider text-zinc-700">
+                  {loading ? 'Nyaya Reasoning & Progress Pipeline (Click any step to inspect)' : 'Reasoning Pipeline Completed (Click any step to inspect)'}
+                </span>
+              </div>
+              <span class="text-[11px] text-zinc-400">
+                {thinkingSteps.filter(s => s.status === 'done').length} / {thinkingSteps.length} steps
+              </span>
+            </div>
+
+            <div class="space-y-2">
+              {thinkingSteps.map((step) => {
+                const hasDetails = (step.logs && step.logs.length > 0) || Boolean(step.liveText);
+                return (
+                  <div
+                    key={step.stepId}
+                    class={`rounded-xl border text-xs transition overflow-hidden ${
+                      step.status === 'running'
+                        ? 'bg-amber-50/70 border-amber-200 text-zinc-900'
+                        : step.status === 'done'
+                        ? 'bg-zinc-50/80 border-zinc-200/70 text-zinc-700'
+                        : 'bg-white border-zinc-100 text-zinc-400'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleStepExpanded(step.stepId)}
+                      class="w-full text-left flex items-start justify-between gap-2.5 p-3 hover:bg-black/[0.02] transition"
+                    >
+                      <div class="flex items-start gap-2.5 min-w-0 flex-1">
+                        <span class="mt-0.5 font-bold">
+                          {step.status === 'done' ? '✓' : step.status === 'running' ? '⏳' : '○'}
+                        </span>
+                        <div class="flex-1 min-w-0">
+                          <div class="font-semibold flex items-center gap-2">
+                            <span>{step.label}</span>
+                          </div>
+                          <div class="text-[11px] text-zinc-600 whitespace-pre-wrap break-words mt-0.5 leading-relaxed">
+                            {step.detail}
+                          </div>
+                        </div>
+                      </div>
+                      {hasDetails && (
+                        <span class="text-[10px] font-medium px-2 py-0.5 rounded bg-white/80 border border-zinc-200 text-zinc-600 whitespace-nowrap">
+                          {step.expanded ? 'Hide details ▲' : 'Show details ▼'}
+                        </span>
+                      )}
+                    </button>
+
+                    {step.expanded && hasDetails && (
+                      <div class="px-3.5 pb-3.5 pt-2 border-t border-zinc-200/60 bg-white/90 space-y-2">
+                        {step.logs && step.logs.length > 0 && (
+                          <ul class="space-y-1 text-[11px] text-zinc-700 font-mono bg-zinc-50 p-2.5 rounded-lg border border-zinc-200/70">
+                            {step.logs.map((line, idx) => (
+                              <li key={idx} class="whitespace-pre-wrap break-words leading-relaxed">{line}</li>
+                            ))}
+                          </ul>
+                        )}
+                        {step.liveText && (
+                          <div class="space-y-1">
+                            <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                              Live Extracted Case Digest / Reasoning Stream:
+                            </div>
+                            <div
+                              class="markdown-body max-h-60 overflow-y-auto p-3 rounded-lg bg-zinc-50 border border-zinc-200/80 text-xs"
+                              dangerouslySetInnerHTML={renderFormattedMarkdown(step.liveText)}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      };
+
+      return (
+        <div class="min-h-screen flex flex-col">
+          {/* Minimal Top Bar */}
+          <header class="w-full max-w-3xl mx-auto px-6 pt-7 pb-4 flex flex-wrap items-center justify-between gap-3">
+            <button
+              onClick={() => { setDoor(null); setResult(null); setError(null); setThinkingSteps([]); }}
+              class="flex items-center gap-2.5 text-left group"
+            >
+              <div class="w-7 h-7 rounded-lg bg-zinc-900 text-white flex items-center justify-center font-semibold text-sm">
+                N
+              </div>
+              <span class="font-semibold tracking-tight text-zinc-900">Nyaya</span>
+              <span class="text-xs text-zinc-400">· Indian Legal Co-Pilot</span>
+            </button>
+
+            <div class="flex flex-wrap items-center gap-2.5">
+              <button
+                onClick={() => { setShowHistory(!showHistory); setShowBilling(false); }}
+                class={`text-xs font-medium px-3 py-1.5 rounded-lg border transition flex items-center gap-1.5 shadow-sm ${
+                  showHistory ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-800 border-zinc-200 hover:border-zinc-400'
+                }`}
+              >
+                <span>🗂️ My Cases / History</span>
+                <span class={showHistory ? 'text-zinc-300' : 'text-zinc-400'}>({sessions.length})</span>
+              </button>
+
+              <div class="flex items-center gap-1.5 bg-white border border-zinc-200 rounded-lg px-2.5 py-1.5 shadow-sm">
+                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  class="text-xs font-medium text-zinc-700 bg-transparent focus:outline-none cursor-pointer max-w-[210px] truncate"
+                  title="Select GitHub Copilot Model"
+                >
+                  {models.map(m => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                onClick={() => { setShowBilling(!showBilling); setShowHistory(false); }}
+                class="text-xs font-medium px-3 py-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400 transition flex items-center gap-1.5 shadow-sm"
+              >
+                <span>₹{billing.totals.estimatedInr.toFixed(2)}</span>
+                <span class="text-zinc-400">({billing.totals.calls} calls)</span>
+              </button>
+
+              {door && (
+                <button
+                  onClick={() => { setDoor(null); setResult(null); setError(null); setThinkingSteps([]); }}
+                  class="text-xs font-medium text-zinc-500 hover:text-zinc-900 transition"
+                >
+                  ← Home
+                </button>
+              )}
+            </div>
+          </header>
+
+          {/* Collapsible SQLite Session History Drawer */}
+          {showHistory && (
+            <div class="w-full max-w-3xl mx-auto px-6 mb-6">
+              <div class="bg-white border border-zinc-200 rounded-2xl p-5 shadow-sm space-y-4">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 class="text-sm font-semibold text-zinc-900">Saved Cases & Multi-Turn Session History (SQLite)</h3>
+                    <p class="text-xs text-zinc-500 mt-0.5">
+                      Isolated per user (<code class="bg-zinc-100 px-1 py-0.5 rounded">user_id = {userId}</code>) in <code class="bg-zinc-100 px-1 py-0.5 rounded">data/nyaya.db</code>.
+                    </p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <select
+                      value={userId}
+                      onChange={(e) => {
+                        if (e.target.value === '__new_guest__') {
+                          const newGuest = 'usr_' + Math.random().toString(36).slice(2, 10);
+                          switchUserIdentity(newGuest);
+                        } else {
+                          switchUserIdentity(e.target.value);
+                        }
+                      }}
+                      class="text-xs px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50 font-medium text-zinc-700"
+                    >
+                      <option value="founder-local">👤 User: founder-local (You)</option>
+                      <option value="demo-client-a">👤 User: demo-client-a</option>
+                      <option value="demo-client-b">👤 User: demo-client-b</option>
+                      {!['founder-local', 'demo-client-a', 'demo-client-b'].includes(userId) && (
+                        <option value={userId}>👤 User: {userId}</option>
+                      )}
+                      <option value="__new_guest__">➕ Simulate New Browser Visitor</option>
+                    </select>
+                    <button
+                      onClick={() => { startNewBlankSession(door || 'midcase'); setShowHistory(false); }}
+                      class="text-xs font-medium px-3 py-1.5 rounded-lg bg-zinc-900 text-white hover:bg-zinc-800 transition"
+                    >
+                      + New Case
+                    </button>
+                    <button onClick={() => setShowHistory(false)} class="text-xs text-zinc-400 hover:text-zinc-800 px-1">✕</button>
+                  </div>
+                </div>
+
+                {sessions.length === 0 ? (
+                  <div class="text-xs text-zinc-400 py-6 text-center border border-dashed border-zinc-200 rounded-xl">
+                    No saved sessions for <strong>{userId}</strong> yet. Run any analysis and it will be automatically saved here.
+                  </div>
+                ) : (
+                  <div class="divide-y divide-zinc-100 max-h-72 overflow-y-auto border border-zinc-200/80 rounded-xl">
+                    {sessions.map(s => (
+                      <div
+                        key={s.id}
+                        onClick={() => resumeSession(s.id)}
+                        class={`p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-zinc-50 transition ${
+                          activeSession?.id === s.id ? 'bg-amber-50/60' : ''
+                        }`}
+                      >
+                        <div class="min-w-0 flex-1">
+                          <div class="flex items-center gap-2">
+                            <span class="text-xs font-semibold text-zinc-900 truncate">{s.title}</span>
+                            <span class="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600 font-medium">
+                              {s.turnCount} {s.turnCount === 1 ? 'turn' : 'turns'}
+                            </span>
+                          </div>
+                          <div class="text-[11px] text-zinc-400 mt-0.5">
+                            Updated {new Date(s.updatedAt).toLocaleString()} · Door: {s.door} · Spend: ₹{(s.totalCostInr || 0).toFixed(2)}
+                          </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <span class="text-xs font-medium text-zinc-700 hover:text-zinc-900">Resume →</span>
+                          <button
+                            onClick={(e) => deleteSession(e, s.id)}
+                            class="text-xs text-zinc-400 hover:text-red-600 px-1.5 py-0.5 rounded"
+                            title="Delete session"
+                          >
+                            🗑
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Collapsible Billing Panel */}
+          {showBilling && (
+            <div class="w-full max-w-3xl mx-auto px-6 mb-6">
+              <div class="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm space-y-5">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <h3 class="text-sm font-semibold text-zinc-900">Live Copilot Model Telemetry & SaaS Billing Calculator</h3>
+                    <p class="text-xs text-zinc-500 mt-0.5">
+                      Every call logs exact tokens and commercial cost in <code class="bg-zinc-100 px-1 py-0.5 rounded">data/billing-ledger.json</code>.
+                    </p>
+                  </div>
+                  <button onClick={() => setShowBilling(false)} class="text-xs text-zinc-400 hover:text-zinc-800">Close ✕</button>
+                </div>
+
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div class="p-3 rounded-xl bg-zinc-50 border border-zinc-200">
+                    <div class="text-[11px] text-zinc-500">Total API Calls</div>
+                    <div class="text-lg font-bold text-zinc-900 mt-0.5">{billing.totals.calls}</div>
+                  </div>
+                  <div class="p-3 rounded-xl bg-zinc-50 border border-zinc-200">
+                    <div class="text-[11px] text-zinc-500">Total Tokens Used</div>
+                    <div class="text-lg font-bold text-zinc-900 mt-0.5">{billing.totals.totalTokens.toLocaleString()}</div>
+                  </div>
+                  <div class="p-3 rounded-xl bg-zinc-50 border border-zinc-200">
+                    <div class="text-[11px] text-zinc-500">Actual Spend (INR / USD)</div>
+                    <div class="text-lg font-bold text-emerald-700 mt-0.5">
+                      ₹{billing.totals.estimatedInr.toFixed(2)} <span class="text-xs font-normal text-zinc-500">(${billing.totals.estimatedUsd.toFixed(4)})</span>
+                    </div>
+                  </div>
+                  <div class="p-3 rounded-xl bg-zinc-50 border border-zinc-200">
+                    <div class="text-[11px] text-zinc-500">Avg Cost / Analysis</div>
+                    <div class="text-lg font-bold text-zinc-900 mt-0.5">₹{avgCallCostInr.toFixed(2)}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Main Content Container */}
+          <main class="flex-1 w-full max-w-2xl mx-auto px-6 py-6 flex flex-col justify-center">
+
+            {/* ==================== STEP 1: HOME ENTRY ==================== */}
+            {!door && (
+              <div class="space-y-8">
+                <div class="space-y-3">
+                  <h1 class="serif-heading text-4xl sm:text-5xl font-medium tracking-tight text-zinc-900 leading-tight">
+                    What do you need help with today?
+                  </h1>
+                  <p class="text-zinc-500 text-base leading-relaxed">
+                    Pick where you are right now, or resume a saved case below.
+                  </p>
+                </div>
+
+                {sessions.length > 0 && (
+                  <div class="bg-white border border-zinc-200/90 rounded-2xl p-4 space-y-2.5 shadow-sm">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Recent Saved Cases ({userId})</span>
+                      <button onClick={() => setShowHistory(true)} class="text-xs text-zinc-600 hover:text-zinc-900 font-medium">
+                        View All ({sessions.length}) →
+                      </button>
+                    </div>
+                    <div class="space-y-1.5">
+                      {sessions.slice(0, 3).map(s => (
+                        <button
+                          key={s.id}
+                          onClick={() => resumeSession(s.id)}
+                          class="w-full text-left px-3 py-2 rounded-xl hover:bg-zinc-50 border border-transparent hover:border-zinc-200 transition flex items-center justify-between gap-2"
+                        >
+                          <div class="truncate">
+                            <span class="text-xs font-semibold text-zinc-900">{s.title}</span>
+                            <span class="text-[11px] text-zinc-400 ml-2">· {s.turnCount} turn(s)</span>
+                          </div>
+                          <span class="text-xs text-zinc-500 whitespace-nowrap">Resume →</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div class="space-y-3">
+                  <button
+                    onClick={() => startNewBlankSession('start')}
+                    class="w-full text-left p-5 rounded-2xl bg-white border border-zinc-200/90 hover:border-zinc-900 hover:shadow-sm transition-all flex items-center justify-between group"
+                  >
+                    <div class="space-y-1 pr-4">
+                      <div class="font-semibold text-zinc-900 text-base">
+                        Start a new dispute — or defend against a claim
+                      </div>
+                      <div class="text-sm text-zinc-500">
+                        Paste a folder path, upload WhatsApp screenshots/files, or narrate your story. We check legal validity and draft your notice or reply.
+                      </div>
+                    </div>
+                    <span class="text-zinc-300 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
+                  </button>
+
+                  <button
+                    onClick={() => startNewBlankSession('midcase')}
+                    class="w-full text-left p-5 rounded-2xl bg-white border border-zinc-200/90 hover:border-zinc-900 hover:shadow-sm transition-all flex items-center justify-between group"
+                  >
+                    <div class="space-y-1 pr-4">
+                      <div class="font-semibold text-zinc-900 text-base">
+                        Get tactical advice in the middle of an ongoing case
+                      </div>
+                      <div class="text-sm text-zinc-500">
+                        Case stuck for months? OP not filing evidence or Written Version? Point to your case folder or upload your daily order screenshot.
+                      </div>
+                    </div>
+                    <span class="text-zinc-300 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
+                  </button>
+
+                  <button
+                    onClick={() => startNewBlankSession('company')}
+                    class="w-full text-left p-5 rounded-2xl bg-white border border-zinc-200/90 hover:border-zinc-900 hover:shadow-sm transition-all flex items-center justify-between group"
+                  >
+                    <div class="space-y-1 pr-4">
+                      <div class="font-semibold text-zinc-900 text-base">
+                        Company formation & RoC filing advisor
+                      </div>
+                      <div class="text-sm text-zinc-500">
+                        Not sure whether to register an LLP or Private Limited? Or stuck with an RoC name rejection screenshot or missed MCA filing?
+                      </div>
+                    </div>
+                    <span class="text-zinc-300 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ==================== DOOR 1: START / DEFEND ==================== */}
+            {door === 'start' && (
+              <div class="space-y-5">
+                <div class="space-y-2">
+                  <div class="text-xs font-medium uppercase tracking-wider text-zinc-400">New Dispute / Pre-Filing</div>
+                  <h2 class="serif-heading text-3xl text-zinc-900">Tell us what happened</h2>
+                </div>
+
+                {renderCaseTitleBar()}
+
+                <div class="inline-flex p-1 rounded-xl bg-zinc-200/70 text-xs font-medium">
+                  <button
+                    onClick={() => setRole('complainant')}
+                    class={`px-3.5 py-2 rounded-lg transition ${role === 'complainant' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-600'}`}
+                  >
+                    I want to claim / get a refund
+                  </button>
+                  <button
+                    onClick={() => setRole('defender')}
+                    class={`px-3.5 py-2 rounded-lg transition ${role === 'defender' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-600'}`}
+                  >
+                    Someone is demanding an unfair refund from us
+                  </button>
+                </div>
+
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleDrop}
+                  class="bg-white rounded-2xl border border-zinc-200 p-4 space-y-3 shadow-sm"
+                >
+                  <textarea
+                    rows="5"
+                    value={storyText}
+                    onChange={(e) => setStoryText(e.target.value)}
+                    onPaste={handlePasteEvent}
+                    placeholder="Paste WhatsApp messages, drop screenshots here, or narrate the story in your own words..."
+                    class="w-full text-sm text-zinc-800 placeholder-zinc-400 focus:outline-none resize-y leading-relaxed"
+                  />
+
+                  {renderAttachmentsAndProgress()}
+                  {renderFolderScannerBar()}
+
+                  <div class="pt-3 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <label class="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 cursor-pointer font-medium transition">
+                        🖼️ Upload Files (.pdf, .docx, .zip, .png, .txt)
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*,.pdf,.docx,.zip,.txt,.md,.csv,.json,.log,.eml"
+                          class="hidden"
+                          onChange={handleFileUpload}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleClipboardButtonClick(setStoryText)}
+                        class="text-xs px-3 py-1.5 rounded-lg border border-zinc-200 hover:border-zinc-400 text-zinc-700 font-medium transition"
+                      >
+                        📋 Paste from Clipboard
+                      </button>
+                      {!storyText && (
+                        <button
+                          type="button"
+                          onClick={() => { setRole('defender'); setStoryText(DEMO_STORY_TEXT); }}
+                          class="text-xs px-2.5 py-1.5 rounded-lg border border-dashed border-zinc-300 text-zinc-500 hover:text-zinc-900 transition"
+                        >
+                          ✨ Load Sample Chat
+                        </button>
+                      )}
+                      {(storyText || attachedImages.length > 0 || attachedTextDocs.length > 0) && (
+                        <button
+                          type="button"
+                          onClick={() => { setStoryText(''); setAttachedImages([]); setAttachedTextDocs([]); setFolderScanSummary(null); }}
+                          class="text-xs text-zinc-400 hover:text-zinc-700 px-2 py-1"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={() => runAnalysis('messy-dump-intake')}
+                      disabled={loading || Boolean(ingestProgress)}
+                      class="px-4 py-2 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition disabled:opacity-50"
+                    >
+                      {loading ? 'Streaming Analysis...' : 'Analyze Story & Save to Session →'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ==================== DOOR 2: MID-CASE TACTICAL COACH ==================== */}
+            {door === 'midcase' && (
+              <div class="space-y-5">
+                <div class="space-y-2">
+                  <div class="text-xs font-medium uppercase tracking-wider text-zinc-400">Ongoing Case · Any Stage</div>
+                  <h2 class="serif-heading text-3xl text-zinc-900">Where is your case right now?</h2>
+                </div>
+
+                {renderCaseTitleBar()}
+
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleDrop}
+                  class="bg-white rounded-2xl border border-zinc-200 p-5 space-y-4 shadow-sm"
+                >
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label class="text-xs font-medium text-zinc-500 block mb-1">Current Stage</label>
+                      <select
+                        value={stage}
+                        onChange={(e) => setStage(e.target.value)}
+                        class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium text-zinc-900 focus:outline-none"
+                      >
+                        <option value="notice-and-written-version">OP Notice / Written Version (45-day cap)</option>
+                        <option value="rejoinder-and-complainant-evidence">My Rejoinder & Evidence stage</option>
+                        <option value="op-evidence">OP Evidence stage (My evidence filed, OP delaying)</option>
+                        <option value="written-arguments">Written Arguments stage</option>
+                        <option value="execution-s71-s72">Won the order — OP not paying (Execution)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="text-xs font-medium text-zinc-500 block mb-1">Notice Service Date on OP</label>
+                      <input type="date" value={serviceDate} onChange={e => setServiceDate(e.target.value)}
+                        class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium" />
+                    </div>
+                    <div>
+                      <label class="text-xs font-medium text-zinc-500 block mb-1">Next Hearing Date</label>
+                      <input type="date" value={nextHearingDate} onChange={e => setNextHearingDate(e.target.value)}
+                        class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium" />
+                    </div>
+                    <div>
+                      <label class="text-xs font-medium text-zinc-500 block mb-1">OP Evidence Adjournments Taken</label>
+                      <input type="number" min="0" max="10" value={opAdjournments} onChange={e => setOpAdjournments(e.target.value)}
+                        class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium" />
+                    </div>
+                  </div>
+
+                  <div class="flex flex-wrap gap-4 pt-1 text-xs text-zinc-700">
+                    <label class="flex items-center gap-1.5 cursor-pointer">
+                      <input type="checkbox" checked={writtenVersionFiled} onChange={e => setWrittenVersionFiled(e.target.checked)} />
+                      OP filed Written Version
+                    </label>
+                    <label class="flex items-center gap-1.5 cursor-pointer">
+                      <input type="checkbox" checked={complainantEvidenceFiled} onChange={e => setComplainantEvidenceFiled(e.target.checked)} />
+                      I filed Complainant Evidence
+                    </label>
+                    <label class="flex items-center gap-1.5 cursor-pointer">
+                      <input type="checkbox" checked={opEvidenceFiled} onChange={e => setOpEvidenceFiled(e.target.checked)} />
+                      OP filed OP Evidence
+                    </label>
+                  </div>
+
+                  {multiOpSummary && (
+                    <div class="text-xs px-3 py-2 rounded-xl bg-amber-50/80 border border-amber-200 text-amber-900">
+                      <strong>Multi-OP Status (from Court Orders):</strong> {multiOpSummary}
+                    </div>
+                  )}
+
+                  <div>
+                    <label class="text-xs font-medium text-zinc-500 block mb-1">Last Daily Order / Situation Notes</label>
+                    <textarea
+                      rows="3"
+                      value={midcaseNotes}
+                      onChange={e => setMidcaseNotes(e.target.value)}
+                      onPaste={handlePasteEvent}
+                      class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-800 focus:outline-none"
+                    />
+                  </div>
+
+                  {renderAttachmentsAndProgress()}
+                  {renderFolderScannerBar()}
+
+                  <div class="flex flex-wrap items-center justify-between gap-2 pt-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <label class="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 cursor-pointer font-medium transition">
+                        🖼️ Upload Order PDF / DOCX / Screenshot
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*,.pdf,.docx,.zip,.txt,.md,.csv,.json"
+                          class="hidden"
+                          onChange={handleFileUpload}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleClipboardButtonClick(setMidcaseNotes)}
+                        class="text-xs px-3 py-1.5 rounded-lg border border-zinc-200 hover:border-zinc-400 text-zinc-700 font-medium transition"
+                      >
+                        📋 Paste from Clipboard
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => runAnalysis('midcase-battle-card')}
+                      disabled={loading || Boolean(ingestProgress)}
+                      class="px-4 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition disabled:opacity-50"
+                    >
+                      {loading ? 'Streaming Battle-Card...' : 'Generate Hearing Battle-Card & Save →'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ==================== DOOR 3: COMPANY ADVISOR ==================== */}
+            {door === 'company' && (
+              <div class="space-y-5">
+                <div class="space-y-2">
+                  <div class="text-xs font-medium uppercase tracking-wider text-zinc-400">Company & RoC Advisor</div>
+                  <h2 class="serif-heading text-3xl text-zinc-900">How can we help with your company?</h2>
+                </div>
+
+                {renderCaseTitleBar()}
+
+                <div class="inline-flex p-1 rounded-xl bg-zinc-200/70 text-xs font-medium">
+                  <button
+                    onClick={() => setCompanyNeed('choose-entity')}
+                    class={`px-3.5 py-2 rounded-lg transition ${companyNeed === 'choose-entity' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-600'}`}
+                  >
+                    Unsure what to register (LLP vs Pvt Ltd)
+                  </button>
+                  <button
+                    onClick={() => setCompanyNeed('roc-hiccup')}
+                    class={`px-3.5 py-2 rounded-lg transition ${companyNeed === 'roc-hiccup' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-600'}`}
+                  >
+                    Fix an RoC rejection or missed filing
+                  </button>
+                </div>
+
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleDrop}
+                  class="bg-white rounded-2xl border border-zinc-200 p-5 space-y-4 shadow-sm"
+                >
+                  <textarea
+                    rows="4"
+                    value={companyNotes}
+                    onChange={e => setCompanyNotes(e.target.value)}
+                    onPaste={handlePasteEvent}
+                    placeholder="Describe your founders, funding plans, revenue, or upload a screenshot of the MCA/RoC defect..."
+                    class="w-full text-sm text-zinc-800 focus:outline-none resize-y leading-relaxed"
+                  />
+
+                  {renderAttachmentsAndProgress()}
+                  {renderFolderScannerBar()}
+
+                  <div class="pt-3 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <label class="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 cursor-pointer font-medium transition">
+                        🖼️ Upload RoC Screenshot / File
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*,.txt,.md,.csv,.json"
+                          class="hidden"
+                          onChange={handleFileUpload}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleClipboardButtonClick(setCompanyNotes)}
+                        class="text-xs px-3 py-1.5 rounded-lg border border-zinc-200 hover:border-zinc-400 text-zinc-700 font-medium transition"
+                      >
+                        📋 Paste from Clipboard
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => runAnalysis('company-advisor')}
+                      disabled={loading || Boolean(ingestProgress)}
+                      class="px-4 py-2 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition disabled:opacity-50"
+                    >
+                      {loading ? 'Streaming Advice...' : 'Get Corporate Counsel Roadmap →'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ==================== LIVE THINKING & PROGRESS STEPPER ==================== */}
+            {renderLiveThinkingCard()}
+
+            {error && (
+              <div class="mt-6 p-4 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-800">
+                <strong>Error:</strong> {error}
+              </div>
+            )}
+
+            {/* Prior turns in this session (if > 1 turn) */}
+            {activeSession?.turns?.length > 1 && (
+              <div class="mt-6 space-y-4">
+                <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                  Earlier Turns in This Case ({activeSession.turns.length - 1})
+                </div>
+                {activeSession.turns.slice(0, -1).map((t) => (
+                  <details key={t.id} class="bg-white rounded-2xl border border-zinc-200/80 p-4 shadow-sm">
+                    <summary class="cursor-pointer text-xs font-semibold text-zinc-800 flex items-center justify-between">
+                      <span>Turn #{t.turnIndex} · {new Date(t.createdAt).toLocaleString()} — {t.userInput.slice(0, 75)}...</span>
+                      <span class="text-zinc-400 font-normal">{t.model}</span>
+                    </summary>
+                    <div
+                      class="markdown-body mt-4 pt-3 border-t border-zinc-100"
+                      dangerouslySetInnerHTML={renderFormattedMarkdown(t.assistantMarkdown)}
+                    />
+                  </details>
+                ))}
+              </div>
+            )}
+
+            {/* Live Streaming Output OR Completed Result */}
+            {(streamingMarkdown || result) && (
+              <div class="mt-6 bg-white rounded-2xl border border-zinc-200 p-6 space-y-5 shadow-sm">
+                {result?.engineResult?.disposalPace && (
+                  <div class="flex flex-wrap gap-2 pb-4 border-b border-zinc-100">
+                    <span class="text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200 font-medium">
+                      Elapsed: {result.engineResult.disposalPace.daysElapsed ?? result.engineResult.disposalPace.elapsedDays}d / {result.engineResult.disposalPace.targetDays ?? result.engineResult.disposalPace.statutoryTargetDays}d statutory target
+                    </span>
+                    {result.engineResult.verification && (
+                      <span class={`text-xs px-2.5 py-1 rounded-full border font-medium ${
+                        result.engineResult.verification.verified
+                          ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                          : 'bg-red-50 text-red-900 border-red-200'
+                      }`}>
+                        {result.engineResult.verification.verified ? '🛡️ Record Fact-Check: PASSED' : '⚠️ Record Fact-Check: Warning'}
+                      </span>
+                    )}
+                    {result.engineResult.matchedTactics?.map(t => (
+                      <span key={t.id} class="text-xs px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-medium">
+                        ✓ Tactic Matched: {t.title}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <div
+                  class="markdown-body max-w-none"
+                  dangerouslySetInnerHTML={renderFormattedMarkdown(streamingMarkdown || result?.adviceMarkdown || '')}
+                />
+
+                {!loading && result && (
+                  <>
+                    <div class="pt-4 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
+                      <div>
+                        Model: <strong class="text-zinc-800">{result.model}</strong> ·
+                        Tokens: <strong class="text-zinc-800">{result.billingEntry?.totalTokens || 0}</strong> ·
+                        Call Cost: <strong class="text-emerald-700">₹{(result.billingEntry?.estimatedInr || 0).toFixed(3)}</strong> ·
+                        Latency: {((result.billingEntry?.latencyMs || 0) / 1000).toFixed(1)}s
+                      </div>
+                      <div class="flex flex-wrap items-center gap-2">
+                        {result.model !== 'claude-opus-4.6' && (
+                          <button
+                            onClick={() => runAnalysis(activeSession?.mode, 'Re-analyze with deep Senior Counsel reasoning: verify every date, contradiction, and statutory hook, and sharpen the courtroom script and application.', 'claude-opus-4.6')}
+                            class="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-950 font-semibold border border-amber-300 transition"
+                            title="Not satisfied? Re-run this exact case with Claude Opus 4.6 Deep Senior Counsel"
+                          >
+                            🧠 Escalate to Claude Opus 4.6
+                          </button>
+                        )}
+                        <button
+                          onClick={() => downloadCourtWordDoc(result.adviceMarkdown, caseTitle || 'Nyaya-Legal-Filing')}
+                          class="px-3 py-1.5 rounded-lg border border-zinc-200 hover:border-zinc-400 text-zinc-800 font-medium transition"
+                        >
+                          📄 Export Word (.doc)
+                        </button>
+                        <button
+                          onClick={() => printCourtReadyPdf(result.adviceMarkdown, caseTitle || 'Nyaya Legal Filing')}
+                          class="px-3 py-1.5 rounded-lg border border-zinc-200 hover:border-zinc-400 text-zinc-800 font-medium transition"
+                        >
+                          🖨️ Print / Save PDF
+                        </button>
+                        <button
+                          onClick={() => copyText(result.adviceMarkdown)}
+                          class="px-3.5 py-1.5 rounded-lg bg-zinc-900 text-white font-medium hover:bg-zinc-800 transition"
+                        >
+                          {copied ? '✓ Copied' : 'Copy Markdown'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="pt-4 border-t border-zinc-200/80 space-y-2">
+                      <label class="text-xs font-semibold text-zinc-700 block">
+                        Continue This Case Session (Ask a follow-up or log the next hearing order)
+                      </label>
+                      <div class="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="text"
+                          value={followUpText}
+                          onChange={(e) => setFollowUpText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && followUpText.trim() && !loading) {
+                              runAnalysis(activeSession?.mode, followUpText.trim());
+                            }
+                          }}
+                          placeholder="e.g., What if the Opposite Party offers a 50% settlement in court tomorrow?"
+                          class="flex-1 text-xs px-3.5 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 focus:outline-none focus:border-zinc-400"
+                        />
+                        <button
+                          onClick={() => runAnalysis(activeSession?.mode, followUpText.trim())}
+                          disabled={loading || !followUpText.trim()}
+                          class="px-4 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition disabled:opacity-40 whitespace-nowrap"
+                        >
+                          {loading ? 'Streaming...' : 'Ask Follow-Up in Session →'}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+          </main>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PractitionerTactic",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "forums",
+    "triggerStages",
+    "triggerConditions",
+    "move",
+    "courtroomScript",
+    "legalBasis",
+    "successSignals",
+    "risks",
+    "fallbackIfRefused",
+    "reviewStatus"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "title": { "type": "string" },
+    "forums": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "triggerStages": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "triggerConditions": {
+      "type": "object",
+      "properties": {
+        "minDaysSinceNotice": { "type": "number" },
+        "minGapDaysToNextHearing": { "type": "number" },
+        "minDaysSinceService": { "type": "number" },
+        "writtenVersionFiled": { "type": "boolean" },
+        "minOpponentAdjournments": { "type": "number" },
+        "postalRemarkIn": { "type": "array", "items": { "type": "string" } },
+        "daysSinceFinalOrder": { "type": "number" },
+        "orderComplied": { "type": "boolean" },
+        "complainantEvidenceFiled": { "type": "boolean" },
+        "opEvidenceFiled": { "type": "boolean" },
+        "hasDeficiencyOrDefectGround": { "type": "boolean" }
+      }
+    },
+    "move": { "type": "string" },
+    "courtroomScript": { "type": "string" },
+    "legalBasis": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "successSignals": { "type": "array", "items": { "type": "string" } },
+    "risks": { "type": "array", "items": { "type": "string" } },
+    "fallbackIfRefused": { "type": "string" },
+    "reviewStatus": { "type": "string", "enum": ["draft-needs-lawyer-review", "lawyer-verified"] }
+  }
+}

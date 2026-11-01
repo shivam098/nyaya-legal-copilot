@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ForumProcedurePack",
+  "type": "object",
+  "required": ["forumId", "name", "readinessTier", "governingActs", "statutoryRules", "stages"],
+  "properties": {
+    "forumId": { "type": "string" },
+    "name": { "type": "string" },
+    "readinessTier": { "type": "string", "enum": ["tier-1-pilot", "tier-2-guided", "tier-3-triage"] },
+    "governingActs": { "type": "array", "items": { "type": "string" } },
+    "statutoryRules": {
+      "type": "object",
+      "required": [
+        "limitationDays",
+        "writtenVersionBaseDays",
+        "writtenVersionMaxExtensionDays",
+        "disposalTargetDaysStandard",
+        "disposalTargetDaysTesting",
+        "appealLimitationDays",
+        "appealPreDepositPercent"
+      ]
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "nextStages", "keyCheckpoints"]
+      }
+    }
+  }
+}

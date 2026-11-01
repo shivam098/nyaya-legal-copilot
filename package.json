@@ -1,0 +1,21 @@
+{
+  "name": "legal-copilot",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "description": "Spec- and eval-driven AI Legal Co-Pilot for India (Consumer Tier-1 MVP + Karpathy Obsidian Wiki)",
+  "scripts": {
+    "start": "node ui/server.mjs",
+    "start:ollama": "node -e \"process.env.LLM_PROVIDER='ollama'; import('./ui/server.mjs')\"",
+    "start:azure": "node -e \"process.env.LLM_PROVIDER='azure-foundry'; import('./ui/server.mjs')\"",
+    "test": "node --test src/engine/*.test.mjs",
+    "eval": "node evals/run-evals.mjs",
+    "wiki:lint": "node src/engine/wiki-lint.mjs",
+    "check": "npm run wiki:lint && npm test && npm run eval"
+  },
+  "dependencies": {
+    "adm-zip": "^0.6.1",
+    "mammoth": "^1.13.0",
+    "pdf-parse": "^1.1.1"
+  }
+}
