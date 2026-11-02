@@ -519,9 +519,45 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
       const [result, setResult] = useState(null);
       const [copied, setCopied] = useState(false);
 
+      const [hwFingerprint] = useState(() => {
+        try {
+          let gpu = '';
+          const canvas = document.createElement('canvas');
+          const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+          if (gl) {
+            const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+            if (dbg) {
+              gpu = `${gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL)}|${gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)}`;
+            }
+          }
+          const raw = [
+            gpu,
+            `${window.screen?.width || 0}x${window.screen?.height || 0}x${window.screen?.colorDepth || 0}`,
+            String(window.devicePixelRatio || 1),
+            String(navigator.hardwareConcurrency || 0),
+            String(navigator.deviceMemory || 0),
+            String(navigator.platform || ''),
+            String(Intl.DateTimeFormat().resolvedOptions().timeZone || ''),
+            String(navigator.language || '')
+          ].join('::');
+          let h1 = 0xdeadbeef ^ raw.length;
+          let h2 = 0x41c6ce57 ^ raw.length;
+          for (let i = 0; i < raw.length; i++) {
+            const ch = raw.charCodeAt(i);
+            h1 = Math.imul(h1 ^ ch, 2654435761);
+            h2 = Math.imul(h2 ^ ch, 1597334677);
+          }
+          h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+          h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+          return `hw_${(h2 >>> 0).toString(16).padStart(8, '0')}${(h1 >>> 0).toString(16).padStart(8, '0')}`;
+        } catch {
+          return 'hw_fallback';
+        }
+      });
+
       const buildAuthHeaders = (extra = {}, tokenOverride = null) => {
         const tok = tokenOverride !== null ? tokenOverride : authToken;
-        const headers = { ...extra };
+        const headers = { ...extra, 'x-nyaya-hw-fp': hwFingerprint };
         if (tok) {
           headers['Authorization'] = `Bearer ${tok}`;
         } else if (userId) {
@@ -560,11 +596,12 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
         try {
           const res = await fetch('/api/auth/login', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'x-nyaya-hw-fp': hwFingerprint },
             body: JSON.stringify({
               email: authEmail.trim(),
               password: authPassword,
               displayName: authName.trim(),
+              hwFingerprint,
               mode: 'auto'
             })
           });
@@ -595,10 +632,11 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
         try {
           const res = await fetch('/api/auth/google', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'x-nyaya-hw-fp': hwFingerprint },
             body: JSON.stringify({
               email: authEmail.trim(),
-              displayName: authName.trim()
+              displayName: authName.trim(),
+              hwFingerprint
             })
           });
           const data = await res.json();
