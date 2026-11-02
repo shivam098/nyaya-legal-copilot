@@ -88,12 +88,44 @@
       padding: 0.55rem 0.75rem;
       border: 1px solid #E4E4E7;
       color: #18181B;
+      overflow-wrap: normal;
+      word-break: normal;
     }
     .markdown-body td {
       padding: 0.55rem 0.75rem;
       border: 1px solid #E4E4E7;
       color: #27272A;
       vertical-align: top;
+      overflow-wrap: normal;
+      word-break: normal;
+    }
+    .markdown-body th:nth-child(1), .markdown-body td:nth-child(1) {
+      min-width: 125px;
+    }
+    .markdown-body th:nth-child(2), .markdown-body td:nth-child(2) {
+      min-width: 145px;
+    }
+    .markdown-body th:nth-child(3), .markdown-body td:nth-child(3) {
+      min-width: 240px;
+    }
+    .markdown-body th:nth-child(4), .markdown-body td:nth-child(4) {
+      min-width: 115px;
+      white-space: nowrap;
+    }
+    .markdown-body a {
+      color: #9A3412;
+      font-weight: 600;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      text-decoration-color: #D97706;
+      border-radius: 0.25rem;
+      padding: 0.05rem 0.15rem;
+      transition: color 0.15s ease, background-color 0.15s ease;
+    }
+    .markdown-body a:hover {
+      color: #7C2D12;
+      background-color: #FEF3C7;
+      text-decoration-color: #7C2D12;
     }
     .markdown-body tr:nth-child(even) td {
       background-color: #FAFAFA;
@@ -247,12 +279,132 @@
         .replace(/(href|src|xlink:href)\s*=\s*(?:"\s*(?:javascript|vbscript|data:text\/html)[^"]*"|'\s*(?:javascript|vbscript|data:text\/html)[^']*')/gi, '$1="#"');
     }
 
+    const ACT_URL_DIRECTORY = [
+      { rx: /\b(ndps|narcotic\s+drugs)\b/i, name: 'NDPS Act 1985', url: 'https://www.indiacode.nic.in/handle/123456789/1791' },
+      { rx: /\b(bsa|bharatiya\s+sakshya)\b/i, name: 'Bharatiya Sakshya Adhiniyam 2023', url: 'https://www.indiacode.nic.in/handle/123456789/20063' },
+      { rx: /\b(iea|indian\s+evidence\s+act)\b/i, name: 'Indian Evidence Act 1872', url: 'https://indiankanoon.org/doc/1953529/' },
+      { rx: /\b(bnss|bharatiya\s+nagarik\s+suraksha)\b/i, name: 'BNSS 2023', url: 'https://www.indiacode.nic.in/handle/123456789/20099' },
+      { rx: /\b(bns\b|bharatiya\s+nyaya\s+sanhita)\b/i, name: 'BNS 2023', url: 'https://www.indiacode.nic.in/handle/123456789/20062' },
+      { rx: /\b(crpc|criminal\s+procedure)\b/i, name: 'Code of Criminal Procedure 1973', url: 'https://indiankanoon.org/doc/445276/' },
+      { rx: /\b(ipc|indian\s+penal\s+code)\b/i, name: 'Indian Penal Code 1860', url: 'https://indiankanoon.org/doc/1569253/' },
+      { rx: /\b(consumer\s+protection|cpa)\b/i, name: 'Consumer Protection Act 2019', url: 'https://www.indiacode.nic.in/handle/123456789/15256' },
+      { rx: /\b(rera|real\s+estate)\b/i, name: 'RERA Act 2016', url: 'https://www.indiacode.nic.in/handle/123456789/2158' },
+      { rx: /\b(hindu\s+succession|hsa)\b/i, name: 'Hindu Succession Act 1956', url: 'https://www.indiacode.nic.in/handle/123456789/1549' },
+      { rx: /\b(pwdva|domestic\s+violence)\b/i, name: 'Protection of Women from Domestic Violence Act 2005', url: 'https://www.indiacode.nic.in/handle/123456789/2059' },
+      { rx: /\b(negotiable\s+instruments|ni\s+act)\b/i, name: 'Negotiable Instruments Act 1881', url: 'https://www.indiacode.nic.in/handle/123456789/2189' },
+      { rx: /\b(companies\s+act)\b/i, name: 'Companies Act 2013', url: 'https://www.indiacode.nic.in/handle/123456789/2114' },
+      { rx: /\b(cpc|civil\s+procedure)\b/i, name: 'Code of Civil Procedure 1908', url: 'https://www.indiacode.nic.in/handle/123456789/2191' }
+    ];
+
+    function resolveActMeta(text = '') {
+      for (const item of ACT_URL_DIRECTORY) {
+        if (item.rx.test(text)) return item;
+      }
+      return null;
+    }
+
+    function enrichLegalReferencesHtml(sanitizedHtml = '') {
+      if (!sanitizedHtml || typeof document === 'undefined') return sanitizedHtml;
+      try {
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = sanitizedHtml;
+
+        // 1. Ensure all existing links open in a new tab with external indicator
+        wrapper.querySelectorAll('a[href]').forEach(a => {
+          a.setAttribute('target', '_blank');
+          a.setAttribute('rel', 'noopener noreferrer');
+          if (!a.textContent.includes('↗')) {
+            a.textContent = `${a.textContent.trim()} ↗`;
+          }
+        });
+
+        // 2. Enrich tables: make Act cells, Section cells, and unlinked/placeholder ("Same") Link cells clickable!
+        wrapper.querySelectorAll('table').forEach(table => {
+          let lastActName = '';
+          let lastActUrl = 'https://www.indiacode.nic.in/';
+
+          table.querySelectorAll('tbody tr').forEach(row => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length < 2) return;
+
+            const actCell = cells[0];
+            const sectionCell = cells[1];
+            const rawActText = (actCell.textContent || '').trim();
+            const actMeta = resolveActMeta(rawActText) || resolveActMeta(sectionCell.textContent || '');
+
+            if (actMeta) {
+              lastActName = actMeta.name;
+              lastActUrl = actMeta.url;
+            } else if (rawActText && !/^(same|ditto|"|-)$/i.test(rawActText)) {
+              lastActName = rawActText;
+              lastActUrl = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(rawActText)}`;
+            }
+
+            // Make Column 1 (Act) clickable if it has no <a> yet
+            if (!actCell.querySelector('a') && rawActText) {
+              const actQueryUrl = actMeta
+                ? actMeta.url
+                : `https://indiankanoon.org/search/?formInput=${encodeURIComponent(lastActName || rawActText)}`;
+              actCell.innerHTML = `<a href="${actQueryUrl}" target="_blank" rel="noopener noreferrer">${actCell.innerHTML.trim()} ↗</a>`;
+            }
+
+            // Make Column 2 (Section) clickable to the exact Section + Act on Indian Kanoon if it has no <a> yet
+            const rawSecText = (sectionCell.textContent || '').trim();
+            if (!sectionCell.querySelector('a') && rawSecText) {
+              const primarySec = rawSecText.match(/(?:Sections?\s+\d+[A-Za-z0-9()\s&–-]*|Order\s+[IVXLC0-9]+\s+Rules?\s+[0-9\s&–-]*)/i)?.[0] || rawSecText.slice(0, 45);
+              const searchUrl = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(`${primarySec} ${lastActName}`.trim())}`;
+              sectionCell.innerHTML = `<a href="${searchUrl}" target="_blank" rel="noopener noreferrer" title="Read ${primarySec} (${lastActName})">${sectionCell.innerHTML.trim()} ↗</a>`;
+            }
+
+            // If there is a 4th column (e.g. "IndiaCode Link") where the LLM wrote "Same" or plain text without an <a>, make it a real clickable link!
+            if (cells.length >= 4) {
+              const linkCell = cells[cells.length - 1];
+              const linkText = (linkCell.textContent || '').trim();
+              if (!linkCell.querySelector('a') && linkText) {
+                const cellMeta = resolveActMeta(linkText);
+                const targetUrl = cellMeta ? cellMeta.url : lastActUrl;
+                const displayLabel = /^(same|ditto)$/i.test(linkText)
+                  ? `📘 ${lastActName.split(' ')[0] || 'Bare'} Act ↗`
+                  : `📘 ${linkText} ↗`;
+                linkCell.innerHTML = `<a href="${targetUrl}" target="_blank" rel="noopener noreferrer">${displayLabel}</a>`;
+              }
+            }
+          });
+        });
+
+        // 3. Auto-link unlinked SCC / INSC citations and standalone "Section X of the Y Act" in paragraphs & list items
+        const textContainers = wrapper.querySelectorAll('p, li');
+        textContainers.forEach(el => {
+          if (el.querySelector('a')) return;
+          let html = el.innerHTML;
+          // Link SCC citations like (2021) 4 SCC 1 or (2020) 5 SCC 757
+          html = html.replace(
+            /(\(\d{4}\)\s+\d+\s+SCC\s+\d+)/g,
+            (m) => `<a href="https://indiankanoon.org/search/?formInput=${encodeURIComponent(m)}" target="_blank" rel="noopener noreferrer">${m} ↗</a>`
+          );
+          // Link "Section X of the <Act>" or "Section X NDPS Act / BSA / BNSS / BNS / IPC / CrPC / CPA / RERA"
+          html = html.replace(
+            /\b(Sections?\s+\d+[A-Za-z0-9()]*(?:\s*(?:&|and|to)\s*\d+[A-Za-z0-9()]*)?\s+(?:of\s+the\s+)?(?:NDPS\s+Act|Indian\s+Evidence\s+Act|IEA|Bharatiya\s+Sakshya\s+Adhiniyam|BSA|BNSS|BNS|CrPC|IPC|Consumer\s+Protection\s+Act|CPA|RERA\s+Act|Hindu\s+Succession\s+Act|PWDVA|NI\s+Act|Companies\s+Act)(?:,\s*\d{4})?)/gi,
+            (m) => `<a href="https://indiankanoon.org/search/?formInput=${encodeURIComponent(m)}" target="_blank" rel="noopener noreferrer">${m} ↗</a>`
+          );
+          if (html !== el.innerHTML) {
+            el.innerHTML = html;
+          }
+        });
+
+        return wrapper.innerHTML;
+      } catch {
+        return sanitizedHtml;
+      }
+    }
+
     function renderFormattedMarkdown(mdText) {
       if (!mdText) return { __html: '' };
       if (window.marked && typeof window.marked.parse === 'function') {
-        return { __html: sanitizeHtml(window.marked.parse(mdText, { breaks: true, gfm: true })) };
+        const clean = sanitizeHtml(window.marked.parse(mdText, { breaks: true, gfm: true }));
+        return { __html: enrichLegalReferencesHtml(clean) };
       }
-      return { __html: sanitizeHtml(mdText).replace(/\n/g, '<br/>') };
+      return { __html: enrichLegalReferencesHtml(sanitizeHtml(mdText).replace(/\n/g, '<br/>')) };
     }
 
     /**

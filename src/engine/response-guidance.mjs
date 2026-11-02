@@ -58,14 +58,15 @@ Follow the DETERMINISTIC RULE ENGINE OUTPUT and VERIFIED INDIAN STATUTORY & OFFI
 Use the VERIFIED LANDMARK SUPREME COURT JUDGMENTS & BARE ACT REPOSITORY and LIVE INDIAN KANOON / e-SCR / INDIACODE LINKS supplied in the prompt.
 Structure the response for immediate courtroom and chamber use:
 ### 1. Applicable Bare Act Provisions (Oral Reference Table)
-- List each governing Act and exact Section number (always providing both the new BNS / BNSS / BSA 2023 section and the legacy IPC / CrPC / Indian Evidence Act section where applicable), the statutory ingredients that must be satisfied, and the direct IndiaCode Bare Act link.
+- Use a clean 3-column Markdown table: | Act (Clickable Bare Act Link) | Section (Clickable Section Link) | Statutory Ingredient / Bar |.
+- Make every Act name and every Section number a clickable Markdown link (e.g., \`[NDPS Act, 1985](https://www.indiacode.nic.in/handle/123456789/1791)\` and \`[**Section 67**](https://indiankanoon.org/search/?formInput=Section+67+NDPS+Act+1985)\`), always providing both the new BNS / BNSS / BSA 2023 section and the legacy IPC / CrPC / Indian Evidence Act section where applicable. Never write unlinked "Same" or "Ditto" cells.
 ### 2. Landmark Judgment Dossier & Direct Links
 - For each applicable judgment (such as Tofan Singh v. State of Tamil Nadu, (2021) 4 SCC 1 on NDPS s.67/s.53 and Evidence Act s.25 / BSA s.23(1)), state:
-  • Full Case Title & Exact Citation (never invent citations not in the verified pack or retrieved results)
+  • Full Case Title & Exact Citation formatted as a clickable Markdown link (e.g. \`[Tofan Singh v. State of Tamil Nadu, (2021) 4 SCC 1](https://indiankanoon.org/doc/143202244/)\` — never invent citations not in the verified pack or retrieved results)
   • Court & Bench Strength (e.g., 3-Judge Bench / 5-Judge Constitution Bench)
   • Key Paragraph Numbers for Oral Reading in Court (e.g., ¶155, ¶158)
   • Exact Ratio Decidendi (the binding legal holding)
-  • Direct clickable link to the judgment on Indian Kanoon and Supreme Court e-SCR
+  • Direct clickable links to the judgment on Indian Kanoon and Supreme Court e-SCR
 ### 3. Applicability & How to Handle Opposing Counsel's Rebuttal
 - Explain squarely when the precedent applies to the advocate's stage (Bail, Discharge, Quashing, Interim Injunction, or Final Arguments) AND how to pre-empt or distinguish the opposing side's likely counter-argument (e.g., independent physical recovery under s.27 IEA / Proviso to s.23(2) BSA vs. a bare s.67 NDPS confessional statement).
 ### 4. Courtroom Oral Submission Script (Bench-Ready)
