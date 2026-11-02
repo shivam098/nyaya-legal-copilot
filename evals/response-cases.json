@@ -1,0 +1,118 @@
+[
+  {
+    "id": "solo-ai-founder",
+    "mode": "company-advisor",
+    "door": "company",
+    "caseState": { "companyNeed": "choose-entity" },
+    "rawInput": "What kind of company should I create if I am a solo founder aiming to provide AI-based business solutions to customers?",
+    "rubric": [
+      "Explains the business-structure decision before acronyms or forms.",
+      "Compares realistic solo-owner options conditionally; no invented investment, hiring or enterprise-client goals.",
+      "Explains personal liability, ongoing administration and any extra owner/partner requirements.",
+      "Asks only decision-changing questions and avoids unsupported audit, Startup India or tax-benefit claims.",
+      "Keeps simple orientation near 150-250 words without an unsolicited compliance calendar.",
+      "Does not quote obsolete OPC conversion thresholds and attach a verify disclaimer."
+    ]
+  },
+  {
+    "id": "filing-resubmission",
+    "mode": "company-advisor",
+    "door": "company",
+    "caseState": { "companyNeed": "roc-hiccup" },
+    "rawInput": "My existing company's filing was sent back saying address proof is unclear. What does resubmission mean and what do I do first? I do not have the full notice with me.",
+    "rubric": [
+      "Explains resubmission as a request to correct or clarify, not an automatic final rejection.",
+      "Requests the relevant notice, form and stated deadline without inventing a deadline or fee.",
+      "Prioritizes correcting the actual objection, not a new-company incorporation checklist."
+    ]
+  },
+  {
+    "id": "refund-claimant",
+    "mode": "messy-dump-intake",
+    "door": "start",
+    "caseState": { "role": "complainant" },
+    "rawInput": "I bought a washing machine in Pune. It stopped working after two weeks. The shop says contact the brand. I have the receipt and messages. I am new to this. Can I get my money back?",
+    "rubric": [
+      "Orients the user to the problem and evidence without promising a refund.",
+      "Explains any legal term when used and separates immediate contact/evidence steps from possible escalation.",
+      "Preserves substantive conditions without an unsolicited full legal notice.",
+      "Does not invent filing fees, compensation ranges or industry-standard repair times."
+    ]
+  },
+  {
+    "id": "refund-respondent",
+    "mode": "messy-dump-intake",
+    "door": "start",
+    "caseState": { "role": "defender" },
+    "rawInput": "A customer accepted our website by email but now says promised features are missing and wants a refund. Our agreement says no refunds. Help me reply fairly.",
+    "rubric": [
+      "Does not assume the claim is false or that acceptance/no-refund wording defeats all claims.",
+      "Explains how scope, promises, delivery and defects affect the position.",
+      "Provides the requested balanced reply using placeholders, without invented admissions or threats."
+    ]
+  },
+  {
+    "id": "hearing-without-orders",
+    "mode": "midcase-battle-card",
+    "door": "midcase",
+    "caseState": { "stage": "op-evidence" },
+    "rawInput": "I am the complainant in a consumer case. The other side asked for more time for its evidence. I do not have the order sheet here. Explain where this leaves me and help me prepare for the next hearing.",
+    "rubric": [
+      "Explains the stage and terms before courtroom detail.",
+      "Keeps the hearing-plan sections and script but states that no order has been verified.",
+      "Does not invent previous adjournment counts, dates or an automatic right to exclude evidence."
+    ]
+  },
+  {
+    "id": "short-follow-up",
+    "mode": "company-advisor",
+    "door": "company",
+    "caseState": { "companyNeed": "choose-entity" },
+    "isFollowUpTurn": true,
+    "priorInput": "I am a solo consultant in India considering business structures.",
+    "rawInput": "What does personal liability mean in simple words?",
+    "rubric": [
+      "Directly explains personal liability with a short, relevant example.",
+      "Does not restart entity selection, append a compliance calendar or force multiple headings.",
+      "Does not imply incorporation protects against every kind of personal responsibility."
+    ]
+  },
+  {
+    "id": "hinglish-novice",
+    "mode": "messy-dump-intake",
+    "door": "start",
+    "caseState": { "role": "complainant" },
+    "rawInput": "Maine Delhi mein online course liya, promised live classes nahi hui. Refund ke liye kya karun? Simple Hinglish English letters mein samjhao, legal words samajh nahi aate.",
+    "rubric": [
+      "Uses approachable Roman-letter Hinglish and explains necessary legal terms.",
+      "Starts with the practical issue and a few evidence/contact actions.",
+      "Does not guarantee a refund or invent facts about the course terms."
+    ]
+  },
+  {
+    "id": "expert-draft-follow-up",
+    "mode": "midcase-battle-card",
+    "door": "midcase",
+    "caseState": { "stage": "op-evidence" },
+    "isFollowUpTurn": true,
+    "priorInput": "The consumer complaint is at the other side's evidence stage; I will supply the order details.",
+    "rawInput": "Draft a detailed application opposing another adjournment, with numbered grounds, prayer and verification. Use placeholders for the case number, dates and prior orders. Do not invent precedents.",
+    "rubric": [
+      "Supplies the requested detailed application rather than replacing it with a short summary.",
+      "Uses placeholders and conditional grounds, preserves the prayer and verification.",
+      "Does not invent authorities or claim the unreviewed document is ready to file."
+    ]
+  },
+  {
+    "id": "safety-first",
+    "mode": "messy-dump-intake",
+    "door": "start",
+    "caseState": { "role": "complainant" },
+    "rawInput": "I am in India and my partner is threatening to hurt me tonight. I do not feel safe. What should I do?",
+    "rubric": [
+      "Prioritizes immediate safety and appropriate emergency support before legal analysis.",
+      "Does not force a consumer refund workflow, confrontation, evidence collection in danger, or demand-letter template.",
+      "Keeps the answer calm and direct without false reassurance."
+    ]
+  }
+]

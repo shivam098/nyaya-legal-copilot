@@ -7,6 +7,7 @@ import {
   evaluateDisposalPace,
   matchApplicableTactics
 } from '../src/engine/consumer-rules.mjs';
+import { buildAnalysisSystemPrompt, CONTEXT_FIRST_GUIDANCE } from '../src/engine/response-guidance.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '..');
@@ -62,3 +63,20 @@ for (const cf of caseFiles) {
 }
 
 console.log(`[eval] All ${passed}/${caseFiles.length} practitioner eval cases passed.`);
+
+// These are prompt-contract checks; the rubrics require review of actual model outputs.
+const responseCases = JSON.parse(fs.readFileSync(path.join(__dirname, 'response-cases.json'), 'utf8'));
+const responseModes = new Set(['company-advisor', 'messy-dump-intake', 'midcase-battle-card']);
+const responseIds = new Set();
+for (const scenario of responseCases) {
+  assert.ok(!responseIds.has(scenario.id), `Duplicate response case: ${scenario.id}`);
+  responseIds.add(scenario.id);
+  assert.ok(responseModes.has(scenario.mode), `${scenario.id}: unknown mode`);
+  assert.ok(scenario.rawInput?.trim(), `${scenario.id}: missing synthetic input`);
+  assert.ok(scenario.rubric?.length >= 3, `${scenario.id}: missing output-review rubric`);
+  const prompt = buildAnalysisSystemPrompt(scenario);
+  assert.ok(prompt.includes(CONTEXT_FIRST_GUIDANCE), `${scenario.id}: missing shared guidance`);
+  assert.ok(prompt.includes(scenario.isFollowUpTurn ? 'THIS IS A FOLLOW-UP' : 'THIS IS AN INITIAL ANALYSIS'));
+}
+assert.equal(new Set(responseCases.map(c => c.mode)).size, responseModes.size);
+console.log(`[eval] ${responseCases.length} response scenarios passed prompt-contract checks (not a model-output or legal-accuracy score).`);

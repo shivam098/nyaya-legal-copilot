@@ -117,13 +117,122 @@
       color: inherit;
       padding: 0;
     }
+    input, textarea, select { min-width: 0; max-width: 100%; }
+    .markdown-body { min-width: 0; overflow-wrap: anywhere; }
+    .markdown-body table { display: block; max-width: 100%; overflow-x: auto; }
+    button:focus-visible, summary:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+      outline: 2px solid #92400E;
+      outline-offset: 3px;
+    }
+    .file-upload { display: inline-flex; align-items: center; justify-content: center; }
+    @media (max-width: 639px) {
+      input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea, select {
+        font-size: 16px !important;
+      }
+      button, summary, .file-upload { min-height: 44px; }
+      button { min-width: 44px; }
+      input[type="checkbox"] { width: 18px; height: 18px; flex-shrink: 0; }
+    }
   </style>
 </head>
 <body class="min-h-screen antialiased selection:bg-amber-100">
   <div id="root"></div>
 
-  <script type="text/babel">
-    const { useState, useEffect } = React;
+  <script src="/vendor/sanscript.js"></script>
+  <script type="text/babel" data-type="module">
+    import { createVoiceInput, appendTranscript, voiceAvailability, VOICE_LANGUAGES, INITIAL_VOICE_STATE } from '/voice-input.mjs';
+    const { useState, useEffect, useRef } = React;
+
+    function useVoiceInput() {
+      const [state, setState] = useState(INITIAL_VOICE_STATE);
+      const [target, setTarget] = useState(null);
+      const controller = useRef(null);
+      const textSetter = useRef(null);
+      const speechConsent = useRef(false);
+
+      useEffect(() => {
+        const input = createVoiceInput({
+          onState: setState,
+          onText: text => textSetter.current?.(previous => appendTranscript(previous, text))
+        });
+        controller.current = input;
+        const stopWhenHidden = () => {
+          if (document.hidden) input.cancel('Voice input stopped because the page was hidden.');
+        };
+        const stopOnPageLeave = () => input.cancel('Voice input stopped because the page was left.');
+        document.addEventListener('visibilitychange', stopWhenHidden);
+        window.addEventListener('pagehide', stopOnPageLeave);
+        return () => {
+          input.dispose();
+          document.removeEventListener('visibilitychange', stopWhenHidden);
+          window.removeEventListener('pagehide', stopOnPageLeave);
+        };
+      }, []);
+
+      return {
+        state,
+        target,
+        busy: state.phase !== 'idle',
+        isActive: () => Boolean(controller.current?.active),
+        start(id, setter, language) {
+          if (controller.current?.active) return;
+          if (!speechConsent.current) {
+            const agreed = window.confirm(
+              "Use voice input?\n\nYour browser's speech service may send audio off your device. Nyaya does not record or store audio. Hindi and Hinglish are shown in English letters; recognition accuracy varies. You can edit the text before submitting.\n\nAllow browser speech processing?"
+            );
+            if (!agreed) return;
+            speechConsent.current = true;
+          }
+          textSetter.current = setter;
+          setTarget(id);
+          controller.current?.start({ language, consent: speechConsent.current });
+        },
+        stop: () => controller.current?.stop(),
+        reset() {
+          controller.current?.cancel();
+          textSetter.current = null;
+          setTarget(null);
+          setState(INITIAL_VOICE_STATE);
+        }
+      };
+    }
+
+    function VoiceInput({ inputId, setText, voice, disabled }) {
+      const [language, setLanguage] = useState('en-IN');
+      const unavailable = voiceAvailability();
+      const selected = voice.target === inputId;
+      const active = selected && voice.busy;
+      const state = selected ? voice.state : INITIAL_VOICE_STATE;
+      const statusId = `${inputId}-voice-status`;
+      return (
+        <div class="rounded-xl border border-zinc-200 bg-zinc-50 p-3 space-y-3">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div class="flex-1 text-sm font-semibold text-zinc-800">Explain by voice</div>
+            <label class="min-w-0 text-xs text-zinc-600 flex flex-col sm:flex-row sm:items-center gap-2">
+              Speech language
+              <select value={language} onChange={event => setLanguage(event.target.value)}
+                disabled={voice.busy || disabled || Boolean(unavailable)}
+                class="min-h-[44px] w-full sm:w-auto rounded-lg border border-zinc-300 bg-white px-2 text-sm disabled:opacity-50">
+                {VOICE_LANGUAGES.map(item => <option key={item.code} value={item.code}>{item.label}</option>)}
+              </select>
+            </label>
+            <button type="button" aria-controls={inputId} aria-describedby={unavailable || state.message ? statusId : undefined} aria-pressed={active}
+              onClick={() => active ? voice.stop() : voice.start(inputId, setText, language)}
+              disabled={active ? state.phase === 'stopping' : disabled || voice.busy || Boolean(unavailable)}
+              class={`min-h-[44px] px-4 py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50 ${active ? 'bg-red-700 text-white hover:bg-red-800' : 'bg-zinc-900 text-white hover:bg-zinc-800'}`}>
+              {state.phase === 'stopping' ? 'Finishing transcription...' : active ? 'Stop voice input' : 'Start voice input'}
+            </button>
+          </div>
+          {(unavailable || state.message) && (
+            <p id={statusId} role="status" aria-live="polite" class={`text-xs leading-relaxed ${active ? 'text-red-800 font-medium' : 'text-zinc-600'}`}>
+              {unavailable || state.message}
+            </p>
+          )}
+          {state.error && <p role="alert" class="text-xs text-red-800 font-medium">{state.error} Existing text has not been removed.</p>}
+          {state.interim && <p class="text-sm text-zinc-600 break-words"><span class="font-medium">Live transcript (English letters, not yet confirmed): </span>{state.interim}</p>}
+        </div>
+      );
+    }
 
     function renderFormattedMarkdown(mdText) {
       if (!mdText) return { __html: '' };
@@ -196,10 +305,77 @@
     const DEMO_STORY_TEXT = '[12/08/2026, 10:14 AM] Client: The website looks great, approved! Please push it live.\n[14/08/2026, 06:30 PM] Us: Live and deployed as agreed. Invoice #104 settled.\n[02/10/2026, 09:15 AM] Client: Give me 100% refund today or I am filing a Consumer Court case against you!';
     const DEMO_MIDCASE_NOTES = 'I have already filed my Complainant Evidence Affidavit. Opposite Party was directed to file OP Evidence 2 hearings ago, still has not filed it, and keeps getting adjournments.';
 
+    const DOOR_DEMO_CATALOG = {
+      start: {
+        label: '1. New Dispute',
+        badge: 'Fast relief without court headache',
+        whenToUse: 'A product broke, a refund was denied, a bank/UPI deduction happened, or someone is making an unfair claim.',
+        sampleInput: 'I bought an Apple Watch. Now the speaker is not working. There is slight physical damage on the back and the service centre verbally refused repair saying the scratch caused it, which I am sure is not true. What should I do?',
+        sampleOutput: `### What Your Situation Means
+A verbal refusal at a local service counter is **not the final word**, and you do not need to rush into a court case. When a watch is under warranty, the service centre should record a proper inspection rather than brushing you off because of a minor cosmetic mark on the back.
+
+### Your 3 Easiest Next Steps (Do This First)
+1. **Ask for a written Job Sheet / Inspection Note:** Ask the service centre to give you in writing that the speaker is not working and whether they ran internal diagnostics or refused solely by looking at the back casing.
+2. **Escalate to Apple Customer Relations (or try a second Authorised Centre):** Email/call official brand support with your invoice and clear close-up photos of the watch back. Brand escalation teams often approve repairs that a walk-in counter rejected.
+3. **File a 5-minute complaint on the National Consumer Helpline (NCH):** If the brand still refuses, log a free grievance at **consumerhelpline.gov.in** (or call **1915**). NCH sends your complaint directly to the company's official grievance desk, which often resolves warranty disputes without any court filing.
+
+### Copy-Ready Email to Service Centre & Brand Support
+> **Subject:** Request for Written Diagnostic Job Sheet & Warranty Repair — Apple Watch [Serial No.]
+>
+> I visited [Service Centre Name] on [Date] regarding a non-working speaker on my Apple Watch purchased on [Invoice Date]. Repair was verbally declined citing a minor surface mark on the back cover without providing a written diagnostic report showing how that mark affected the internal speaker module. Please share the written service job sheet/inspection report and escalate this for warranty repair review.`
+      },
+      midcase: {
+        label: '2. Ongoing Case',
+        badge: 'Know what to say at your next hearing',
+        whenToUse: 'Your court/consumer case has already started and you want to prepare for the next hearing date or stop delays.',
+        sampleInput: DEMO_MIDCASE_NOTES,
+        sampleOutput: `### What Your Situation Means
+You have already completed your side of the evidence. The case is stalled only because the **Opposite Party (the other side)** has repeatedly postponed filing its **Evidence Affidavit (sworn statement of facts)**. You can politely ask the bench to stop giving routine extensions.
+
+### 1. Where the Case Truly Stands (Verified from Court Order Sheets)
+Based on your notes (attach your daily order sheets to verify exact dates), your evidence is on record and the other side has already taken 2 postponements at the evidence stage.
+
+### 2. Immediate Courtroom Move (Next Hearing)
+Oppose another routine adjournment and request that the other side's right to file evidence be closed — or at minimum marked **"Last and Final Opportunity with costs"** — with a shorter next hearing date.
+
+### 3. Exact Spoken Script (Word-for-Word for the Bench)
+> *"Hon'ble President and Members, my evidence is already on record. The Opposite Party has taken two adjournments for evidence and still filed nothing today. I humbly request that their right to lead evidence be closed, or a short final date of 10–14 days be fixed."*`
+      },
+      company: {
+        label: '3. Business & Company',
+        badge: 'Plain-English startup & filing help',
+        whenToUse: 'You are choosing between Sole Proprietorship, OPC, LLP, or Pvt Ltd — or fixing a rejected/missed company filing.',
+        sampleInput: 'What kind of company should I create if I am a solo founder aiming to provide AI-based business solutions to customers?',
+        sampleOutput: `### What This Decision Actually Means
+Selling AI software or services does **not** automatically mean you must register a complex company on Day 1. Your choice comes down to **personal liability** (whether your personal savings are separate from business risks), **bringing in investors/co-founders**, and **yearly paperwork**.
+
+### Your 3 Realistic Options as a Solo Founder
+- **Sole Proprietorship (Start in your own name):** Easiest and lowest cost to test your first customers. *Trade-off:* No legal separation between you and the business.
+- **One-Person Company (OPC):** Gives you limited liability as a single owner without needing a real co-founder, though it still requires a nominee and annual company filings.
+- **Private Limited Company (Pvt Ltd):** Best if you plan to raise angel/VC funding or bring in co-founders soon, since it requires at least **2 directors and 2 shareholders**.
+
+### 2 Questions That Decide Your Best Fit
+1. Are you raising outside investment or adding a co-founder in the next 6–12 months?
+2. Do your initial business clients require a registered company (OPC/Pvt Ltd) to sign contracts, or can you invoice as a proprietorship first?`
+      }
+    };
+
     function App() {
+      const voice = useVoiceInput();
       const [door, setDoor] = useState(null); // null | 'start' | 'midcase' | 'company'
+      const [showDoorPicker, setShowDoorPicker] = useState(false);
+      const [showSettings, setShowSettings] = useState(false);
+      const [showMenu, setShowMenu] = useState(false);
+      const [showGuide, setShowGuide] = useState(false);
+      const [guideTab, setGuideTab] = useState('start');
+      const doorPickerHeading = useRef(null);
+      const getStartedButton = useRef(null);
       const [showBilling, setShowBilling] = useState(false);
       const [showHistory, setShowHistory] = useState(false);
+
+      useEffect(() => {
+        if (showDoorPicker) doorPickerHeading.current?.focus();
+      }, [showDoorPicker]);
 
       // Per-User Identity & SQLite Session History state
       const [userId, setUserId] = useState(() => {
@@ -218,13 +394,17 @@
       // Server config & billing state
       const [models, setModels] = useState([
         { id: 'auto', name: 'Auto Smart-Router (Haiku for Intake → Sonnet for Strategy/Vision)' },
-        { id: 'claude-sonnet-4.6', name: 'Claude Sonnet 4.6 (Balanced Practitioner + Vision)' },
+        { id: 'claude-opus-5.5', name: 'Claude Opus 5.5 (Frontier Senior Counsel + Vision)' },
+        { id: 'claude-sonnet-5.5', name: 'Claude Sonnet 5.5 (Latest Practitioner Core + Vision)' },
+        { id: 'gemini-4-argon', name: 'Gemini 4 Argon (Fast Frontier Reasoning)' },
         { id: 'claude-opus-4.6', name: 'Claude Opus 4.6 (Deep Senior Counsel + Vision)' },
-        { id: 'gemini-4-argon', name: 'Gemini 4 Argon (Copilot Current Model)' },
-        { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol (High-Reasoning)' },
-        { id: 'claude-haiku-4.5', name: 'Claude Haiku 4.5 (Fast Text Intake)' }
+        { id: 'claude-sonnet-4.6', name: 'Claude Sonnet 4.6 (Balanced Practitioner + Vision)' },
+        { id: 'claude-haiku-5.5', name: 'Claude Haiku 5.5 (Fast Text Intake)' },
+        { id: 'claude-haiku-4.5', name: 'Claude Haiku 4.5 (Fast Text Intake)' },
+        { id: 'gpt-4.1', name: 'GPT-4.1 (Balanced Reasoning)' }
       ]);
       const [selectedModel, setSelectedModel] = useState('auto');
+      const [escalationModel, setEscalationModel] = useState('claude-opus-5.5');
       const [billing, setBilling] = useState({
         totals: { calls: 0, totalTokens: 0, estimatedUsd: 0, estimatedInr: 0 },
         byModel: {},
@@ -292,6 +472,7 @@
       };
 
       const switchUserIdentity = async (nextUserId) => {
+        voice.reset();
         localStorage.setItem('nyaya_user_id', nextUserId);
         setUserId(nextUserId);
         setActiveSession(null);
@@ -305,6 +486,13 @@
       }, [userId]);
 
       const startNewBlankSession = (targetDoor = null) => {
+        voice.reset();
+        setShowDoorPicker(false);
+        setShowSettings(false);
+        setShowMenu(false);
+        setShowGuide(false);
+        setShowHistory(false);
+        setShowBilling(false);
         setActiveSession(null);
         setCaseTitle('');
         setResult(null);
@@ -320,7 +508,44 @@
         setDoor(targetDoor);
       };
 
+      const loadInteractiveDemo = (targetDoor) => {
+        const sample = DOOR_DEMO_CATALOG[targetDoor] || DOOR_DEMO_CATALOG.start;
+        startNewBlankSession(targetDoor);
+        if (targetDoor === 'start') {
+          setRole('complainant');
+          setStoryText(sample.sampleInput);
+        } else if (targetDoor === 'midcase') {
+          setStage('op-evidence');
+          setMidcaseNotes(sample.sampleInput);
+        } else if (targetDoor === 'company') {
+          setCompanyNeed('choose-entity');
+          setCompanyNotes(sample.sampleInput);
+        }
+        setResult({
+          model: 'sample-preview',
+          adviceMarkdown: sample.sampleOutput,
+          billingEntry: { totalTokens: 0, estimatedInr: 0, latencyMs: 0 },
+          engineResult: {}
+        });
+      };
+
+      const goHome = () => {
+        voice.reset();
+        setDoor(null);
+        setShowDoorPicker(false);
+        setShowSettings(false);
+        setShowMenu(false);
+        setShowGuide(false);
+        setShowHistory(false);
+        setShowBilling(false);
+        setResult(null);
+        setError(null);
+        setThinkingSteps([]);
+        setStreamingMarkdown('');
+      };
+
       const resumeSession = async (sessionId) => {
+        voice.reset();
         setError(null);
         try {
           const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
@@ -329,9 +554,12 @@
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Could not load session');
           const s = data.session;
+          voice.reset();
           setActiveSession(s);
           setCaseTitle(s.title || '');
           setDoor(s.door || 'midcase');
+          setShowDoorPicker(false);
+          setShowSettings(false);
           setShowHistory(false);
           setThinkingSteps([]);
           setStreamingMarkdown('');
@@ -703,16 +931,20 @@
        * Live SSE Streaming Analysis with Real-Time Thinking & Progress Stepper
        */
       const runAnalysis = async (modeOverride, customFollowUp = null, overrideModel = null) => {
+        if (voice.isActive()) {
+          setError('Stop voice input and review the transcription before submitting.');
+          return;
+        }
         setLoading(true);
         setError(null);
         setStreamingMarkdown('');
         if (overrideModel) setSelectedModel(overrideModel);
         setThinkingSteps([
-          { stepId: 'session', label: 'Session & Tenant Workspace', status: 'pending', detail: 'Waiting...', logs: [], liveText: '', expanded: false },
-          { stepId: 'rules', label: 'Deterministic CPA 2019 Statutory Engine', status: 'pending', detail: 'Waiting...', logs: [], liveText: '', expanded: true },
-          { stepId: 'clerk', label: 'Stage A: Junior Clerk Folder Digest (Haiku 4.5 / Flash)', status: 'pending', detail: 'Waiting...', logs: [], liveText: '', expanded: true },
-          { stepId: 'evidence', label: 'Evidence & Vision Payload Builder', status: 'pending', detail: 'Waiting...', logs: [], liveText: '', expanded: false },
-          { stepId: 'llm', label: 'Stage B: Senior Counsel Reasoning (Sonnet / Opus 4.6)', status: 'pending', detail: 'Waiting...', logs: [], liveText: '', expanded: true }
+          { stepId: 'session', label: 'Remembering your situation', status: 'pending', detail: 'Waiting...', logs: [], liveText: '', expanded: false },
+          { stepId: 'rules', label: 'Checking available dates and rules', status: 'pending', detail: 'Waiting...', logs: [], liveText: '', expanded: false },
+          { stepId: 'clerk', label: 'Reading your documents', status: 'pending', detail: 'Waiting...', logs: [], liveText: '', expanded: false },
+          { stepId: 'evidence', label: 'Finding relevant details', status: 'pending', detail: 'Waiting...', logs: [], liveText: '', expanded: false },
+          { stepId: 'llm', label: 'Preparing your answer and next steps', status: 'pending', detail: 'Waiting...', logs: [], liveText: '', expanded: false }
         ]);
 
         try {
@@ -723,7 +955,7 @@
           if (door === 'start') {
             mode = 'messy-dump-intake';
             caseState = { role };
-            baseNotes = customFollowUp || `User Role: ${role === 'complainant' ? 'Complainant (seeking refund/relief)' : 'Defender/Business (defending against unfair refund demand or claim)'}\n\nRaw Story / WhatsApp Chat:\n${storyText}`;
+            baseNotes = customFollowUp || `User Role: ${role === 'complainant' ? 'Complainant (seeking refund/relief)' : 'Respondent (responding to a refund demand or claim; merits not yet assessed)'}\n\nRaw Story / WhatsApp Chat:\n${storyText}`;
           } else if (door === 'midcase') {
             mode = 'midcase-battle-card';
             caseState = {
@@ -789,6 +1021,7 @@
           const decoder = new TextDecoder();
           let buffer = '';
           let accumulatedMd = '';
+          let receivedComplete = false;
 
           while (true) {
             const { value, done } = await reader.read();
@@ -817,7 +1050,7 @@
                           detail: evt.detail,
                           logs: evt.logs || s.logs || [],
                           liveText: evt.liveText !== undefined ? evt.liveText : (s.liveText || ''),
-                          expanded: evt.status === 'running' ? true : s.expanded
+                          expanded: s.expanded
                         }
                       : s
                   )
@@ -836,6 +1069,7 @@
                 accumulatedMd += evt.delta;
                 setStreamingMarkdown(accumulatedMd);
               } else if (evt.type === 'complete') {
+                receivedComplete = true;
                 setResult(evt);
                 setStreamingMarkdown('');
                 setSyncedDocNames(attachedTextDocs.map(d => d.name));
@@ -853,6 +1087,9 @@
             }
           }
 
+          if (!receivedComplete) {
+            throw new Error('The connection ended before the answer was confirmed. Do not use any partial draft; retry or check this saved case before continuing.');
+          }
           setFollowUpText('');
           await refreshConfig();
         } catch (err) {
@@ -912,16 +1149,17 @@
 
       const renderCaseTitleBar = () => (
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white border border-zinc-200/90 rounded-xl px-3.5 py-2.5 shadow-sm">
-          <div class="flex items-center gap-2 flex-1">
+          <div class="min-w-0 flex flex-col sm:flex-row sm:items-center gap-2 flex-1">
             <span class="text-xs font-semibold px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-700">
               {activeSession ? `Session · ${activeSession.turns?.length || 1} turn(s)` : 'New Session'}
             </span>
             <input
               type="text"
+              aria-label="Case name"
               value={caseTitle}
               onChange={(e) => setCaseTitle(e.target.value)}
-              placeholder="Name this case / session (auto-named & saved in SQLite on run)..."
-              class="flex-1 text-xs font-medium text-zinc-900 placeholder-zinc-400 focus:outline-none bg-transparent"
+              placeholder="Optional name to help you find this conversation later"
+              class="w-full min-w-0 flex-1 text-sm py-2 font-medium text-zinc-900 placeholder-zinc-400 focus:outline-none bg-transparent"
             />
           </div>
           {activeSession && (
@@ -968,8 +1206,8 @@
             {attachedTextDocs.length > 0 && (
               <div class="flex flex-wrap items-center gap-1.5 pt-1">
                 {attachedTextDocs.map((doc, idx) => (
-                  <span key={idx} class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-zinc-100 border border-zinc-200 text-zinc-800">
-                    <span>📄 {doc.name}</span>
+                  <span key={idx} class="max-w-full inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-zinc-100 border border-zinc-200 text-zinc-800">
+                    <span class="min-w-0 break-all">📄 {doc.name}</span>
                     <span class="text-[10px] text-zinc-400">({Math.ceil((doc.size || doc.content.length) / 1024)}KB)</span>
                     <button onClick={() => removeTextDoc(idx)} class="text-zinc-400 hover:text-zinc-900 ml-1">✕</button>
                   </span>
@@ -990,12 +1228,12 @@
                 </div>
                 <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {visibleImages.map((img, idx) => (
-                    <div key={idx} class="relative group border border-zinc-200 rounded-xl p-1.5 bg-zinc-50 flex items-center gap-2 pr-6">
+                    <div key={idx} class="min-w-0 relative group border border-zinc-200 rounded-xl p-1.5 bg-zinc-50 flex items-center gap-2 pr-12">
                       <img src={img.dataUrl} alt={img.name} loading="lazy" class="w-10 h-10 object-cover rounded-lg border border-zinc-200 flex-shrink-0" />
                       <div class="text-[11px] text-zinc-700 truncate">{img.name}</div>
                       <button
                         onClick={() => removeImage(idx)}
-                        class="absolute right-1.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-zinc-200 hover:bg-zinc-900 hover:text-white text-zinc-600 text-[10px] flex items-center justify-center transition"
+                        class="absolute right-1 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-zinc-200 hover:bg-zinc-900 hover:text-white text-zinc-600 text-xs flex items-center justify-center transition"
                         title="Remove image"
                       >
                         ✕
@@ -1029,9 +1267,12 @@
 
       const renderFolderScannerBar = () => (
         <div class="pt-2 border-t border-zinc-100 space-y-2">
-          <div class="flex flex-col sm:flex-row gap-2">
+          <details>
+          <summary class="text-xs font-medium text-zinc-500 cursor-pointer py-3">Import a folder (optional)</summary>
+          <div class="flex flex-col sm:flex-row gap-2 pb-2">
             <input
               type="text"
+              aria-label="Local folder path"
               value={folderPathInput}
               onChange={(e) => setFolderPathInput(e.target.value)}
               placeholder="📂 Paste a local folder path (e.g. C:\Users\...\MyCaseFolder) to ingest all files & screenshots..."
@@ -1045,7 +1286,7 @@
             >
               {scanningFolder ? 'Scanning Folder...' : '📂 Scan Folder Path'}
             </button>
-            <label class="px-3.5 py-2 rounded-xl border border-zinc-200 bg-white hover:border-zinc-400 text-zinc-700 text-xs font-medium cursor-pointer transition whitespace-nowrap text-center">
+            <label class="file-upload px-3.5 py-2 rounded-xl border border-zinc-200 bg-white hover:border-zinc-400 text-zinc-700 text-xs font-medium cursor-pointer transition whitespace-nowrap text-center">
               📁 Pick Folder
               <input
                 type="file"
@@ -1057,9 +1298,10 @@
               />
             </label>
           </div>
+          </details>
 
           {folderScanSummary && (
-            <div class="text-xs px-3.5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-1">
+            <div class="text-xs break-words px-3.5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-1">
               <div class="flex items-center justify-between">
                 <span>
                   ✓ Loaded <strong>{folderScanSummary.totalFilesInFolder || folderScanSummary.textFilesCount} total file(s)</strong> ({folderScanSummary.textFilesCount} prioritized text docs, {folderScanSummary.imagesCount} screenshot(s)) from <code class="bg-emerald-100/80 px-1 rounded">{folderScanSummary.folderPath}</code>
@@ -1097,7 +1339,7 @@
                   <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
                 )}
                 <span class="text-xs font-semibold uppercase tracking-wider text-zinc-700">
-                  {loading ? 'Nyaya Reasoning & Progress Pipeline (Click any step to inspect)' : 'Reasoning Pipeline Completed (Click any step to inspect)'}
+                  {loading ? 'Preparing your guidance — details available below' : error ? 'Guidance interrupted — see the message below' : 'Answer processing — details available below'}
                 </span>
               </div>
               <span class="text-[11px] text-zinc-400">
@@ -1156,7 +1398,7 @@
                         {step.liveText && (
                           <div class="space-y-1">
                             <div class="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-                              Live Extracted Case Digest / Reasoning Stream:
+                              Document summary (check against the originals):
                             </div>
                             <div
                               class="markdown-body max-h-60 overflow-y-auto p-3 rounded-lg bg-zinc-50 border border-zinc-200/80 text-xs"
@@ -1177,75 +1419,216 @@
       return (
         <div class="min-h-screen flex flex-col">
           {/* Minimal Top Bar */}
-          <header class="w-full max-w-3xl mx-auto px-6 pt-7 pb-4 flex flex-wrap items-center justify-between gap-3">
+          <header class="w-full max-w-3xl mx-auto px-4 sm:px-6 pt-4 sm:pt-7 pb-4 flex flex-wrap items-center justify-between gap-2">
             <button
-              onClick={() => { setDoor(null); setResult(null); setError(null); setThinkingSteps([]); }}
+              onClick={goHome}
+              aria-label="Nyaya home"
               class="flex items-center gap-2.5 text-left group"
             >
               <div class="w-7 h-7 rounded-lg bg-zinc-900 text-white flex items-center justify-center font-semibold text-sm">
                 N
               </div>
               <span class="font-semibold tracking-tight text-zinc-900">Nyaya</span>
-              <span class="text-xs text-zinc-400">· Indian Legal Co-Pilot</span>
+              <span class="hidden sm:inline text-xs text-zinc-400">· Indian Legal Co-Pilot</span>
             </button>
 
-            <div class="flex flex-wrap items-center gap-2.5">
+            <div class="flex items-center gap-2 relative">
               <button
-                onClick={() => { setShowHistory(!showHistory); setShowBilling(false); }}
+                onClick={() => { setShowHistory(!showHistory); setShowBilling(false); setShowSettings(false); setShowGuide(false); setShowMenu(false); }}
+                aria-expanded={showHistory}
+                aria-controls="saved-cases"
                 class={`text-xs font-medium px-3 py-1.5 rounded-lg border transition flex items-center gap-1.5 shadow-sm ${
                   showHistory ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-800 border-zinc-200 hover:border-zinc-400'
                 }`}
               >
-                <span>🗂️ My Cases / History</span>
+                <span>My cases</span>
                 <span class={showHistory ? 'text-zinc-300' : 'text-zinc-400'}>({sessions.length})</span>
               </button>
 
-              <div class="flex items-center gap-1.5 bg-white border border-zinc-200 rounded-lg px-2.5 py-1.5 shadow-sm">
-                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  class="text-xs font-medium text-zinc-700 bg-transparent focus:outline-none cursor-pointer max-w-[210px] truncate"
-                  title="Select GitHub Copilot Model"
-                >
-                  {models.map(m => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
-              </div>
-
               <button
-                onClick={() => { setShowBilling(!showBilling); setShowHistory(false); }}
-                class="text-xs font-medium px-3 py-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400 transition flex items-center gap-1.5 shadow-sm"
+                onClick={() => { setShowSettings(!showSettings); setShowHistory(false); setShowBilling(false); setShowGuide(false); setShowMenu(false); }}
+                aria-expanded={showSettings}
+                aria-controls="app-settings"
+                class={`text-xs font-medium px-3 py-1.5 rounded-lg border transition ${
+                  showSettings ? 'bg-zinc-900 text-white border-zinc-900' : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400'
+                }`}
               >
-                <span>₹{billing.totals.estimatedInr.toFixed(2)}</span>
-                <span class="text-zinc-400">({billing.totals.calls} calls)</span>
+                Settings
               </button>
 
-              {door && (
-                <button
-                  onClick={() => { setDoor(null); setResult(null); setError(null); setThinkingSteps([]); }}
-                  class="text-xs font-medium text-zinc-500 hover:text-zinc-900 transition"
+              <button
+                type="button"
+                aria-label="Open menu"
+                aria-expanded={showMenu}
+                aria-controls="hamburger-menu"
+                onClick={() => setShowMenu(!showMenu)}
+                class={`text-xs font-medium px-3 py-1.5 rounded-lg border transition flex items-center gap-1.5 ${
+                  showMenu || showGuide ? 'bg-zinc-900 text-white border-zinc-900' : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400'
+                }`}
+              >
+                <span aria-hidden="true">☰</span>
+                <span>Menu</span>
+              </button>
+
+              {showMenu && (
+                <div
+                  id="hamburger-menu"
+                  role="menu"
+                  class="absolute right-0 top-11 z-30 w-64 rounded-2xl bg-white border border-zinc-200 shadow-lg p-2 space-y-1 text-xs"
                 >
-                  ← Home
-                </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setShowGuide(true); setShowSettings(false); setShowHistory(false); setShowBilling(false); setShowMenu(false); }}
+                    class="w-full text-left px-3 py-2.5 rounded-xl hover:bg-zinc-100 flex items-start gap-2.5 transition"
+                  >
+                    <span class="text-base leading-none mt-0.5">✨</span>
+                    <div>
+                      <div class="font-semibold text-zinc-900">How Nyaya works & Demos</div>
+                      <div class="text-[11px] text-zinc-500">Sample inputs & outputs for all 3 doors</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setShowSettings(true); setShowGuide(false); setShowHistory(false); setShowBilling(false); setShowMenu(false); }}
+                    class="w-full text-left px-3 py-2.5 rounded-xl hover:bg-zinc-100 flex items-start gap-2.5 transition"
+                  >
+                    <span class="text-base leading-none mt-0.5">⚙️</span>
+                    <div>
+                      <div class="font-semibold text-zinc-900">Settings & AI Model</div>
+                      <div class="text-[11px] text-zinc-500">Switch models or check usage</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setShowHistory(true); setShowGuide(false); setShowSettings(false); setShowBilling(false); setShowMenu(false); }}
+                    class="w-full text-left px-3 py-2.5 rounded-xl hover:bg-zinc-100 flex items-start gap-2.5 transition"
+                  >
+                    <span class="text-base leading-none mt-0.5">🗂️</span>
+                    <div>
+                      <div class="font-semibold text-zinc-900">Saved Cases ({sessions.length})</div>
+                      <div class="text-[11px] text-zinc-500">Resume an earlier conversation</div>
+                    </div>
+                  </button>
+                </div>
               )}
             </div>
           </header>
 
+          {showGuide && (
+            <section id="how-it-works-guide" aria-label="How Nyaya works and interactive demos" class="w-full max-w-3xl mx-auto px-4 sm:px-6 mb-5">
+              <div class="bg-white border border-zinc-200 rounded-2xl p-4 sm:p-5 shadow-sm space-y-4">
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <div class="text-[11px] font-semibold uppercase tracking-wider text-amber-800">Quick Tour · Under 30 Seconds</div>
+                    <h2 class="serif-heading text-2xl text-zinc-900 mt-0.5">What Nyaya does & what to expect</h2>
+                  </div>
+                  <button onClick={() => setShowGuide(false)} aria-label="Close guide" class="text-xs text-zinc-400 hover:text-zinc-800 px-2 py-1">✕</button>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                  <div class="p-3 rounded-xl bg-zinc-50 border border-zinc-200/80">
+                    <div class="font-semibold text-zinc-900">1. Pick your situation</div>
+                    <div class="text-zinc-500 mt-0.5">New dispute, ongoing case, or business question.</div>
+                  </div>
+                  <div class="p-3 rounded-xl bg-zinc-50 border border-zinc-200/80">
+                    <div class="font-semibold text-zinc-900">2. Speak or drop files</div>
+                    <div class="text-zinc-500 mt-0.5">Type/speak in English, Hindi, or Hinglish, or attach chats/orders.</div>
+                  </div>
+                  <div class="p-3 rounded-xl bg-zinc-50 border border-zinc-200/80">
+                    <div class="font-semibold text-zinc-900">3. Easy step first</div>
+                    <div class="text-zinc-500 mt-0.5">Plain-English meaning + lowest-headache action (like NCH/brand escalation) before court.</div>
+                  </div>
+                </div>
+
+                <div class="space-y-3 pt-1">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <span class="text-xs font-semibold text-zinc-700">Preview sample input & output for each door:</span>
+                    <div class="grid grid-cols-3 gap-1 p-1 rounded-xl bg-zinc-100 text-xs font-medium">
+                      {Object.entries(DOOR_DEMO_CATALOG).map(([key, item]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setGuideTab(key)}
+                          class={`px-2.5 py-1.5 rounded-lg transition ${guideTab === key ? 'bg-white text-zinc-900 shadow-sm font-semibold' : 'text-zinc-600 hover:text-zinc-900'}`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {DOOR_DEMO_CATALOG[guideTab] && (
+                    <div class="rounded-xl border border-zinc-200 bg-zinc-50/60 p-3.5 space-y-3">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-xs text-zinc-600">{DOOR_DEMO_CATALOG[guideTab].whenToUse}</span>
+                        <span class="text-[11px] px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-950 font-medium">
+                          {DOOR_DEMO_CATALOG[guideTab].badge}
+                        </span>
+                      </div>
+
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="bg-white rounded-xl border border-zinc-200 p-3 space-y-1.5">
+                          <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Sample Input (What you type or say)</div>
+                          <p class="text-xs text-zinc-800 leading-relaxed italic">"{DOOR_DEMO_CATALOG[guideTab].sampleInput}"</p>
+                        </div>
+                        <div class="bg-white rounded-xl border border-zinc-200 p-3 space-y-1.5 max-h-56 overflow-y-auto">
+                          <div class="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">Sample Output (What Nyaya gives you)</div>
+                          <div
+                            class="markdown-body text-xs"
+                            dangerouslySetInnerHTML={renderFormattedMarkdown(DOOR_DEMO_CATALOG[guideTab].sampleOutput)}
+                          />
+                        </div>
+                      </div>
+
+                      <div class="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => loadInteractiveDemo(guideTab)}
+                          class="px-4 py-2 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition"
+                        >
+                          Load this sample in {DOOR_DEMO_CATALOG[guideTab].label} →
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {showSettings && (
+            <section id="app-settings" aria-label="Model and usage settings" class="w-full max-w-3xl mx-auto px-4 sm:px-6 mb-4">
+              <div class="bg-white border border-zinc-200 rounded-2xl p-4 flex flex-col gap-3">
+                <label htmlFor="model-choice" class="text-sm font-semibold text-zinc-800">AI model</label>
+                <select id="model-choice" value={selectedModel} onChange={event => setSelectedModel(event.target.value)}
+                  class="w-full min-w-0 min-h-[44px] text-sm text-zinc-700 border border-zinc-200 rounded-xl bg-zinc-50 px-3">
+                  {models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
+                </select>
+                <button onClick={() => setShowBilling(!showBilling)}
+                  class="min-h-[44px] text-sm text-left text-zinc-600 hover:text-zinc-900">
+                  View usage: ₹{billing.totals.estimatedInr.toFixed(2)} across {billing.totals.calls} calls
+                </button>
+              </div>
+            </section>
+          )}
+
           {/* Collapsible SQLite Session History Drawer */}
           {showHistory && (
-            <div class="w-full max-w-3xl mx-auto px-6 mb-6">
-              <div class="bg-white border border-zinc-200 rounded-2xl p-5 shadow-sm space-y-4">
+            <div id="saved-cases" class="w-full max-w-3xl mx-auto px-4 sm:px-6 mb-6">
+              <div class="bg-white border border-zinc-200 rounded-2xl p-4 sm:p-5 shadow-sm space-y-4">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <h3 class="text-sm font-semibold text-zinc-900">Saved Cases & Multi-Turn Session History (SQLite)</h3>
+                    <h3 class="text-sm font-semibold text-zinc-900">Your saved cases</h3>
                     <p class="text-xs text-zinc-500 mt-0.5">
-                      Isolated per user (<code class="bg-zinc-100 px-1 py-0.5 rounded">user_id = {userId}</code>) in <code class="bg-zinc-100 px-1 py-0.5 rounded">data/nyaya.db</code>.
+                      Pick up where you left off.
                     </p>
                   </div>
-                  <div class="flex items-center gap-2">
+                  <div class="w-full flex flex-wrap items-center gap-2">
                     <select
+                      aria-label="Workspace user"
                       value={userId}
                       onChange={(e) => {
                         if (e.target.value === '__new_guest__') {
@@ -1255,7 +1638,7 @@
                           switchUserIdentity(e.target.value);
                         }
                       }}
-                      class="text-xs px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50 font-medium text-zinc-700"
+                      class="min-w-0 flex-1 text-xs px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50 font-medium text-zinc-700"
                     >
                       <option value="founder-local">👤 User: founder-local (You)</option>
                       <option value="demo-client-a">👤 User: demo-client-a</option>
@@ -1266,12 +1649,12 @@
                       <option value="__new_guest__">➕ Simulate New Browser Visitor</option>
                     </select>
                     <button
-                      onClick={() => { startNewBlankSession(door || 'midcase'); setShowHistory(false); }}
+                      onClick={() => { goHome(); setShowDoorPicker(true); }}
                       class="text-xs font-medium px-3 py-1.5 rounded-lg bg-zinc-900 text-white hover:bg-zinc-800 transition"
                     >
                       + New Case
                     </button>
-                    <button onClick={() => setShowHistory(false)} class="text-xs text-zinc-400 hover:text-zinc-800 px-1">✕</button>
+                    <button onClick={() => setShowHistory(false)} aria-label="Close saved cases" class="text-xs text-zinc-400 hover:text-zinc-800 px-1">✕</button>
                   </div>
                 </div>
 
@@ -1284,28 +1667,27 @@
                     {sessions.map(s => (
                       <div
                         key={s.id}
-                        onClick={() => resumeSession(s.id)}
-                        class={`p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-zinc-50 transition ${
+                        class={`p-3 flex items-center justify-between gap-2 hover:bg-zinc-50 transition ${
                           activeSession?.id === s.id ? 'bg-amber-50/60' : ''
                         }`}
                       >
-                        <div class="min-w-0 flex-1">
-                          <div class="flex items-center gap-2">
+                        <button onClick={() => resumeSession(s.id)} class="text-left min-w-0 flex-1 space-y-1">
+                          <div class="flex flex-wrap items-center gap-2">
                             <span class="text-xs font-semibold text-zinc-900 truncate">{s.title}</span>
                             <span class="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600 font-medium">
                               {s.turnCount} {s.turnCount === 1 ? 'turn' : 'turns'}
                             </span>
                           </div>
                           <div class="text-[11px] text-zinc-400 mt-0.5">
-                            Updated {new Date(s.updatedAt).toLocaleString()} · Door: {s.door} · Spend: ₹{(s.totalCostInr || 0).toFixed(2)}
+                            Updated {new Date(s.updatedAt).toLocaleDateString()} · Resume →
                           </div>
-                        </div>
+                        </button>
                         <div class="flex items-center gap-2">
-                          <span class="text-xs font-medium text-zinc-700 hover:text-zinc-900">Resume →</span>
                           <button
                             onClick={(e) => deleteSession(e, s.id)}
                             class="text-xs text-zinc-400 hover:text-red-600 px-1.5 py-0.5 rounded"
                             title="Delete session"
+                            aria-label={`Delete ${s.title}`}
                           >
                             🗑
                           </button>
@@ -1320,8 +1702,8 @@
 
           {/* Collapsible Billing Panel */}
           {showBilling && (
-            <div class="w-full max-w-3xl mx-auto px-6 mb-6">
-              <div class="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm space-y-5">
+            <div class="w-full max-w-3xl mx-auto px-4 sm:px-6 mb-6">
+              <div class="bg-white border border-zinc-200 rounded-2xl p-4 sm:p-6 shadow-sm space-y-5">
                 <div class="flex items-center justify-between">
                   <div>
                     <h3 class="text-sm font-semibold text-zinc-900">Live Copilot Model Telemetry & SaaS Billing Calculator</h3>
@@ -1357,92 +1739,104 @@
           )}
 
           {/* Main Content Container */}
-          <main class="flex-1 w-full max-w-2xl mx-auto px-6 py-6 flex flex-col justify-center">
+          <main class={`flex-1 w-full max-w-2xl mx-auto px-4 sm:px-6 py-5 sm:py-8 flex flex-col ${!door ? 'justify-center' : ''}`}>
+            {door && <button onClick={goHome} class="self-start mb-4 text-sm text-zinc-500 hover:text-zinc-900">← Home</button>}
 
             {/* ==================== STEP 1: HOME ENTRY ==================== */}
             {!door && (
-              <div class="space-y-8">
-                <div class="space-y-3">
-                  <h1 class="serif-heading text-4xl sm:text-5xl font-medium tracking-tight text-zinc-900 leading-tight">
-                    What do you need help with today?
-                  </h1>
-                  <p class="text-zinc-500 text-base leading-relaxed">
-                    Pick where you are right now, or resume a saved case below.
-                  </p>
-                </div>
-
-                {sessions.length > 0 && (
-                  <div class="bg-white border border-zinc-200/90 rounded-2xl p-4 space-y-2.5 shadow-sm">
-                    <div class="flex items-center justify-between">
-                      <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Recent Saved Cases ({userId})</span>
-                      <button onClick={() => setShowHistory(true)} class="text-xs text-zinc-600 hover:text-zinc-900 font-medium">
-                        View All ({sessions.length}) →
+              <div class="space-y-6">
+                {!showDoorPicker ? (
+                  <section class="text-center space-y-6 py-8 sm:py-14">
+                    <p class="text-xs font-semibold uppercase tracking-widest text-amber-800">Your legal co-pilot</p>
+                    <h1 class="serif-heading text-4xl sm:text-5xl font-medium tracking-tight text-zinc-900 leading-tight">
+                      Let's find your next step.
+                    </h1>
+                    <p class="text-zinc-500 text-base leading-relaxed max-w-md mx-auto">
+                      Explain your situation by voice or text. Get help understanding what to do next.
+                    </p>
+                    <div class="space-y-3 pt-2">
+                      <button id="get-started" ref={getStartedButton} onClick={() => { setShowDoorPicker(true); setShowHistory(false); setShowSettings(false); setShowBilling(false); setShowGuide(false); setShowMenu(false); }}
+                        aria-controls="door-options" aria-expanded={showDoorPicker}
+                        class="w-full sm:w-auto min-h-[52px] px-10 py-3.5 rounded-2xl bg-zinc-900 text-white text-base font-semibold hover:bg-zinc-800 transition shadow-sm">
+                        Get started →
                       </button>
-                    </div>
-                    <div class="space-y-1.5">
-                      {sessions.slice(0, 3).map(s => (
+                      <p class="text-xs text-zinc-500">English, Hindi & Hinglish. Review your words before sending.</p>
+                      <div>
                         <button
-                          key={s.id}
-                          onClick={() => resumeSession(s.id)}
-                          class="w-full text-left px-3 py-2 rounded-xl hover:bg-zinc-50 border border-transparent hover:border-zinc-200 transition flex items-center justify-between gap-2"
+                          type="button"
+                          onClick={() => { setShowGuide(true); setShowSettings(false); setShowHistory(false); setShowBilling(false); setShowMenu(false); }}
+                          class="text-xs font-medium text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-3.5 py-1.5 rounded-full transition"
                         >
-                          <div class="truncate">
-                            <span class="text-xs font-semibold text-zinc-900">{s.title}</span>
-                            <span class="text-[11px] text-zinc-400 ml-2">· {s.turnCount} turn(s)</span>
-                          </div>
-                          <span class="text-xs text-zinc-500 whitespace-nowrap">Resume →</span>
+                          ✨ New here? See sample inputs & outputs
                         </button>
-                      ))}
+                      </div>
                     </div>
+                    {sessions.length > 0 && (
+                      <button onClick={() => { setShowHistory(true); setShowSettings(false); setShowBilling(false); }}
+                        class="text-sm font-medium text-zinc-600 underline underline-offset-4 hover:text-zinc-900">
+                        Continue a saved case
+                      </button>
+                    )}
+                  </section>
+                ) : (
+                <section id="door-options" aria-labelledby="door-picker-heading" class="space-y-5">
+                  <button onClick={() => { setShowDoorPicker(false); requestAnimationFrame(() => getStartedButton.current?.focus()); }}
+                    class="text-sm text-zinc-500 hover:text-zinc-900">← Back</button>
+                  <div class="space-y-2">
+                    <h1 id="door-picker-heading" ref={doorPickerHeading} tabIndex="-1" class="serif-heading text-3xl sm:text-4xl text-zinc-900">Where are you in your journey?</h1>
+                    <p class="text-sm text-zinc-500">Choose what fits. You can explain the details next.</p>
                   </div>
-                )}
-
                 <div class="space-y-3">
                   <button
+                    data-door="start"
                     onClick={() => startNewBlankSession('start')}
-                    class="w-full text-left p-5 rounded-2xl bg-white border border-zinc-200/90 hover:border-zinc-900 hover:shadow-sm transition-all flex items-center justify-between group"
+                    class="w-full text-left p-4 sm:p-5 rounded-2xl bg-white border border-zinc-200/90 hover:border-zinc-900 hover:shadow-sm transition-all flex items-center justify-between gap-3 group"
                   >
                     <div class="space-y-1 pr-4">
                       <div class="font-semibold text-zinc-900 text-base">
-                        Start a new dispute — or defend against a claim
+                        New dispute or claim
                       </div>
                       <div class="text-sm text-zinc-500">
-                        Paste a folder path, upload WhatsApp screenshots/files, or narrate your story. We check legal validity and draft your notice or reply.
+                        Start a complaint or respond to a claim against you.
                       </div>
                     </div>
                     <span class="text-zinc-300 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
                   </button>
 
                   <button
+                    data-door="midcase"
                     onClick={() => startNewBlankSession('midcase')}
-                    class="w-full text-left p-5 rounded-2xl bg-white border border-zinc-200/90 hover:border-zinc-900 hover:shadow-sm transition-all flex items-center justify-between group"
+                    class="w-full text-left p-4 sm:p-5 rounded-2xl bg-white border border-zinc-200/90 hover:border-zinc-900 hover:shadow-sm transition-all flex items-center justify-between gap-3 group"
                   >
                     <div class="space-y-1 pr-4">
                       <div class="font-semibold text-zinc-900 text-base">
-                        Get tactical advice in the middle of an ongoing case
+                        An ongoing case
                       </div>
                       <div class="text-sm text-zinc-500">
-                        Case stuck for months? OP not filing evidence or Written Version? Point to your case folder or upload your daily order screenshot.
+                        Prepare for your next hearing or understand a court order.
                       </div>
                     </div>
                     <span class="text-zinc-300 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
                   </button>
 
                   <button
+                    data-door="company"
                     onClick={() => startNewBlankSession('company')}
-                    class="w-full text-left p-5 rounded-2xl bg-white border border-zinc-200/90 hover:border-zinc-900 hover:shadow-sm transition-all flex items-center justify-between group"
+                    class="w-full text-left p-4 sm:p-5 rounded-2xl bg-white border border-zinc-200/90 hover:border-zinc-900 hover:shadow-sm transition-all flex items-center justify-between gap-3 group"
                   >
                     <div class="space-y-1 pr-4">
                       <div class="font-semibold text-zinc-900 text-base">
-                        Company formation & RoC filing advisor
+                        Company or business
                       </div>
                       <div class="text-sm text-zinc-500">
-                        Not sure whether to register an LLP or Private Limited? Or stuck with an RoC name rejection screenshot or missed MCA filing?
+                        Choose a business structure or get help with company filings.
                       </div>
                     </div>
                     <span class="text-zinc-300 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
                   </button>
                 </div>
+                </section>
+                )}
               </div>
             )}
 
@@ -1450,13 +1844,13 @@
             {door === 'start' && (
               <div class="space-y-5">
                 <div class="space-y-2">
-                  <div class="text-xs font-medium uppercase tracking-wider text-zinc-400">New Dispute / Pre-Filing</div>
+                  <div class="text-xs font-medium uppercase tracking-wider text-zinc-400">A new problem</div>
                   <h2 class="serif-heading text-3xl text-zinc-900">Tell us what happened</h2>
                 </div>
 
                 {renderCaseTitleBar()}
 
-                <div class="inline-flex p-1 rounded-xl bg-zinc-200/70 text-xs font-medium">
+                <div class="grid grid-cols-1 sm:grid-cols-2 p-1 rounded-xl bg-zinc-200/70 text-xs font-medium">
                   <button
                     onClick={() => setRole('complainant')}
                     class={`px-3.5 py-2 rounded-lg transition ${role === 'complainant' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-600'}`}
@@ -1467,7 +1861,7 @@
                     onClick={() => setRole('defender')}
                     class={`px-3.5 py-2 rounded-lg transition ${role === 'defender' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-600'}`}
                   >
-                    Someone is demanding an unfair refund from us
+                    I need to respond to a claim or refund request
                   </button>
                 </div>
 
@@ -1477,6 +1871,8 @@
                   class="bg-white rounded-2xl border border-zinc-200 p-4 space-y-3 shadow-sm"
                 >
                   <textarea
+                    id="story-text"
+                    aria-label="Your case story"
                     rows="5"
                     value={storyText}
                     onChange={(e) => setStoryText(e.target.value)}
@@ -1485,12 +1881,13 @@
                     class="w-full text-sm text-zinc-800 placeholder-zinc-400 focus:outline-none resize-y leading-relaxed"
                   />
 
+                  <VoiceInput inputId="story-text" setText={setStoryText} voice={voice} disabled={loading || Boolean(ingestProgress)} />
                   {renderAttachmentsAndProgress()}
                   {renderFolderScannerBar()}
 
                   <div class="pt-3 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-2">
                     <div class="flex flex-wrap items-center gap-2">
-                      <label class="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 cursor-pointer font-medium transition">
+                      <label class="file-upload text-xs px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 cursor-pointer font-medium transition">
                         🖼️ Upload Files (.pdf, .docx, .zip, .png, .txt)
                         <input
                           type="file"
@@ -1519,7 +1916,7 @@
                       {(storyText || attachedImages.length > 0 || attachedTextDocs.length > 0) && (
                         <button
                           type="button"
-                          onClick={() => { setStoryText(''); setAttachedImages([]); setAttachedTextDocs([]); setFolderScanSummary(null); }}
+                          onClick={() => { voice.reset(); setStoryText(''); setAttachedImages([]); setAttachedTextDocs([]); setFolderScanSummary(null); }}
                           class="text-xs text-zinc-400 hover:text-zinc-700 px-2 py-1"
                         >
                           Clear
@@ -1529,10 +1926,10 @@
 
                     <button
                       onClick={() => runAnalysis('messy-dump-intake')}
-                      disabled={loading || Boolean(ingestProgress)}
-                      class="px-4 py-2 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition disabled:opacity-50"
+                      disabled={loading || Boolean(ingestProgress) || voice.busy}
+                      class="w-full sm:w-auto min-h-[44px] px-4 py-2 rounded-xl bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 transition disabled:opacity-50"
                     >
-                      {loading ? 'Streaming Analysis...' : 'Analyze Story & Save to Session →'}
+                      {loading ? 'Preparing your next steps...' : 'Understand my options & save →'}
                     </button>
                   </div>
                 </div>
@@ -1556,21 +1953,21 @@
                 >
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label class="text-xs font-medium text-zinc-500 block mb-1">Current Stage</label>
+                      <label class="text-xs font-medium text-zinc-500 block mb-1">Current stage in the consumer case</label>
                       <select
                         value={stage}
                         onChange={(e) => setStage(e.target.value)}
                         class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium text-zinc-900 focus:outline-none"
                       >
-                        <option value="notice-and-written-version">OP Notice / Written Version (45-day cap)</option>
-                        <option value="rejoinder-and-complainant-evidence">My Rejoinder & Evidence stage</option>
-                        <option value="op-evidence">OP Evidence stage (My evidence filed, OP delaying)</option>
-                        <option value="written-arguments">Written Arguments stage</option>
-                        <option value="execution-s71-s72">Won the order — OP not paying (Execution)</option>
+                        <option value="notice-and-written-version">Waiting for the other side's formal reply</option>
+                        <option value="rejoinder-and-complainant-evidence">My response and supporting evidence</option>
+                        <option value="op-evidence">The other side's evidence</option>
+                        <option value="written-arguments">Written arguments explaining each side's case</option>
+                        <option value="execution-s71-s72">Enforcing a favourable order that is not being followed</option>
                       </select>
                     </div>
                     <div>
-                      <label class="text-xs font-medium text-zinc-500 block mb-1">Notice Service Date on OP</label>
+                      <label class="text-xs font-medium text-zinc-500 block mb-1">When the other side received the notice</label>
                       <input type="date" value={serviceDate} onChange={e => setServiceDate(e.target.value)}
                         class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium" />
                     </div>
@@ -1580,7 +1977,7 @@
                         class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium" />
                     </div>
                     <div>
-                      <label class="text-xs font-medium text-zinc-500 block mb-1">OP Evidence Adjournments Taken</label>
+                      <label class="text-xs font-medium text-zinc-500 block mb-1">Times the other side's evidence hearing was postponed</label>
                       <input type="number" min="0" max="10" value={opAdjournments} onChange={e => setOpAdjournments(e.target.value)}
                         class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium" />
                     </div>
@@ -1589,27 +1986,28 @@
                   <div class="flex flex-wrap gap-4 pt-1 text-xs text-zinc-700">
                     <label class="flex items-center gap-1.5 cursor-pointer">
                       <input type="checkbox" checked={writtenVersionFiled} onChange={e => setWrittenVersionFiled(e.target.checked)} />
-                      OP filed Written Version
+                      The other side filed its formal reply
                     </label>
                     <label class="flex items-center gap-1.5 cursor-pointer">
                       <input type="checkbox" checked={complainantEvidenceFiled} onChange={e => setComplainantEvidenceFiled(e.target.checked)} />
-                      I filed Complainant Evidence
+                      I filed my supporting evidence
                     </label>
                     <label class="flex items-center gap-1.5 cursor-pointer">
                       <input type="checkbox" checked={opEvidenceFiled} onChange={e => setOpEvidenceFiled(e.target.checked)} />
-                      OP filed OP Evidence
+                      The other side filed its evidence
                     </label>
                   </div>
 
                   {multiOpSummary && (
                     <div class="text-xs px-3 py-2 rounded-xl bg-amber-50/80 border border-amber-200 text-amber-900">
-                      <strong>Multi-OP Status (from Court Orders):</strong> {multiOpSummary}
+                      <strong>Status of each opposing party (from the supplied record):</strong> {multiOpSummary}
                     </div>
                   )}
 
                   <div>
-                    <label class="text-xs font-medium text-zinc-500 block mb-1">Last Daily Order / Situation Notes</label>
+                    <label htmlFor="midcase-notes" class="text-xs font-medium text-zinc-500 block mb-1">What happened at the last hearing, or what you need help with</label>
                     <textarea
+                      id="midcase-notes"
                       rows="3"
                       value={midcaseNotes}
                       onChange={e => setMidcaseNotes(e.target.value)}
@@ -1618,12 +2016,13 @@
                     />
                   </div>
 
+                  <VoiceInput inputId="midcase-notes" setText={setMidcaseNotes} voice={voice} disabled={loading || Boolean(ingestProgress)} />
                   {renderAttachmentsAndProgress()}
                   {renderFolderScannerBar()}
 
                   <div class="flex flex-wrap items-center justify-between gap-2 pt-2">
                     <div class="flex flex-wrap items-center gap-2">
-                      <label class="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 cursor-pointer font-medium transition">
+                      <label class="file-upload text-xs px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 cursor-pointer font-medium transition">
                         🖼️ Upload Order PDF / DOCX / Screenshot
                         <input
                           type="file"
@@ -1643,10 +2042,10 @@
                     </div>
                     <button
                       onClick={() => runAnalysis('midcase-battle-card')}
-                      disabled={loading || Boolean(ingestProgress)}
-                      class="px-4 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition disabled:opacity-50"
+                      disabled={loading || Boolean(ingestProgress) || voice.busy}
+                      class="w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 transition disabled:opacity-50"
                     >
-                      {loading ? 'Streaming Battle-Card...' : 'Generate Hearing Battle-Card & Save →'}
+                      {loading ? 'Preparing your hearing plan...' : 'Prepare my next hearing & save →'}
                     </button>
                   </div>
                 </div>
@@ -1657,48 +2056,51 @@
             {door === 'company' && (
               <div class="space-y-5">
                 <div class="space-y-2">
-                  <div class="text-xs font-medium uppercase tracking-wider text-zinc-400">Company & RoC Advisor</div>
+                  <div class="text-xs font-medium uppercase tracking-wider text-zinc-400">Starting or running a business</div>
                   <h2 class="serif-heading text-3xl text-zinc-900">How can we help with your company?</h2>
                 </div>
 
                 {renderCaseTitleBar()}
 
-                <div class="inline-flex p-1 rounded-xl bg-zinc-200/70 text-xs font-medium">
+                <div class="grid grid-cols-1 sm:grid-cols-2 p-1 rounded-xl bg-zinc-200/70 text-xs font-medium">
                   <button
                     onClick={() => setCompanyNeed('choose-entity')}
                     class={`px-3.5 py-2 rounded-lg transition ${companyNeed === 'choose-entity' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-600'}`}
                   >
-                    Unsure what to register (LLP vs Pvt Ltd)
+                    Help me choose how to set up my business
                   </button>
                   <button
                     onClick={() => setCompanyNeed('roc-hiccup')}
                     class={`px-3.5 py-2 rounded-lg transition ${companyNeed === 'roc-hiccup' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-600'}`}
                   >
-                    Fix an RoC rejection or missed filing
+                    Help with a rejected or missed company filing
                   </button>
                 </div>
 
                 <div
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={handleDrop}
-                  class="bg-white rounded-2xl border border-zinc-200 p-5 space-y-4 shadow-sm"
+                  class="bg-white rounded-2xl border border-zinc-200 p-4 sm:p-5 space-y-4 shadow-sm"
                 >
                   <textarea
+                    id="company-notes"
+                    aria-label="Your company situation"
                     rows="4"
                     value={companyNotes}
                     onChange={e => setCompanyNotes(e.target.value)}
                     onPaste={handlePasteEvent}
-                    placeholder="Describe your founders, funding plans, revenue, or upload a screenshot of the MCA/RoC defect..."
+                    placeholder="Tell us what your business does and what you want help with. If a filing was rejected, share the message you received."
                     class="w-full text-sm text-zinc-800 focus:outline-none resize-y leading-relaxed"
                   />
 
+                  <VoiceInput inputId="company-notes" setText={setCompanyNotes} voice={voice} disabled={loading || Boolean(ingestProgress)} />
                   {renderAttachmentsAndProgress()}
                   {renderFolderScannerBar()}
 
                   <div class="pt-3 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-2">
                     <div class="flex flex-wrap items-center gap-2">
-                      <label class="text-xs px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 cursor-pointer font-medium transition">
-                        🖼️ Upload RoC Screenshot / File
+                      <label class="file-upload text-xs px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 cursor-pointer font-medium transition">
+                        🖼️ Add a screenshot or document
                         <input
                           type="file"
                           multiple
@@ -1717,10 +2119,10 @@
                     </div>
                     <button
                       onClick={() => runAnalysis('company-advisor')}
-                      disabled={loading || Boolean(ingestProgress)}
-                      class="px-4 py-2 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition disabled:opacity-50"
+                      disabled={loading || Boolean(ingestProgress) || voice.busy}
+                      class="w-full sm:w-auto min-h-[44px] px-4 py-2 rounded-xl bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 transition disabled:opacity-50"
                     >
-                      {loading ? 'Streaming Advice...' : 'Get Corporate Counsel Roadmap →'}
+                      {loading ? 'Preparing your next steps...' : 'Help me decide what to do next →'}
                     </button>
                   </div>
                 </div>
@@ -1759,7 +2161,7 @@
 
             {/* Live Streaming Output OR Completed Result */}
             {(streamingMarkdown || result) && (
-              <div class="mt-6 bg-white rounded-2xl border border-zinc-200 p-6 space-y-5 shadow-sm">
+              <div class="min-w-0 mt-6 bg-white rounded-2xl border border-zinc-200 p-4 sm:p-6 space-y-5 shadow-sm">
                 {result?.engineResult?.disposalPace && (
                   <div class="flex flex-wrap gap-2 pb-4 border-b border-zinc-100">
                     <span class="text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200 font-medium">
@@ -1771,7 +2173,7 @@
                           ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
                           : 'bg-red-50 text-red-900 border-red-200'
                       }`}>
-                        {result.engineResult.verification.verified ? '🛡️ Record Fact-Check: PASSED' : '⚠️ Record Fact-Check: Warning'}
+                        {result.engineResult.verification.verified ? 'Limited record checks: no conflicts found' : 'Record details need review'}
                       </span>
                     )}
                     {result.engineResult.matchedTactics?.map(t => (
@@ -1782,12 +2184,18 @@
                   </div>
                 )}
 
+                {result?.engineResult?.responseCompletion?.incomplete && !loading && (
+                  <div role="alert" class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-950">
+                    This answer is incomplete. Ask for the missing part or a shorter complete answer before using a draft or taking action.
+                  </div>
+                )}
+
                 <div
                   class="markdown-body max-w-none"
                   dangerouslySetInnerHTML={renderFormattedMarkdown(streamingMarkdown || result?.adviceMarkdown || '')}
                 />
 
-                {!loading && result && (
+                {!loading && result && !streamingMarkdown && (
                   <>
                     <div class="pt-4 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
                       <div>
@@ -1797,15 +2205,30 @@
                         Latency: {((result.billingEntry?.latencyMs || 0) / 1000).toFixed(1)}s
                       </div>
                       <div class="flex flex-wrap items-center gap-2">
-                        {result.model !== 'claude-opus-4.6' && (
-                          <button
-                            onClick={() => runAnalysis(activeSession?.mode, 'Re-analyze with deep Senior Counsel reasoning: verify every date, contradiction, and statutory hook, and sharpen the courtroom script and application.', 'claude-opus-4.6')}
-                            class="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-950 font-semibold border border-amber-300 transition"
-                            title="Not satisfied? Re-run this exact case with Claude Opus 4.6 Deep Senior Counsel"
+                        <div class="flex items-center gap-1.5">
+                          <select
+                            aria-label="Choose model for deeper review"
+                            value={escalationModel}
+                            onChange={(e) => setEscalationModel(e.target.value)}
+                            disabled={voice.busy}
+                            class="px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-950 font-medium border border-amber-300 text-xs focus:outline-none"
                           >
-                            🧠 Escalate to Claude Opus 4.6
+                            <option value="claude-opus-5.5">Claude Opus 5.5</option>
+                            <option value="gemini-4-argon">Gemini 4 Argon</option>
+                            <option value="claude-sonnet-5.5">Claude Sonnet 5.5</option>
+                            <option value="claude-opus-4.6">Claude Opus 4.6</option>
+                            <option value="claude-sonnet-4.6">Claude Sonnet 4.6</option>
+                            <option value="gpt-4.1">GPT-4.1</option>
+                          </select>
+                          <button
+                            onClick={() => runAnalysis(activeSession?.mode, 'Review the advice for this situation in more depth. Re-check assumptions, relevant evidence and legal requirements, explain trade-offs plainly, and improve the requested plan or draft without inventing facts.', escalationModel)}
+                            disabled={voice.busy}
+                            class="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-950 font-semibold border border-amber-300 transition disabled:opacity-50"
+                            title={`Review this situation in more depth with ${escalationModel}`}
+                          >
+                            🧠 Review in more depth
                           </button>
-                        )}
+                        </div>
                         <button
                           onClick={() => downloadCourtWordDoc(result.adviceMarkdown, caseTitle || 'Nyaya-Legal-Filing')}
                           class="px-3 py-1.5 rounded-lg border border-zinc-200 hover:border-zinc-400 text-zinc-800 font-medium transition"
@@ -1828,30 +2251,32 @@
                     </div>
 
                     <div class="pt-4 border-t border-zinc-200/80 space-y-2">
-                      <label class="text-xs font-semibold text-zinc-700 block">
-                        Continue This Case Session (Ask a follow-up or log the next hearing order)
+                      <label htmlFor="follow-up-text" class="text-xs font-semibold text-zinc-700 block">
+                        Ask about anything unclear, or tell us what changed
                       </label>
                       <div class="flex flex-col sm:flex-row gap-2">
                         <input
+                          id="follow-up-text"
                           type="text"
                           value={followUpText}
                           onChange={(e) => setFollowUpText(e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter' && followUpText.trim() && !loading) {
+                            if (e.key === 'Enter' && followUpText.trim() && !loading && !voice.busy) {
                               runAnalysis(activeSession?.mode, followUpText.trim());
                             }
                           }}
-                          placeholder="e.g., What if the Opposite Party offers a 50% settlement in court tomorrow?"
+                          placeholder="e.g., What does that mean for me, and what should I do first?"
                           class="flex-1 text-xs px-3.5 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 focus:outline-none focus:border-zinc-400"
                         />
                         <button
                           onClick={() => runAnalysis(activeSession?.mode, followUpText.trim())}
-                          disabled={loading || !followUpText.trim()}
+                          disabled={loading || !followUpText.trim() || voice.busy}
                           class="px-4 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition disabled:opacity-40 whitespace-nowrap"
                         >
-                          {loading ? 'Streaming...' : 'Ask Follow-Up in Session →'}
+                          {loading ? 'Preparing your answer...' : 'Ask a follow-up →'}
                         </button>
                       </div>
+                      <VoiceInput inputId="follow-up-text" setText={setFollowUpText} voice={voice} disabled={loading || Boolean(ingestProgress)} />
                     </div>
                   </>
                 )}

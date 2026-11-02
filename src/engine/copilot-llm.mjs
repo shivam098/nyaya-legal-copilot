@@ -22,11 +22,15 @@ const USD_TO_INR = 84.0;
  */
 export const COMMERCIAL_PRICING_PER_1M = {
   'auto':              { inputUsd: 1.50, outputUsd: 7.50, tier: 'smart-router', label: '⚡ Auto Smart-Router (Haiku/Flash Intake → Sonnet/GPT Strategy)' },
-  'claude-sonnet-4.6': { inputUsd: 3.00, outputUsd: 15.00, tier: 'strategist', label: '☁️ Claude Sonnet 4.6 (Practitioner Core + Vision)' },
+  'claude-opus-5.5':   { inputUsd: 15.00, outputUsd: 75.00, tier: 'senior-counsel', label: '☁️ Claude Opus 5.5 (Frontier Senior Counsel + Vision)' },
+  'claude-sonnet-5.5': { inputUsd: 3.00, outputUsd: 15.00, tier: 'strategist', label: '☁️ Claude Sonnet 5.5 (Latest Practitioner Core + Vision)' },
+  'gemini-4-argon':    { inputUsd: 1.25, outputUsd: 5.00, tier: 'strategist', label: '☁️ Gemini 4 Argon (Fast Frontier Reasoning)' },
   'claude-opus-4.6':   { inputUsd: 15.00, outputUsd: 75.00, tier: 'senior-counsel', label: '☁️ Claude Opus 4.6 (Senior Counsel Deep Review)' },
-  'gemini-4-argon':    { inputUsd: 1.25, outputUsd: 5.00, tier: 'strategist', label: '☁️ Gemini 4 Argon (Fast Reasoning)' },
-  'gpt-5.6-sol':       { inputUsd: 2.50, outputUsd: 10.00, tier: 'strategist', label: '☁️ GPT-5.6 Sol (High-Reasoning)' },
+  'claude-sonnet-4.6': { inputUsd: 3.00, outputUsd: 15.00, tier: 'strategist', label: '☁️ Claude Sonnet 4.6 (Practitioner Core + Vision)' },
+  'claude-haiku-5.5':  { inputUsd: 0.80, outputUsd: 4.00, tier: 'fast-intake', label: '☁️ Claude Haiku 5.5 (Fast Extraction & Triage)' },
   'claude-haiku-4.5':  { inputUsd: 0.80, outputUsd: 4.00, tier: 'fast-intake', label: '☁️ Claude Haiku 4.5 (Fast Extraction & Triage)' },
+  'gpt-4.1':           { inputUsd: 2.00, outputUsd: 8.00, tier: 'strategist', label: '☁️ GPT-4.1 (Balanced Reasoning)' },
+  'gpt-5.6-sol':       { inputUsd: 2.50, outputUsd: 10.00, tier: 'strategist', label: '☁️ GPT-5.6 Sol (High-Reasoning)' },
   'azure:gpt-4.1':     { inputUsd: 2.00, outputUsd: 8.00, tier: 'azure-foundry', label: '🔷 Azure AI Foundry: GPT-4.1 ($150/mo Employee Credit)' },
   'azure:o3-mini':     { inputUsd: 1.10, outputUsd: 4.40, tier: 'azure-foundry', label: '🔷 Azure AI Foundry: o3-mini Reasoning ($150/mo Credit)' },
   'azure:DeepSeek-R1': { inputUsd: 0.55, outputUsd: 2.19, tier: 'azure-foundry', label: '🔷 Azure AI Foundry: DeepSeek-R1 ($150/mo Credit)' },
@@ -285,7 +289,7 @@ export async function callCopilotModel({
     : [];
   const cacheKey = crypto
     .createHash('sha256')
-    .update(JSON.stringify({ resolvedModel, operation, systemPrompt, userPrompt, imageHashes }))
+    .update(JSON.stringify({ version: 2, provider, resolvedModel, operation, systemPrompt, userPrompt, imageHashes, maxTokens, temperature }))
     .digest('hex')
     .slice(0, 24);
 
@@ -310,6 +314,7 @@ export async function callCopilotModel({
       model: cachedHit.model,
       provider,
       cached: true,
+      completion: cachedHit.completion,
       billingEntry
     };
   }
@@ -387,40 +392,54 @@ export async function callCopilotModel({
   let finalModel = resolvedModel;
   let usage = null;
   let copilotUsage = null;
+  let finishReason = null;
 
   if (useStream && res.body) {
     const decoder = new TextDecoder();
     let buffer = '';
+    const processLine = (line) => {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) return;
+      const payload = trimmed.slice(5).trim();
+      if (payload === '[DONE]') return;
+      let parsed;
+      try {
+        parsed = JSON.parse(payload);
+      } catch {
+        throw new Error('The model sent an unreadable response. Please retry; this answer has not been saved as complete.');
+      }
+      if (parsed.error) {
+        throw new Error('The model stopped with an error. Please retry; this answer has not been saved as complete.');
+      }
+      if (parsed.model) finalModel = parsed.model;
+      if (parsed.usage) usage = parsed.usage;
+      if (parsed.copilot_usage) copilotUsage = parsed.copilot_usage;
+      const choice = parsed.choices?.[0];
+      if (choice?.finish_reason) finishReason = choice.finish_reason;
+      const delta = choice?.delta?.content;
+      if (delta) {
+        content += delta;
+        onChunk(delta);
+      }
+    };
     for await (const chunk of res.body) {
       buffer += decoder.decode(chunk, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data:')) continue;
-        const payload = trimmed.slice(5).trim();
-        if (payload === '[DONE]') continue;
-        try {
-          const parsed = JSON.parse(payload);
-          if (parsed.model) finalModel = parsed.model;
-          if (parsed.usage) usage = parsed.usage;
-          if (parsed.copilot_usage) copilotUsage = parsed.copilot_usage;
-          const delta = parsed.choices?.[0]?.delta?.content;
-          if (delta) {
-            content += delta;
-            onChunk(delta);
-          }
-        } catch {
-          // ignore partial json line
-        }
-      }
+      for (const line of lines) processLine(line);
     }
+    processLine(buffer + decoder.decode());
   } else {
     const data = await res.json();
     content = data.choices?.[0]?.message?.content || '';
+    finishReason = data.choices?.[0]?.finish_reason || null;
     finalModel = data.model || resolvedModel;
     usage = data.usage;
     copilotUsage = data.copilot_usage;
+  }
+
+  if (!content.trim()) {
+    throw new Error('The model returned no answer. Please retry; no empty answer has been saved.');
   }
 
   const latencyMs = Date.now() - start;
@@ -436,12 +455,26 @@ export async function callCopilotModel({
     };
   }
 
-  cache[cacheKey] = {
-    content,
-    model: finalModel,
-    savedAt: new Date().toISOString()
+  const completion = {
+    incomplete: finishReason !== 'stop',
+    reason: finishReason || 'unconfirmed'
   };
-  writeCache(cache);
+  if (completion.incomplete) {
+    const explanation = finishReason === 'length'
+      ? 'The response reached its length limit.'
+      : finishReason === 'content_filter'
+        ? 'The provider stopped this response with a content filter.'
+        : 'The provider did not confirm a complete answer.';
+    content = `> **Incomplete answer - do not use a partial draft for filing or sending.** ${explanation} Ask for the missing part or a shorter complete answer before acting.\n\n${content}`;
+  } else {
+    cache[cacheKey] = {
+      content,
+      model: finalModel,
+      completion,
+      savedAt: new Date().toISOString()
+    };
+    writeCache(cache);
+  }
 
   const billingEntry = recordBillingEvent({
     userId,
@@ -461,6 +494,7 @@ export async function callCopilotModel({
     model: finalModel,
     provider,
     cached: false,
+    completion,
     billingEntry
   };
 }
