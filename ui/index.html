@@ -606,6 +606,29 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
       const [adminDomainFilter, setAdminDomainFilter] = useState('all');
       const [adminFlaggedOnly, setAdminFlaggedOnly] = useState(false);
       const [adminLoading, setAdminLoading] = useState(false);
+      const [sessionSortOrder, setSessionSortOrder] = useState('newest-updated'); // 'newest-updated' | 'oldest-updated' | 'newest-created' | 'oldest-created'
+
+      const sortSessionsByDate = (list = []) => {
+        return [...list].sort((a, b) => {
+          const useCreated = sessionSortOrder.includes('created');
+          const tA = new Date(useCreated ? (a.createdAt || a.updatedAt) : (a.updatedAt || a.createdAt)).getTime() || 0;
+          const tB = new Date(useCreated ? (b.createdAt || b.updatedAt) : (b.updatedAt || b.createdAt)).getTime() || 0;
+          return sessionSortOrder.startsWith('oldest') ? tA - tB : tB - tA;
+        });
+      };
+
+      const formatSessionDateTime = (isoStr) => {
+        if (!isoStr) return '';
+        const d = new Date(isoStr);
+        if (Number.isNaN(d.getTime())) return String(isoStr);
+        return d.toLocaleString(undefined, {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      };
 
       // Tester Feedback state on current answer
       const [turnRating, setTurnRating] = useState(0);
@@ -2317,6 +2340,17 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                         <div class="text-xs font-semibold text-zinc-900">All User Sessions & Prompts</div>
                         <div class="flex flex-wrap items-center gap-2 text-xs">
                           <select
+                            aria-label="Sort admin sessions by date"
+                            value={sessionSortOrder}
+                            onChange={(e) => setSessionSortOrder(e.target.value)}
+                            class="px-2.5 py-1 rounded-lg border border-zinc-200 bg-zinc-50 text-xs font-medium text-zinc-700"
+                          >
+                            <option value="newest-updated">📅 Date: Newest Updated ↓</option>
+                            <option value="oldest-updated">📅 Date: Oldest Updated ↑</option>
+                            <option value="newest-created">📅 Date: Newest Created ↓</option>
+                            <option value="oldest-created">📅 Date: Oldest Created ↑</option>
+                          </select>
+                          <select
                             aria-label="Filter sessions by domain"
                             value={adminDomainFilter}
                             onChange={(e) => setAdminDomainFilter(e.target.value)}
@@ -2343,7 +2377,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                       </div>
 
                       <div class="divide-y divide-zinc-100 max-h-80 overflow-y-auto border border-zinc-200 rounded-xl bg-white">
-                        {(adminOverview.sessions || [])
+                        {sortSessionsByDate(adminOverview.sessions || [])
                           .filter(s => adminDomainFilter === 'all' || s.domain === adminDomainFilter)
                           .filter(s => !adminFlaggedOnly || !s.verificationPassed || s.incomplete || s.latestRating === -1)
                           .map(s => (
@@ -2553,7 +2587,18 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                         : 'Sign up or log in to save and access your case history across devices.'}
                     </p>
                   </div>
-                  <div class="flex items-center gap-2">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <select
+                      aria-label="Sort saved cases by date"
+                      value={sessionSortOrder}
+                      onChange={(e) => setSessionSortOrder(e.target.value)}
+                      class="text-xs px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50 font-medium text-zinc-700"
+                    >
+                      <option value="newest-updated">📅 Newest Updated ↓</option>
+                      <option value="oldest-updated">📅 Oldest Updated ↑</option>
+                      <option value="newest-created">📅 Newest Created ↓</option>
+                      <option value="oldest-created">📅 Oldest Created ↑</option>
+                    </select>
                     {!currentUser && (
                       <button
                         type="button"
@@ -2594,7 +2639,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                   </div>
                 ) : (
                   <div class="divide-y divide-zinc-100 max-h-72 overflow-y-auto border border-zinc-200/80 rounded-xl">
-                    {sessions.map(s => (
+                    {sortSessionsByDate(sessions).map(s => (
                       <div
                         key={s.id}
                         class={`p-3 flex items-center justify-between gap-2 hover:bg-zinc-50 transition ${
@@ -2609,7 +2654,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                             </span>
                           </div>
                           <div class="text-[11px] text-zinc-400 mt-0.5">
-                            Updated {new Date(s.updatedAt).toLocaleDateString()} · Resume →
+                            Updated {formatSessionDateTime(s.updatedAt)} · Created {formatSessionDateTime(s.createdAt)} · Resume →
                           </div>
                         </button>
                         <div class="flex items-center gap-2">
