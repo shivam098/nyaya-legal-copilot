@@ -238,3 +238,105 @@ test('civil-criminal door, Turn 5+ context pinning, follow-up image forwarding, 
   assert.deepEqual(otherCfg.billing.recentCalls, []);
   assert.ok(!('synthetic-civil-criminal-user' in otherCfg.billing.byUsers));
 });
+
+test('profile signup/login, Gmail quick login, Rs 500 monthly trial cap, user isolation, and Super-Admin Lab work end-to-end', async () => {
+  // 1. User A signs up with email + password (no email OTP required)
+  const signupA = await (await fetch(`${baseUrl}/api/auth/signup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'tester-a@gmail.com',
+      password: 'password123',
+      displayName: 'Tester A'
+    })
+  })).json();
+  assert.equal(signupA.authenticated, true);
+  assert.equal(signupA.user.email, 'tester-a@gmail.com');
+  assert.equal(signupA.user.role, 'user');
+  assert.equal(signupA.userQuota.monthlyLimitInr, 500);
+  assert.equal(signupA.userQuota.isTrial, true);
+
+  // User A runs an analysis using their Bearer token
+  const aAnalyzeRes = await fetch(`${baseUrl}/api/analyze`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${signupA.token}`
+    },
+    body: JSON.stringify({
+      door: 'start',
+      mode: 'messy-dump-intake',
+      model: 'test-model',
+      caseState: { role: 'complainant' },
+      rawInput: 'Tester A private case about a laptop warranty.'
+    })
+  });
+  const aData = await aAnalyzeRes.json();
+  const sessionAId = aData.session.id;
+  const turnAId = aData.session.turns[0].id;
+
+  // User A submits thumbs-down feedback on their turn
+  const fbRes = await fetch(`${baseUrl}/api/turns/${turnAId}/feedback`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${signupA.token}`
+    },
+    body: JSON.stringify({ rating: -1, note: 'Need clearer brand escalation email' })
+  });
+  assert.equal(fbRes.status, 200);
+
+  // 2. User B signs in via Gmail quick profile
+  const gmailB = await (await fetch(`${baseUrl}/api/auth/google`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'tester-b@gmail.com',
+      displayName: 'Tester B'
+    })
+  })).json();
+  assert.equal(gmailB.authenticated, true);
+  assert.equal(gmailB.user.email, 'tester-b@gmail.com');
+  assert.equal(gmailB.sessions.length, 0);
+
+  // User B CANNOT read User A's session (404) and CANNOT access Super-Admin Lab (403)
+  const bReadA = await fetch(`${baseUrl}/api/sessions/${sessionAId}`, {
+    headers: { 'Authorization': `Bearer ${gmailB.token}` }
+  });
+  assert.equal(bReadA.status, 404);
+
+  const bAdminTry = await fetch(`${baseUrl}/api/admin/overview`, {
+    headers: { 'Authorization': `Bearer ${gmailB.token}` }
+  });
+  assert.equal(bAdminTry.status, 403);
+
+  // 3. Super-Admin logs in and inspects all users, sessions, and User A's feedback
+  const adminLogin = await (await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'admin@nyaya.ai',
+      password: 'nyaya-admin-2026'
+    })
+  })).json();
+  assert.equal(adminLogin.authenticated, true);
+  assert.equal(adminLogin.user.role, 'superadmin');
+
+  const adminOverviewRes = await fetch(`${baseUrl}/api/admin/overview`, {
+    headers: { 'Authorization': `Bearer ${adminLogin.token}` }
+  });
+  assert.equal(adminOverviewRes.status, 200);
+  const overview = await adminOverviewRes.json();
+  assert.ok(overview.summary.totalUsers >= 3);
+  assert.ok(overview.summary.thumbsDownCount >= 1);
+  assert.ok(overview.users.some(u => u.email === 'tester-a@gmail.com'));
+  assert.ok(overview.sessions.some(s => s.id === sessionAId && s.latestRating === -1));
+
+  // Super-Admin can inspect User A's full session turns
+  const adminInspectRes = await fetch(`${baseUrl}/api/admin/sessions/${sessionAId}`, {
+    headers: { 'Authorization': `Bearer ${adminLogin.token}` }
+  });
+  assert.equal(adminInspectRes.status, 200);
+  const inspected = await adminInspectRes.json();
+  assert.equal(inspected.session.turns[0].userFeedbackNote, 'Need clearer brand escalation email');
+});

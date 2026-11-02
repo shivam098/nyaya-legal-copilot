@@ -403,15 +403,46 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
         if (showDoorPicker) doorPickerHeading.current?.focus();
       }, [showDoorPicker]);
 
-      // Per-User Identity & SQLite Session History state
+      // Per-User Profile, Auth Token & ₹500/month Free Trial state
+      const [authToken, setAuthToken] = useState(() => localStorage.getItem('nyaya_auth_token') || '');
+      const [currentUser, setCurrentUser] = useState(null);
       const [userId, setUserId] = useState(() => {
-        let saved = localStorage.getItem('nyaya_user_id');
-        if (!saved) {
-          saved = 'founder-local';
-          localStorage.setItem('nyaya_user_id', saved);
+        let saved = localStorage.getItem('nyaya_guest_id');
+        if (!saved || saved === 'founder-local') {
+          saved = 'guest_' + Math.random().toString(36).slice(2, 10);
+          localStorage.setItem('nyaya_guest_id', saved);
         }
         return saved;
       });
+      const [userQuota, setUserQuota] = useState({
+        plan: 'trial-500',
+        isTrial: true,
+        monthlyLimitInr: 500,
+        monthlySpendInr: 0,
+        monthlyRemainingInr: 500,
+        quotaExceeded: false
+      });
+      const [showAuthModal, setShowAuthModal] = useState(false);
+      const [authTab, setAuthTab] = useState('password'); // 'password' | 'gmail'
+      const [authEmail, setAuthEmail] = useState('');
+      const [authPassword, setAuthPassword] = useState('');
+      const [authName, setAuthName] = useState('');
+      const [authError, setAuthError] = useState(null);
+      const [authSubmitting, setAuthSubmitting] = useState(false);
+
+      // Super-Admin Product Lab state (only accessible when currentUser?.role === 'superadmin')
+      const [showAdminLab, setShowAdminLab] = useState(false);
+      const [adminOverview, setAdminOverview] = useState(null);
+      const [adminInspectedSession, setAdminInspectedSession] = useState(null);
+      const [adminDomainFilter, setAdminDomainFilter] = useState('all');
+      const [adminFlaggedOnly, setAdminFlaggedOnly] = useState(false);
+      const [adminLoading, setAdminLoading] = useState(false);
+
+      // Tester Feedback state on current answer
+      const [turnRating, setTurnRating] = useState(0);
+      const [turnFeedbackNote, setTurnFeedbackNote] = useState('');
+      const [feedbackSavedMsg, setFeedbackSavedMsg] = useState('');
+
       const [sessions, setSessions] = useState([]);
       const [activeSession, setActiveSession] = useState(null);
       const [caseTitle, setCaseTitle] = useState('');
@@ -488,16 +519,33 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
       const [result, setResult] = useState(null);
       const [copied, setCopied] = useState(false);
 
-      const refreshConfig = async (overrideUserId = null) => {
-        const activeUser = overrideUserId || userId;
+      const buildAuthHeaders = (extra = {}, tokenOverride = null) => {
+        const tok = tokenOverride !== null ? tokenOverride : authToken;
+        const headers = { ...extra };
+        if (tok) {
+          headers['Authorization'] = `Bearer ${tok}`;
+        } else if (userId) {
+          headers['x-nyaya-user-id'] = userId;
+        }
+        return headers;
+      };
+
+      const refreshConfig = async (overrideToken = null) => {
         try {
           const res = await fetch('/api/config', {
-            headers: { 'x-nyaya-user-id': activeUser }
+            headers: buildAuthHeaders({}, overrideToken)
           });
           if (res.ok) {
             const data = await res.json();
             if (data.models?.length) setModels(data.models);
             if (data.billing) setBilling(data.billing);
+            if (data.userQuota) setUserQuota(data.userQuota);
+            if (data.authenticated && data.user) {
+              setCurrentUser(data.user);
+              setUserId(data.user.id);
+            } else if (overrideToken === '') {
+              setCurrentUser(null);
+            }
             if (Array.isArray(data.sessions)) setSessions(data.sessions);
           }
         } catch (err) {
@@ -505,19 +553,148 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
         }
       };
 
-      const switchUserIdentity = async (nextUserId) => {
-        voice.reset();
-        localStorage.setItem('nyaya_user_id', nextUserId);
-        setUserId(nextUserId);
+      const handlePasswordAuthSubmit = async (e) => {
+        e.preventDefault();
+        setAuthError(null);
+        setAuthSubmitting(true);
+        try {
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: authEmail.trim(),
+              password: authPassword,
+              displayName: authName.trim(),
+              mode: 'auto'
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not sign in');
+          localStorage.setItem('nyaya_auth_token', data.token);
+          setAuthToken(data.token);
+          setCurrentUser(data.user);
+          setUserId(data.user.id);
+          if (data.userQuota) setUserQuota(data.userQuota);
+          if (data.billing) setBilling(data.billing);
+          if (Array.isArray(data.sessions)) setSessions(data.sessions);
+          setActiveSession(null);
+          setResult(null);
+          setShowAuthModal(false);
+          setAuthPassword('');
+        } catch (err) {
+          setAuthError(err.message);
+        } finally {
+          setAuthSubmitting(false);
+        }
+      };
+
+      const handleGmailQuickSubmit = async (e) => {
+        e.preventDefault();
+        setAuthError(null);
+        setAuthSubmitting(true);
+        try {
+          const res = await fetch('/api/auth/google', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: authEmail.trim(),
+              displayName: authName.trim()
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not sign in with Gmail');
+          localStorage.setItem('nyaya_auth_token', data.token);
+          setAuthToken(data.token);
+          setCurrentUser(data.user);
+          setUserId(data.user.id);
+          if (data.userQuota) setUserQuota(data.userQuota);
+          if (data.billing) setBilling(data.billing);
+          if (Array.isArray(data.sessions)) setSessions(data.sessions);
+          setActiveSession(null);
+          setResult(null);
+          setShowAuthModal(false);
+        } catch (err) {
+          setAuthError(err.message);
+        } finally {
+          setAuthSubmitting(false);
+        }
+      };
+
+      const handleLogout = async () => {
+        try {
+          await fetch('/api/auth/logout', {
+            method: 'POST',
+            headers: buildAuthHeaders()
+          });
+        } catch {
+          // ignore
+        }
+        localStorage.removeItem('nyaya_auth_token');
+        const nextGuest = 'guest_' + Math.random().toString(36).slice(2, 10);
+        localStorage.setItem('nyaya_guest_id', nextGuest);
+        setAuthToken('');
+        setCurrentUser(null);
+        setUserId(nextGuest);
+        setSessions([]);
         setActiveSession(null);
         setResult(null);
-        setCaseTitle('');
-        await refreshConfig(nextUserId);
+        setShowAdminLab(false);
+        setAdminOverview(null);
+        setAdminInspectedSession(null);
+        await refreshConfig('');
+      };
+
+      const loadAdminOverview = async () => {
+        setAdminLoading(true);
+        try {
+          const res = await fetch('/api/admin/overview', {
+            headers: buildAuthHeaders()
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not load Super-Admin overview');
+          setAdminOverview(data);
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setAdminLoading(false);
+        }
+      };
+
+      const inspectAdminSession = async (sessionId) => {
+        try {
+          const res = await fetch(`/api/admin/sessions/${encodeURIComponent(sessionId)}`, {
+            headers: buildAuthHeaders()
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not inspect session');
+          setAdminInspectedSession(data.session);
+        } catch (err) {
+          setError(err.message);
+        }
+      };
+
+      const submitTurnFeedback = async (ratingValue, noteText = turnFeedbackNote) => {
+        const lastTurn = activeSession?.turns?.[activeSession.turns.length - 1];
+        if (!lastTurn?.id) return;
+        setTurnRating(ratingValue);
+        try {
+          const res = await fetch(`/api/turns/${lastTurn.id}/feedback`, {
+            method: 'POST',
+            headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ rating: ratingValue, note: noteText })
+          });
+          if (res.ok) {
+            setFeedbackSavedMsg(ratingValue === 1 ? '✓ Marked helpful' : '✓ Feedback logged for review');
+            setTimeout(() => setFeedbackSavedMsg(''), 2500);
+          }
+        } catch {
+          // ignore
+        }
       };
 
       useEffect(() => {
-        refreshConfig(userId);
-      }, [userId]);
+        refreshConfig();
+      }, []);
 
       const startNewBlankSession = (targetDoor = null) => {
         voice.reset();
@@ -603,7 +780,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
         setError(null);
         try {
           const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
-            headers: { 'x-nyaya-user-id': userId }
+            headers: buildAuthHeaders()
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Could not load session');
@@ -699,7 +876,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
         try {
           const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
             method: 'DELETE',
-            headers: { 'x-nyaya-user-id': userId }
+            headers: buildAuthHeaders()
           });
           const data = await res.json();
           if (Array.isArray(data.sessions)) setSessions(data.sessions);
@@ -1087,10 +1264,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
 
           const res = await fetch('/api/analyze-stream', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-nyaya-user-id': userId
-            },
+            headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
               userId,
               sessionId: activeSession?.id || null,
@@ -1158,6 +1332,9 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
               receivedComplete = true;
               setResult(evt);
               setStreamingMarkdown('');
+              setTurnRating(0);
+              setTurnFeedbackNote('');
+              if (evt.userQuota) setUserQuota(evt.userQuota);
               setSyncedDocNames(attachedTextDocs.map(d => d.name));
               setSyncedImageNames(attachedImages.map(i => i.name));
               if (evt.session) {
@@ -1256,10 +1433,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
         try {
           const res = await fetch(`/api/sessions/${encodeURIComponent(activeSession.id)}`, {
             method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-nyaya-user-id': userId
-            },
+            headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ userId, title: cleanTitle })
           });
           if (res.ok) {
@@ -1564,9 +1738,62 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
               <span class="hidden sm:inline text-xs text-zinc-400">· Indian Legal Co-Pilot</span>
             </button>
 
-            <div class="flex items-center gap-2 relative">
+            <div class="flex flex-wrap items-center gap-2 relative">
+              {currentUser?.role === 'superadmin' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !showAdminLab;
+                    setShowAdminLab(next);
+                    setShowHistory(false);
+                    setShowBilling(false);
+                    setShowSettings(false);
+                    setShowGuide(false);
+                    setShowMenu(false);
+                    if (next) loadAdminOverview();
+                  }}
+                  class={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition flex items-center gap-1.5 shadow-sm ${
+                    showAdminLab ? 'bg-amber-900 text-white border-amber-900' : 'bg-amber-50 text-amber-950 border-amber-300 hover:bg-amber-100'
+                  }`}
+                >
+                  <span>🛡️ Super-Admin Lab</span>
+                </button>
+              )}
+
+              {currentUser ? (
+                <div class="flex items-center gap-1.5 bg-white border border-zinc-200 rounded-lg px-2.5 py-1 shadow-sm text-xs">
+                  <span class="font-semibold text-zinc-900 truncate max-w-[120px]" title={currentUser.email || currentUser.id}>
+                    👤 {currentUser.displayName}
+                  </span>
+                  {currentUser.role !== 'superadmin' && (
+                    <span class={`text-[11px] px-1.5 py-0.5 rounded font-medium ${
+                      userQuota.quotaExceeded ? 'bg-red-100 text-red-900' : 'bg-emerald-50 text-emerald-800'
+                    }`} title="Monthly Free Trial usage cap (₹500 / month)">
+                      Trial: ₹{(userQuota.monthlySpendInr || 0).toFixed(1)}/₹{userQuota.monthlyLimitInr || 500}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    class="text-[11px] text-zinc-400 hover:text-red-600 pl-1 border-l border-zinc-200"
+                    title="Sign out"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setShowAuthModal(!showAuthModal); setAuthError(null); setShowMenu(false); }}
+                  class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-50 text-amber-950 border border-amber-300 hover:bg-amber-100 transition flex items-center gap-1.5 shadow-sm"
+                >
+                  <span>👤 Sign Up / Log In</span>
+                  <span class="hidden sm:inline text-[11px] text-amber-800 font-normal">(₹500 Free Trial)</span>
+                </button>
+              )}
+
               <button
-                onClick={() => { setShowHistory(!showHistory); setShowBilling(false); setShowSettings(false); setShowGuide(false); setShowMenu(false); }}
+                onClick={() => { setShowHistory(!showHistory); setShowAdminLab(false); setShowBilling(false); setShowSettings(false); setShowGuide(false); setShowMenu(false); }}
                 aria-expanded={showHistory}
                 aria-controls="saved-cases"
                 class={`text-xs font-medium px-3 py-1.5 rounded-lg border transition flex items-center gap-1.5 shadow-sm ${
@@ -1639,6 +1866,349 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
               )}
             </div>
           </header>
+
+          {showAuthModal && (
+            <section id="auth-modal" aria-label="Sign up or log in to Nyaya" class="w-full max-w-md mx-auto px-4 sm:px-6 mb-5">
+              <div class="bg-white border border-zinc-200 rounded-2xl p-5 shadow-md space-y-4">
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <div class="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">Free Trial · ₹500 / Month Included</div>
+                    <h2 class="serif-heading text-2xl text-zinc-900 mt-0.5">Create your profile or sign in</h2>
+                    <p class="text-xs text-zinc-500 mt-0.5">
+                      Your cases are private to your account. No email OTP verification needed for testing.
+                    </p>
+                  </div>
+                  <button onClick={() => setShowAuthModal(false)} aria-label="Close sign in" class="text-xs text-zinc-400 hover:text-zinc-800 px-2 py-1">✕</button>
+                </div>
+
+                <div class="grid grid-cols-2 gap-1 p-1 rounded-xl bg-zinc-100 text-xs font-medium">
+                  <button
+                    type="button"
+                    onClick={() => { setAuthTab('password'); setAuthError(null); }}
+                    class={`px-3 py-2 rounded-lg transition ${authTab === 'password' ? 'bg-white text-zinc-900 shadow-sm font-semibold' : 'text-zinc-600'}`}
+                  >
+                    🔑 Email / ID & Password
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setAuthTab('gmail'); setAuthError(null); }}
+                    class={`px-3 py-2 rounded-lg transition ${authTab === 'gmail' ? 'bg-white text-zinc-900 shadow-sm font-semibold' : 'text-zinc-600'}`}
+                  >
+                    📧 Quick Gmail Sign-Up
+                  </button>
+                </div>
+
+                {authError && (
+                  <div role="alert" class="p-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-800 font-medium">
+                    {authError}
+                  </div>
+                )}
+
+                {authTab === 'password' ? (
+                  <form onSubmit={handlePasswordAuthSubmit} class="space-y-3">
+                    <div>
+                      <label class="text-xs font-medium text-zinc-700 block mb-1">Your Name (optional for returning users)</label>
+                      <input
+                        type="text"
+                        value={authName}
+                        onChange={(e) => setAuthName(e.target.value)}
+                        placeholder="e.g., Rahul Sharma"
+                        class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 focus:outline-none focus:border-zinc-400"
+                      />
+                    </div>
+                    <div>
+                      <label class="text-xs font-medium text-zinc-700 block mb-1">Email or Username *</label>
+                      <input
+                        type="text"
+                        required
+                        value={authEmail}
+                        onChange={(e) => setAuthEmail(e.target.value)}
+                        placeholder="e.g., rahul@gmail.com or rahul99"
+                        class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 focus:outline-none focus:border-zinc-400"
+                      />
+                    </div>
+                    <div>
+                      <label class="text-xs font-medium text-zinc-700 block mb-1">Password *</label>
+                      <input
+                        type="password"
+                        required
+                        value={authPassword}
+                        onChange={(e) => setAuthPassword(e.target.value)}
+                        placeholder="At least 4 characters (creates account if new)"
+                        class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 focus:outline-none focus:border-zinc-400"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={authSubmitting}
+                      class="w-full min-h-[44px] py-2.5 rounded-xl bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 transition disabled:opacity-50"
+                    >
+                      {authSubmitting ? 'Signing in...' : 'Continue (Sign Up / Log In) →'}
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleGmailQuickSubmit} class="space-y-3">
+                    <div>
+                      <label class="text-xs font-medium text-zinc-700 block mb-1">Your Name</label>
+                      <input
+                        type="text"
+                        value={authName}
+                        onChange={(e) => setAuthName(e.target.value)}
+                        placeholder="e.g., Priya Verma"
+                        class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 focus:outline-none focus:border-zinc-400"
+                      />
+                    </div>
+                    <div>
+                      <label class="text-xs font-medium text-zinc-700 block mb-1">Gmail Address *</label>
+                      <input
+                        type="email"
+                        required
+                        value={authEmail}
+                        onChange={(e) => setAuthEmail(e.target.value)}
+                        placeholder="yourname@gmail.com"
+                        class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 focus:outline-none focus:border-zinc-400"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={authSubmitting}
+                      class="w-full min-h-[44px] py-2.5 rounded-xl bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 transition disabled:opacity-50"
+                    >
+                      {authSubmitting ? 'Connecting Gmail...' : 'Continue with Gmail →'}
+                    </button>
+                  </form>
+                )}
+
+                <p class="text-[11px] text-zinc-400 leading-relaxed pt-1 border-t border-zinc-100">
+                  🔒 Your case history is isolated from other users and includes a <strong>₹500/month Free Trial</strong>. Beta note: anonymized questions & responses may be reviewed by the Nyaya builders to improve legal accuracy.
+                </p>
+              </div>
+            </section>
+          )}
+
+          {/* Super-Admin Product Lab Drawer (Restricted to role === 'superadmin') */}
+          {showAdminLab && currentUser?.role === 'superadmin' && (
+            <section id="superadmin-lab" aria-label="Super-Admin Product Lab" class="w-full max-w-4xl mx-auto px-4 sm:px-6 mb-6">
+              <div class="bg-white border-2 border-amber-300 rounded-2xl p-4 sm:p-6 shadow-md space-y-5">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div class="text-[11px] font-semibold uppercase tracking-wider text-amber-800">Builder Super-User Console</div>
+                    <h2 class="serif-heading text-2xl text-zinc-900">🛡️ Nyaya Product Lab — All Testers & Conversations</h2>
+                    <p class="text-xs text-zinc-500">
+                      Inspect questions, AI responses, domain accuracy flags, and ₹500/month trial usage across all signed-up users.
+                    </p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={loadAdminOverview}
+                      disabled={adminLoading}
+                      class="text-xs font-medium px-3 py-1.5 rounded-lg bg-zinc-900 text-white hover:bg-zinc-800 transition"
+                    >
+                      {adminLoading ? 'Refreshing...' : '↻ Refresh Data'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAdminLab(false)}
+                      class="text-xs text-zinc-400 hover:text-zinc-800 px-2 py-1"
+                    >
+                      Close ✕
+                    </button>
+                  </div>
+                </div>
+
+                {adminOverview && (
+                  <>
+                    <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs">
+                      <div class="p-3 rounded-xl bg-zinc-50 border border-zinc-200">
+                        <div class="text-[11px] text-zinc-500">Total Users</div>
+                        <div class="text-lg font-bold text-zinc-900 mt-0.5">{adminOverview.summary?.totalUsers || 0}</div>
+                      </div>
+                      <div class="p-3 rounded-xl bg-zinc-50 border border-zinc-200">
+                        <div class="text-[11px] text-zinc-500">Total Case Sessions</div>
+                        <div class="text-lg font-bold text-zinc-900 mt-0.5">{adminOverview.summary?.totalSessions || 0}</div>
+                      </div>
+                      <div class="p-3 rounded-xl bg-zinc-50 border border-zinc-200">
+                        <div class="text-[11px] text-zinc-500">Total Q&A Turns</div>
+                        <div class="text-lg font-bold text-zinc-900 mt-0.5">{adminOverview.summary?.totalTurns || 0}</div>
+                      </div>
+                      <div class="p-3 rounded-xl bg-amber-50 border border-amber-200">
+                        <div class="text-[11px] text-amber-900">⚠️ Flagged / Incomplete</div>
+                        <div class="text-lg font-bold text-amber-950 mt-0.5">{adminOverview.summary?.flaggedTurnsCount || 0}</div>
+                      </div>
+                      <div class="p-3 rounded-xl bg-zinc-50 border border-zinc-200">
+                        <div class="text-[11px] text-zinc-500">Tester Ratings</div>
+                        <div class="text-lg font-bold text-zinc-900 mt-0.5">
+                          👍 {adminOverview.summary?.thumbsUpCount || 0} · 👎 {adminOverview.summary?.thumbsDownCount || 0}
+                        </div>
+                      </div>
+                    </div>
+
+                    <details class="bg-zinc-50 rounded-xl border border-zinc-200 p-3 text-xs">
+                      <summary class="cursor-pointer font-semibold text-zinc-900">
+                        👥 Registered Users & Monthly ₹500 Trial Usage ({adminOverview.users?.length || 0})
+                      </summary>
+                      <div class="mt-3 overflow-x-auto">
+                        <table class="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr class="border-b border-zinc-200 text-zinc-500">
+                              <th class="py-1.5 pr-3">User / Email</th>
+                              <th class="py-1.5 pr-3">Role / Auth</th>
+                              <th class="py-1.5 pr-3">Sessions</th>
+                              <th class="py-1.5 pr-3">Turns</th>
+                              <th class="py-1.5 pr-3">Monthly Trial Spend</th>
+                            </tr>
+                          </thead>
+                          <tbody class="divide-y divide-zinc-200/60">
+                            {(adminOverview.users || []).map(u => (
+                              <tr key={u.id}>
+                                <td class="py-1.5 pr-3 font-medium text-zinc-900">
+                                  {u.displayName} {u.email ? <span class="text-zinc-400">({u.email})</span> : ''}
+                                </td>
+                                <td class="py-1.5 pr-3 text-zinc-600">{u.role} · {u.authProvider}</td>
+                                <td class="py-1.5 pr-3">{u.sessionCount}</td>
+                                <td class="py-1.5 pr-3">{u.turnCount}</td>
+                                <td class="py-1.5 pr-3">
+                                  <span class={u.quotaExceeded ? 'text-red-700 font-semibold' : 'text-emerald-800 font-medium'}>
+                                    ₹{(u.monthlySpendInr || 0).toFixed(2)} / ₹{u.role === 'superadmin' ? '∞' : (u.monthlyLimitInr || 500)}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </details>
+
+                    <div class="space-y-3">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="text-xs font-semibold text-zinc-900">All User Sessions & Prompts</div>
+                        <div class="flex flex-wrap items-center gap-2 text-xs">
+                          <select
+                            aria-label="Filter sessions by domain"
+                            value={adminDomainFilter}
+                            onChange={(e) => setAdminDomainFilter(e.target.value)}
+                            class="px-2.5 py-1 rounded-lg border border-zinc-200 bg-zinc-50 text-xs"
+                          >
+                            <option value="all">All Domains</option>
+                            <option value="consumer">Consumer</option>
+                            <option value="property-rera">Property / RERA</option>
+                            <option value="matrimonial-family">Matrimony / Family</option>
+                            <option value="inheritance-partition">Inheritance / Partition</option>
+                            <option value="criminal-bns-bnss">Criminal (BNS / BNSS)</option>
+                            <option value="cheque-bounce-138">Cheque Bounce (s.138)</option>
+                            <option value="corporate-roc">Company / RoC</option>
+                          </select>
+                          <label class="flex items-center gap-1.5 cursor-pointer text-zinc-700">
+                            <input
+                              type="checkbox"
+                              checked={adminFlaggedOnly}
+                              onChange={(e) => setAdminFlaggedOnly(e.target.checked)}
+                            />
+                            Only Flagged / 👎 Thumbs-Down
+                          </label>
+                        </div>
+                      </div>
+
+                      <div class="divide-y divide-zinc-100 max-h-80 overflow-y-auto border border-zinc-200 rounded-xl bg-white">
+                        {(adminOverview.sessions || [])
+                          .filter(s => adminDomainFilter === 'all' || s.domain === adminDomainFilter)
+                          .filter(s => !adminFlaggedOnly || !s.verificationPassed || s.incomplete || s.latestRating === -1)
+                          .map(s => (
+                            <div key={s.id} class="p-3 hover:bg-zinc-50 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                              <div class="space-y-1 min-w-0 flex-1">
+                                <div class="flex flex-wrap items-center gap-1.5">
+                                  <span class="font-semibold text-zinc-900">{s.title}</span>
+                                  <span class="px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-700 text-[10px] font-medium">
+                                    👤 {s.userDisplayName}{s.userEmail ? ` (${s.userEmail})` : ''}
+                                  </span>
+                                  <span class="px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200 text-[10px]">
+                                    {s.domain}
+                                  </span>
+                                  {!s.verificationPassed && (
+                                    <span class="px-2 py-0.5 rounded-full bg-red-100 text-red-900 text-[10px] font-semibold">
+                                      ⚠️ Guardrail Flag
+                                    </span>
+                                  )}
+                                  {s.latestRating === -1 && (
+                                    <span class="px-2 py-0.5 rounded-full bg-red-100 text-red-900 text-[10px] font-semibold">
+                                      👎 Tester Flagged
+                                    </span>
+                                  )}
+                                  {s.latestRating === 1 && (
+                                    <span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 text-[10px] font-semibold">
+                                      👍 Helpful
+                                    </span>
+                                  )}
+                                </div>
+                                <div class="text-zinc-600 truncate">
+                                  <strong>Q:</strong> {s.latestQuestionPreview || '(No question text)'}
+                                </div>
+                                <div class="text-[11px] text-zinc-400">
+                                  {s.turnCount} turn(s) · Model: {s.latestModel} · Cost: ₹{s.totalCostInr} · {new Date(s.updatedAt).toLocaleString()}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => inspectAdminSession(s.id)}
+                                class="px-3 py-1.5 rounded-lg bg-zinc-900 text-white font-medium hover:bg-zinc-800 whitespace-nowrap"
+                              >
+                                Inspect Q&A →
+                              </button>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+
+                    {adminInspectedSession && (
+                      <div class="p-4 rounded-xl bg-zinc-50 border border-zinc-200 space-y-3 text-xs">
+                        <div class="flex items-center justify-between">
+                          <div>
+                            <div class="font-bold text-sm text-zinc-900">
+                              Inspecting: {adminInspectedSession.title}
+                            </div>
+                            <div class="text-zinc-500">
+                              User: <strong>{adminInspectedSession.userDisplayName}</strong> ({adminInspectedSession.userEmail || adminInspectedSession.userId}) · Door: {adminInspectedSession.door}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setAdminInspectedSession(null)}
+                            class="text-zinc-400 hover:text-zinc-900"
+                          >
+                            Close Inspector ✕
+                          </button>
+                        </div>
+
+                        <div class="space-y-3 max-h-96 overflow-y-auto">
+                          {(adminInspectedSession.turns || []).map(t => (
+                            <div key={t.id} class="p-3 rounded-xl bg-white border border-zinc-200 space-y-2">
+                              <div class="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 pb-1.5">
+                                <span class="font-semibold text-zinc-900">
+                                  Turn #{t.turnIndex} · {t.model} · ₹{(t.costInr || 0).toFixed(3)}
+                                </span>
+                                <span class="text-zinc-500">
+                                  Rating: {t.userRating === 1 ? '👍 Helpful' : t.userRating === -1 ? '👎 Needs fix' : 'None'}
+                                  {t.userFeedbackNote ? ` ("${t.userFeedbackNote}")` : ''}
+                                </span>
+                              </div>
+                              <div class="bg-zinc-50 p-2.5 rounded-lg border border-zinc-200/70 whitespace-pre-wrap text-zinc-800">
+                                <strong>User Prompt:</strong>{'\n'}{t.userInput}
+                              </div>
+                              <div
+                                class="markdown-body p-2.5 rounded-lg border border-zinc-100"
+                                dangerouslySetInnerHTML={renderFormattedMarkdown(t.assistantMarkdown)}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </section>
+          )}
 
           {showGuide && (
             <section id="how-it-works-guide" aria-label="How Nyaya works and interactive demos" class="w-full max-w-3xl mx-auto px-4 sm:px-6 mb-5">
@@ -1746,31 +2316,21 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                   <div>
                     <h3 class="text-sm font-semibold text-zinc-900">Your saved cases</h3>
                     <p class="text-xs text-zinc-500 mt-0.5">
-                      Pick up where you left off.
+                      {currentUser
+                        ? `Signed in as ${currentUser.displayName} (${currentUser.email || currentUser.id}) — strictly private to your profile.`
+                        : 'Sign up or log in to save and access your case history across devices.'}
                     </p>
                   </div>
-                  <div class="w-full flex flex-wrap items-center gap-2">
-                    <select
-                      aria-label="Workspace user"
-                      value={userId}
-                      onChange={(e) => {
-                        if (e.target.value === '__new_guest__') {
-                          const newGuest = 'usr_' + Math.random().toString(36).slice(2, 10);
-                          switchUserIdentity(newGuest);
-                        } else {
-                          switchUserIdentity(e.target.value);
-                        }
-                      }}
-                      class="min-w-0 flex-1 text-xs px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50 font-medium text-zinc-700"
-                    >
-                      <option value="founder-local">👤 User: founder-local (You)</option>
-                      <option value="demo-client-a">👤 User: demo-client-a</option>
-                      <option value="demo-client-b">👤 User: demo-client-b</option>
-                      {!['founder-local', 'demo-client-a', 'demo-client-b'].includes(userId) && (
-                        <option value={userId}>👤 User: {userId}</option>
-                      )}
-                      <option value="__new_guest__">➕ Simulate New Browser Visitor</option>
-                    </select>
+                  <div class="flex items-center gap-2">
+                    {!currentUser && (
+                      <button
+                        type="button"
+                        onClick={() => { setShowHistory(false); setShowAuthModal(true); }}
+                        class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-100 text-amber-950 border border-amber-300 hover:bg-amber-200 transition"
+                      >
+                        👤 Sign Up / Log In
+                      </button>
+                    )}
                     <button
                       onClick={() => { goHome(); setShowDoorPicker(true); }}
                       class="text-xs font-medium px-3 py-1.5 rounded-lg bg-zinc-900 text-white hover:bg-zinc-800 transition"
@@ -1780,6 +2340,21 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                     <button onClick={() => setShowHistory(false)} aria-label="Close saved cases" class="text-xs text-zinc-400 hover:text-zinc-800 px-1">✕</button>
                   </div>
                 </div>
+
+                {currentUser?.role !== 'superadmin' && (
+                  <div class="p-3 rounded-xl bg-zinc-50 border border-zinc-200/80 space-y-1.5 text-xs">
+                    <div class="flex items-center justify-between font-medium text-zinc-800">
+                      <span>🎁 Monthly Free Trial Quota (₹{userQuota.monthlyLimitInr || 500} / month cap)</span>
+                      <span>₹{(userQuota.monthlySpendInr || 0).toFixed(2)} used · ₹{(userQuota.monthlyRemainingInr ?? 500).toFixed(2)} remaining</span>
+                    </div>
+                    <div class="w-full h-1.5 bg-zinc-200 rounded-full overflow-hidden">
+                      <div
+                        class={`h-full transition-all ${userQuota.quotaExceeded ? 'bg-red-600' : 'bg-emerald-600'}`}
+                        style={{ width: `${Math.min(100, Math.round(((userQuota.monthlySpendInr || 0) / (userQuota.monthlyLimitInr || 500)) * 100))}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {sessions.length === 0 ? (
                   <div class="text-xs text-zinc-400 py-6 text-center border border-dashed border-zinc-200 rounded-xl">
@@ -2597,6 +3172,49 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                           {copied ? '✓ Copied' : 'Copy Markdown'}
                         </button>
                       </div>
+                    </div>
+
+                    <div class="pt-3 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="text-zinc-500 font-medium">Was this answer helpful?</span>
+                        <button
+                          type="button"
+                          onClick={() => submitTurnFeedback(1)}
+                          class={`px-2.5 py-1 rounded-lg border transition ${
+                            turnRating === 1 ? 'bg-emerald-100 border-emerald-300 text-emerald-900 font-semibold' : 'bg-zinc-50 border-zinc-200 text-zinc-700 hover:border-zinc-400'
+                          }`}
+                        >
+                          👍 Helpful
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => submitTurnFeedback(-1)}
+                          class={`px-2.5 py-1 rounded-lg border transition ${
+                            turnRating === -1 ? 'bg-red-100 border-red-300 text-red-900 font-semibold' : 'bg-zinc-50 border-zinc-200 text-zinc-700 hover:border-zinc-400'
+                          }`}
+                        >
+                          👎 Needs improvement
+                        </button>
+                        {feedbackSavedMsg && <span class="text-emerald-700 font-medium">{feedbackSavedMsg}</span>}
+                      </div>
+                      {turnRating === -1 && (
+                        <div class="w-full flex gap-2 mt-1">
+                          <input
+                            type="text"
+                            value={turnFeedbackNote}
+                            onChange={(e) => setTurnFeedbackNote(e.target.value)}
+                            placeholder="Tell us what was missing or confusing so we can fix it..."
+                            class="flex-1 text-xs px-3 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => submitTurnFeedback(-1, turnFeedbackNote)}
+                            class="px-3 py-1.5 rounded-lg bg-zinc-900 text-white text-xs font-medium"
+                          >
+                            Save Note
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <div class="pt-4 border-t border-zinc-200/80 space-y-2">
