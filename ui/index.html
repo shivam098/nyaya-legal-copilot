@@ -383,6 +383,23 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
 1. **Dispatch the Section 138 Demand Notice within 3 days:** Send it by **Speed Post / Registered Post AD** (plus email/WhatsApp) giving the buyer **15 days from receipt** to pay ₹6,40,000.
 2. **Preserve the Bank Return Memo & Original Cheque:** Keep the original cheque, bank return memo, and invoice safely.
 3. **Check Your Bank Branch Jurisdiction (Section 142(2)(a) NI Act):** If the buyer does not pay within 15 days of receiving your notice, you have **30 days** to file a complaint in the Magistrate Court having jurisdiction over the **bank branch where you (the payee) maintain your account**.`
+      },
+      'lawyer-workbench': {
+        label: '5. Advocate Workbench',
+        badge: 'Judgments + Bare Acts + Oral Script in 1 Place',
+        whenToUse: 'For practicing advocates & law researchers: get verified Supreme Court judgments (e.g. Tofan Singh), exact Bare Act sections (IPC/CrPC ↔ BNS/BNSS/BSA), and direct Indian Kanoon / e-SCR / IndiaCode links.',
+        sampleInput: 'Give me the Tofan Singh judgment dossier, exact NDPS Act & Evidence Act / BSA Bare Act sections, direct judgment link, and oral submission script for an NDPS Bail hearing where the prosecution relies only on a Section 67 confessional statement.',
+        sampleOutput: `### 1. Applicable Bare Act Provisions (Oral Reference Table)
+| Statute | Section (New ↔ Legacy) | Statutory Rule for Oral Argument |
+|---|---|---|
+| **NDPS Act, 1985** | **Section 67 & Section 53** | Officers empowered under s.53 (NCB/DRI/Customs) are "police officers"; an enquiry statement under s.67 is not a substantive confession. |
+| **BSA, 2023 / IEA, 1872** | **Section 23(1) BSA** *(old Section 25 IEA)* | Absolute bar: no confession made to a police officer shall be proved as against a person accused of any offence. |
+| **BNSS, 2023 / CrPC, 1973** | **Sections 180–181 BNSS** *(old ss.161–162 CrPC)* | Statements to investigating officers cannot be used as substantive evidence at trial. |
+
+### 2. Landmark Judgment Dossier & Direct Links
+- **Tofan Singh v. State of Tamil Nadu**, **(2021) 4 SCC 1 | 2020 INSC 620** (3-Judge Bench: R.F. Nariman, Navin Sinha & Indira Banerjee, JJ. — Key Paras **¶155, ¶158**)
+  - **Holding:** Section 53 NDPS officers are police officers; **statements recorded under Section 67 NDPS Act cannot be used as confessional statements**.
+  - **Bail Companion Authority:** **State by (NCB) Bengaluru v. Pallulabid Ahmad Arimutta**, **(2022) 12 SCC 633** (holds that a Section 67 statement is inadmissible even at the Section 37 NDPS bail stage).`
       }
     };
 
@@ -512,6 +529,11 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
       const [civilCriminalRole, setCivilCriminalRole] = useState('complainant');
       const [civilCriminalKeyDate, setCivilCriminalKeyDate] = useState('');
       const [civilCriminalNotes, setCivilCriminalNotes] = useState('');
+
+      // Door 5: Advocate Mode — Judgment & Bare Act Workbench state
+      const [lawyerResearchTask, setLawyerResearchTask] = useState('judgment-and-bare-act');
+      const [lawyerProceedingStage, setLawyerProceedingStage] = useState('bail');
+      const [lawyerNotes, setLawyerNotes] = useState('');
 
       // Live output state
       const [loading, setLoading] = useState(false);
@@ -781,6 +803,10 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
           setCivilCriminalRole('complainant');
           setCivilCriminalKeyDate('2026-10-06');
           setCivilCriminalNotes(sample.sampleInput);
+        } else if (targetDoor === 'lawyer-workbench') {
+          setLawyerResearchTask('judgment-and-bare-act');
+          setLawyerProceedingStage('bail');
+          setLawyerNotes(sample.sampleInput);
         }
         setResult({
           model: 'sample-preview',
@@ -795,6 +821,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
           .replace(/^User Role:.*?\r?\n\r?\nRaw Story \/ WhatsApp Chat:\r?\n/i, '')
           .replace(/^Need Type:.*?\r?\nDetails:\r?\n/i, '')
           .replace(/^Case Sub-Track:.*?\r?\nUser Side:.*?\r?\n(?:Key Date:.*?\r?\n)?Details:\r?\n/i, '')
+          .replace(/^Advocate Research Mode:.*?\r?\nProceeding Stage:.*?\r?\nQuery \/ Citation \/ Issue:\r?\n/i, '')
           .trim();
       };
 
@@ -869,6 +896,10 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
             if (cs.role) setCivilCriminalRole(cs.role);
             if (cs.keyDate !== undefined) setCivilCriminalKeyDate(cs.keyDate || '');
             setCivilCriminalNotes(cleanFirstTurnNotes.slice(0, 4000));
+          } else if (s.door === 'lawyer-workbench') {
+            if (cs.researchTask) setLawyerResearchTask(cs.researchTask);
+            if (cs.proceedingStage) setLawyerProceedingStage(cs.proceedingStage);
+            setLawyerNotes(cleanFirstTurnNotes.slice(0, 4000));
           }
 
           if (lastTurn) {
@@ -1275,6 +1306,13 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
               causeOfActionDate: civilCriminalKeyDate || null
             };
             initialNotes = `Case Sub-Track: ${civilCriminalSubTrack}\nUser Side: ${civilCriminalRole}\n${civilCriminalKeyDate ? `Key Date: ${civilCriminalKeyDate}\n` : ''}Details:\n${civilCriminalNotes}`;
+          } else if (door === 'lawyer-workbench') {
+            mode = 'lawyer-research-bench';
+            caseState = {
+              researchTask: lawyerResearchTask,
+              proceedingStage: lawyerProceedingStage
+            };
+            initialNotes = `Advocate Research Mode: ${lawyerResearchTask}\nProceeding Stage: ${lawyerProceedingStage}\nQuery / Citation / Issue:\n${lawyerNotes}`;
           }
 
           // If user clicks "Review in more depth" or asks a follow-up before a backend session exists (e.g. after "Load Sample"),
@@ -2586,6 +2624,23 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                     </div>
                     <span class="text-zinc-300 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
                   </button>
+
+                  <button
+                    data-door="lawyer-workbench"
+                    onClick={() => startNewBlankSession('lawyer-workbench')}
+                    class="w-full text-left p-4 sm:p-5 rounded-2xl bg-amber-50/60 border border-amber-300 hover:border-amber-900 hover:shadow-sm transition-all flex items-center justify-between gap-3 group"
+                  >
+                    <div class="space-y-1 pr-4">
+                      <div class="font-semibold text-zinc-900 text-base flex items-center gap-2">
+                        <span>⚖️ Advocate Mode: Judgments & Bare Act Workbench</span>
+                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-950 font-semibold">For Lawyers</span>
+                      </div>
+                      <div class="text-sm text-zinc-600">
+                        Find landmark judgments (e.g. Tofan Singh), exact Bare Act sections (BNS/BNSS/BSA ↔ IPC/CrPC/IEA), direct judgment links, and oral scripts in one place.
+                      </div>
+                    </div>
+                    <span class="text-amber-700 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
+                  </button>
                 </div>
                 </section>
                 )}
@@ -3058,6 +3113,156 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
               </div>
             )}
 
+            {/* ==================== DOOR 5: ADVOCATE MODE — JUDGMENTS & BARE ACT WORKBENCH ==================== */}
+            {door === 'lawyer-workbench' && (
+              <div class="space-y-5">
+                <div class="space-y-2">
+                  <div class="text-xs font-semibold uppercase tracking-wider text-amber-800">For Practicing Advocates & Law Researchers</div>
+                  <h2 class="serif-heading text-3xl text-zinc-900">Judgments, Precedents & Bare Act Workbench</h2>
+                  <p class="text-xs text-zinc-500">
+                    Pulls verified Supreme Court judgments (citation, Bench strength, key paragraphs, ratio decidendi), exact Bare Act provisions (including BNS/BNSS/BSA 2023 ↔ IPC/CrPC/IEA cross-references), and direct links to Indian Kanoon, Supreme Court e-SCR, and IndiaCode.
+                  </p>
+                </div>
+
+                {renderCaseTitleBar()}
+
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleDrop}
+                  class="bg-white rounded-2xl border border-zinc-200 p-4 sm:p-5 space-y-4 shadow-sm"
+                >
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="lawyer-research-task" class="text-xs font-medium text-zinc-500 block mb-1">Research Objective</label>
+                      <select
+                        id="lawyer-research-task"
+                        aria-label="Advocate research objective"
+                        value={lawyerResearchTask}
+                        onChange={(e) => setLawyerResearchTask(e.target.value)}
+                        class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium text-zinc-900 focus:outline-none"
+                      >
+                        <option value="judgment-and-bare-act">📚 Judgment Dossier + Bare Act Sections & Links (e.g. Tofan Singh)</option>
+                        <option value="fact-to-precedent">🎯 Find Applicable Bare Act & Precedents for Case Facts</option>
+                        <option value="distinguish-opponent">⚔️ Distinguish / Counter Opponent's Cited Judgment</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="lawyer-proceeding-stage" class="text-xs font-medium text-zinc-500 block mb-1">Oral Proceeding / Hearing Stage</label>
+                      <select
+                        id="lawyer-proceeding-stage"
+                        aria-label="Oral proceeding stage"
+                        value={lawyerProceedingStage}
+                        onChange={(e) => setLawyerProceedingStage(e.target.value)}
+                        class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium text-zinc-900 focus:outline-none"
+                      >
+                        <option value="bail">Bail / Anticipatory Bail (BNSS s.480/482/483 · NDPS s.37)</option>
+                        <option value="discharge-quashing">Discharge / Quashing (BNSS s.250 / s.528)</option>
+                        <option value="evidence-objection">Evidence / Admissibility Objection (BSA s.23 / s.63)</option>
+                        <option value="injunction-stay">Interim Injunction / Stay (Order 39 CPC / RERA s.36)</option>
+                        <option value="final-arguments">Written & Oral Final Arguments</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="space-y-1.5">
+                    <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                      Quick-load landmark precedent + Bare Act dossier:
+                    </div>
+                    <div class="flex flex-wrap gap-1.5">
+                      {[
+                        {
+                          label: '⚖️ Tofan Singh (NDPS s.67 & BSA s.23)',
+                          stage: 'bail',
+                          text: 'Give me the complete Tofan Singh v. State of Tamil Nadu ((2021) 4 SCC 1) judgment dossier, exact Bare Act sections (NDPS Act ss.67 & 53, Evidence Act s.25 / BSA s.23(1)), direct judgment link, and oral submission script for an NDPS bail hearing where prosecution relies on a Section 67 confessional statement.'
+                        },
+                        {
+                          label: '🛡️ Arnesh Kumar (BNSS s.35 Arrest Shield)',
+                          stage: 'bail',
+                          text: 'Give me the Arnesh Kumar v. State of Bihar ((2014) 8 SCC 273) & Satender Kumar Antil judgment dossier, exact BNSS Section 35(1)(b) & 35(3) (old CrPC s.41/41A) Bare Act text, and oral remand/bail script.'
+                        },
+                        {
+                          label: '📱 Arjun Panditrao (BSA s.63 / IEA s.65B)',
+                          stage: 'evidence-objection',
+                          text: 'Give me the Arjun Panditrao Khotkar ((2020) 7 SCC 1) judgment dossier, Section 63 BSA 2023 (old Section 65B IEA) Bare Act requirements, and oral script on electronic evidence admissibility.'
+                        },
+                        {
+                          label: '⏱️ Hilli Multipurpose (45-Day WV Cap)',
+                          stage: 'final-arguments',
+                          text: 'Give me the New India Assurance v. Hilli Multipurpose ((2020) 5 SCC 757) 5-Judge Constitution Bench dossier and CPA Section 38(2)(a) Bare Act script to forfeit a belated Written Version.'
+                        },
+                        {
+                          label: '🏠 Vineeta Sharma (HSA s.6 Coparcenary)',
+                          stage: 'injunction-stay',
+                          text: 'Give me the Vineeta Sharma v. Rakesh Sharma ((2020) 9 SCC 1) dossier, Section 6 Hindu Succession Act Bare Act provisions, and Order 39 CPC oral injunction script.'
+                        },
+                        {
+                          label: '👨‍👩‍👧 Rajnesh v. Neha (BNSS s.144 & PWDVA)',
+                          stage: 'final-arguments',
+                          text: 'Give me the Rajnesh v. Neha ((2021) 2 SCC 324) maintenance dossier, Section 144 BNSS (old s.125 CrPC) & Section 12 PWDVA Bare Act provisions, and oral submission script.'
+                        }
+                      ].map((preset, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setLawyerProceedingStage(preset.stage);
+                            setLawyerNotes(preset.text);
+                          }}
+                          class="text-xs px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-200 font-medium transition"
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <textarea
+                    id="lawyer-notes"
+                    aria-label="Advocate judgment or Bare Act query"
+                    rows="4"
+                    value={lawyerNotes}
+                    onChange={(e) => setLawyerNotes(e.target.value)}
+                    onPaste={handlePasteEvent}
+                    placeholder="Enter a judgment name (e.g., 'Tofan Singh NDPS s.67'), Bare Act section, or your courtroom fact pattern..."
+                    class="w-full text-sm text-zinc-800 placeholder-zinc-400 focus:outline-none resize-y leading-relaxed"
+                  />
+
+                  <VoiceInput inputId="lawyer-notes" setText={setLawyerNotes} voice={voice} disabled={loading || Boolean(ingestProgress)} />
+                  {renderAttachmentsAndProgress()}
+                  {renderFolderScannerBar()}
+
+                  <div class="pt-3 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <label class="file-upload text-xs px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 cursor-pointer font-medium transition">
+                        🖼️ Upload Petition / Impugned Order / File
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*,.pdf,.docx,.zip,.txt,.md,.csv,.json"
+                          class="hidden"
+                          onChange={handleFileUpload}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleClipboardButtonClick(setLawyerNotes)}
+                        class="text-xs px-3 py-1.5 rounded-lg border border-zinc-200 hover:border-zinc-400 text-zinc-700 font-medium transition"
+                      >
+                        📋 Paste from Clipboard
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => runAnalysis('lawyer-research-bench')}
+                      disabled={loading || Boolean(ingestProgress) || voice.busy}
+                      class="w-full sm:w-auto min-h-[44px] px-4 py-2 rounded-xl bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 transition disabled:opacity-50"
+                    >
+                      {loading ? 'Building Judgment & Bare Act Dossier...' : 'Get Judgment Dossier, Bare Act & Oral Script →'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ==================== LIVE THINKING & PROGRESS STEPPER ==================== */}
             {renderLiveThinkingCard()}
 
@@ -3149,6 +3354,100 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                 {result?.engineResult?.responseCompletion?.incomplete && !loading && (
                   <div role="alert" class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-950">
                     This answer is incomplete. Ask for the missing part or a shorter complete answer before using a draft or taking action.
+                  </div>
+                )}
+
+                {result?.engineResult?.advocateResearch && (
+                  <div class="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-3 text-xs">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <div class="font-bold text-sm text-zinc-900 flex items-center gap-1.5">
+                        <span>📚 Verified Judgment Files, Bare Act Sections & Direct Links</span>
+                      </div>
+                      <span class="text-[11px] px-2 py-0.5 rounded-full bg-white border border-amber-200 text-amber-950 font-medium">
+                        One-Click Courtroom Reference
+                      </span>
+                    </div>
+
+                    {result.engineResult.advocateResearch.matchedJudgments?.length > 0 && (
+                      <div class="space-y-3">
+                        {result.engineResult.advocateResearch.matchedJudgments.map(j => (
+                          <div key={j.id} class="p-3.5 rounded-xl bg-white border border-amber-200/90 space-y-2.5 shadow-sm">
+                            <div class="flex flex-wrap items-start justify-between gap-2">
+                              <div>
+                                <div class="font-bold text-sm text-zinc-900">{j.caseTitle}</div>
+                                <div class="text-xs font-semibold text-amber-900">{j.citation} · {j.courtAndBench}</div>
+                              </div>
+                              <div class="flex flex-wrap items-center gap-1.5">
+                                {j.links?.indianKanoonDocUrl && (
+                                  <a
+                                    href={j.links.indianKanoonDocUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="px-2.5 py-1 rounded-lg bg-zinc-900 text-white font-semibold hover:bg-zinc-800 transition"
+                                  >
+                                    📄 Open Full Judgment ↗
+                                  </a>
+                                )}
+                                {j.links?.eScrUrl && (
+                                  <a
+                                    href={j.links.eScrUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="px-2.5 py-1 rounded-lg border border-zinc-300 bg-zinc-50 text-zinc-800 font-medium hover:border-zinc-500 transition"
+                                  >
+                                    🏛️ SC e-SCR ↗
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+
+                            <div class="text-zinc-700 leading-relaxed">
+                              <strong>Key Paragraphs:</strong> {j.keyParagraphs}
+                            </div>
+
+                            <div class="space-y-1.5 pt-1 border-t border-zinc-100">
+                              <div class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                                Bare Act Sections (Oral Proceeding Reference):
+                              </div>
+                              {j.bareActProvisions?.map((b, bIdx) => (
+                                <div key={bIdx} class="p-2 rounded-lg bg-zinc-50 border border-zinc-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                  <div class="space-y-0.5">
+                                    <div class="font-semibold text-zinc-900">{b.act} — <span class="text-amber-900">{b.sections}</span></div>
+                                    <div class="text-zinc-600">{b.bareActSummary}</div>
+                                  </div>
+                                  {b.indiaCodeUrl && (
+                                    <a
+                                      href={b.indiaCodeUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      class="px-2.5 py-1 rounded-lg bg-white border border-zinc-300 text-zinc-800 font-medium hover:border-zinc-900 whitespace-nowrap self-start sm:self-center"
+                                    >
+                                      📘 Bare Act (IndiaCode) ↗
+                                    </a>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {result.engineResult.advocateResearch.directLinks?.length > 0 && (
+                      <div class="flex flex-wrap items-center gap-2 pt-1">
+                        {result.engineResult.advocateResearch.directLinks.map((lnk, lIdx) => (
+                          <a
+                            key={lIdx}
+                            href={lnk.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="px-2.5 py-1 rounded-lg bg-white border border-amber-300 text-amber-950 font-medium hover:bg-amber-100 transition"
+                          >
+                            {lnk.label} ↗
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
