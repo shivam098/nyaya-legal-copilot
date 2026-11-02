@@ -22,6 +22,9 @@ import {
   buildDigestSystemPrompt
 } from '../src/engine/response-guidance.mjs';
 import {
+  buildGroundedLegalContext
+} from '../src/engine/legal-web-search.mjs';
+import {
   listSessionsForUser,
   getSessionWithTurnsForUser,
   saveOrAppendSessionTurn,
@@ -563,7 +566,7 @@ const server = http.createServer(async (req, res) => {
           ...(inferredReasons.length ? inferredReasons.map(r => `✓ Auto-Inferred from Record: ${r}`) : ['No overrides inferred from folder; using form inputs.']),
           inferredCaseState.multiOpSummary ? `✓ Multi-OP Matrix: ${inferredCaseState.multiOpSummary}` : null,
           engineResult.disposalPace
-            ? `✓ CPA s.38(7) Disposal Pace: ${engineResult.disposalPace.daysElapsed} days elapsed vs ${engineResult.disposalPace.targetDays}-day statutory target (${engineResult.disposalPace.breached ? 'BREACHED' : 'Within target'})`
+            ? `✓ CPA s.38(7) Disposal Pace: ${engineResult.disposalPace.daysSinceNotice} days elapsed vs ${engineResult.disposalPace.targetDays}-day statutory target (${engineResult.disposalPace.exceededStatutoryTarget ? 'BREACHED' : 'Within target'})`
             : null,
           engineResult.writtenVersion
             ? `✓ CPA s.38(2)(a) Written Version Status: ${engineResult.writtenVersion.status} (${engineResult.writtenVersion.daysSinceService}d since earliest notice)`
@@ -646,19 +649,22 @@ const server = http.createServer(async (req, res) => {
           });
         }
 
-        // STAGE B PREPARATION: Query-Aware BM25 Chunk Retrieval + Prefix-Cache-Aligned Prompt Ordering
+        // STAGE B PREPARATION: Query-Aware BM25 Chunk Retrieval + Live Web & Verified Statutory Reference Grounding
         sendEvent('step', {
           stepId: 'evidence',
           status: 'running',
-          detail: 'Finding document sections relevant to your question...'
+          detail: 'Checking verified Indian statutory references, official .gov.in portals & your documents...'
         });
 
         const retrievalQuery = userQuestionOnly || `${mode} ${inferredCaseState.stage || ''} ${inferredCaseState.multiOpSummary || ''} order sheet rejoinder written version c-13`;
         const { selectedText: retrievedChunksText, matchedSources } = folderCorpusOnly
           ? retrieveRelevantFolderChunks(folderCorpusOnly, retrievalQuery, 26000)
-          : { selectedText: effectiveRawInput.slice(0, 40000), matchedSources: [] };
+          : { selectedText: '(No external case folder uploaded — use the user question and the Verified Reference Pack / Live Web Lookup below)', matchedSources: [] };
 
+        const groundedLegal = await buildGroundedLegalContext(userQuestionOnly || effectiveRawInput, mode);
         engineResult.retrievedSources = matchedSources;
+        engineResult.verifiedReferences = groundedLegal.verifiedRefs.map(r => r.title);
+        engineResult.liveWebResults = groundedLegal.webResults;
 
         const systemPrompt = buildAnalysisSystemPrompt({ mode, isFollowUpTurn });
 
@@ -678,6 +684,9 @@ ${inferredReasons.length ? `\nAUTO-DETECTED FACTS FROM FOLDER ORDER SHEETS:\n- $
 DETERMINISTIC RULE ENGINE OUTPUT:
 ${JSON.stringify(engineResult, null, 2)}
 
+=== VERIFIED INDIAN STATUTORY & OFFICIAL PORTAL REFERENCE PACK + LIVE WEB LOOKUP ===
+${groundedLegal.contextBlock}
+
 === CASE DOCUMENT DIGEST & IMAGE TRANSCRIPTION (AI-extracted; check against source) ===
 ${activeFolderDigest || '(No folder digest — see raw record below)'}
 
@@ -690,12 +699,14 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
         sendEvent('step', {
           stepId: 'evidence',
           status: 'done',
-          detail: matchedSources.length
-            ? `Selected ${matchedSources.length} document section(s) relevant to your question.`
-            : 'Using the details you supplied directly.',
+          detail: `Loaded ${groundedLegal.verifiedRefs.length} statutory reference pack(s)${groundedLegal.webResults.length ? ` + ${groundedLegal.webResults.length} live web result(s)` : ''}${matchedSources.length ? ` + ${matchedSources.length} document section(s)` : ''}.`,
           logs: [
             `Turn Intent Classification: ${turnIntent.intent} (${turnIntent.reason})`,
             `Router Model Selected for Stage B: '${resolvedSeniorModel}'`,
+            `Verified Statutory Packs Matched: ${groundedLegal.verifiedRefs.map(r => r.title).join(' | ') || 'None'}`,
+            groundedLegal.webResults.length
+              ? `Live Official/Web Results Retrieved:\n` + groundedLegal.webResults.map((w, i) => `  ${i + 1}. ${w.title} (${w.url})`).join('\n')
+              : `Live Web Search: Relying on verified statutory reference pack`,
             `Static case context placed first for providers that support prompt caching.`,
             matchedSources.length
               ? `BM25 Top-Ranked Document Sections Retrieved for This Question:\n` + matchedSources.map((m, idx) => `  ${idx + 1}. ${m.source} (relevance score: ${m.score})`).join('\n')
@@ -808,6 +819,9 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
         : '';
 
       const engineResult = computeCaseEngine(caseState);
+      const groundedLegal = await buildGroundedLegalContext(rawInput, mode);
+      engineResult.verifiedReferences = groundedLegal.verifiedRefs.map(r => r.title);
+      engineResult.liveWebResults = groundedLegal.webResults;
       const systemPrompt = buildAnalysisSystemPrompt({
         mode,
         isFollowUpTurn: Boolean(existingSession?.turns?.length)
@@ -822,7 +836,10 @@ CASE STATE (JSON):
 ${JSON.stringify(caseState, null, 2)}
 
 DETERMINISTIC RULE ENGINE OUTPUT:
-${JSON.stringify(engineResult, null, 2)}${priorTurnsContext}
+${JSON.stringify(engineResult, null, 2)}
+
+=== VERIFIED INDIAN STATUTORY & OFFICIAL PORTAL REFERENCE PACK + LIVE WEB LOOKUP ===
+${groundedLegal.contextBlock}${priorTurnsContext}
 
 CURRENT USER UPDATE / QUESTION / RAW WHATSAPP CHAT / DOCUMENTS:
 ${rawInput || '(See attached images and Case State above)'}${imageSummary}`;

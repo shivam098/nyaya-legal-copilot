@@ -1023,67 +1023,76 @@ Selling AI software or services does **not** automatically mean you must registe
           let accumulatedMd = '';
           let receivedComplete = false;
 
+          const processSsePart = (part) => {
+            const line = part.trim();
+            if (!line.startsWith('data:')) return;
+            let evt;
+            try {
+              evt = JSON.parse(line.slice(5).trim());
+            } catch {
+              return;
+            }
+
+            if (evt.type === 'step') {
+              setThinkingSteps(prev =>
+                prev.map(s =>
+                  s.stepId === evt.stepId
+                    ? {
+                        ...s,
+                        status: evt.status,
+                        detail: evt.detail,
+                        logs: evt.logs || s.logs || [],
+                        liveText: evt.liveText !== undefined ? evt.liveText : (s.liveText || ''),
+                        expanded: s.expanded
+                      }
+                    : s
+                )
+              );
+              if (evt.engineResult) {
+                if (evt.engineResult.inferredCaseState) {
+                  applyInferredStateToForm(evt.engineResult.inferredCaseState);
+                }
+                setResult(prev => ({
+                  ...(prev || {}),
+                  engineResult: evt.engineResult,
+                  adviceMarkdown: accumulatedMd
+                }));
+              }
+            } else if (evt.type === 'delta') {
+              accumulatedMd += evt.delta;
+              setStreamingMarkdown(accumulatedMd);
+            } else if (evt.type === 'complete') {
+              receivedComplete = true;
+              setResult(evt);
+              setStreamingMarkdown('');
+              setSyncedDocNames(attachedTextDocs.map(d => d.name));
+              setSyncedImageNames(attachedImages.map(i => i.name));
+              if (evt.session) {
+                setActiveSession(evt.session);
+                setCaseTitle(evt.session.title || '');
+              }
+              if (Array.isArray(evt.sessions)) {
+                setSessions(evt.sessions);
+              }
+            } else if (evt.type === 'error') {
+              throw new Error(evt.error || 'Streaming error');
+            }
+          };
+
           while (true) {
             const { value, done } = await reader.read();
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
             const parts = buffer.split('\n\n');
             buffer = parts.pop() || '';
-
             for (const part of parts) {
-              const line = part.trim();
-              if (!line.startsWith('data:')) continue;
-              let evt;
-              try {
-                evt = JSON.parse(line.slice(5).trim());
-              } catch {
-                continue;
-              }
-
-              if (evt.type === 'step') {
-                setThinkingSteps(prev =>
-                  prev.map(s =>
-                    s.stepId === evt.stepId
-                      ? {
-                          ...s,
-                          status: evt.status,
-                          detail: evt.detail,
-                          logs: evt.logs || s.logs || [],
-                          liveText: evt.liveText !== undefined ? evt.liveText : (s.liveText || ''),
-                          expanded: s.expanded
-                        }
-                      : s
-                  )
-                );
-                if (evt.engineResult) {
-                  if (evt.engineResult.inferredCaseState) {
-                    applyInferredStateToForm(evt.engineResult.inferredCaseState);
-                  }
-                  setResult(prev => ({
-                    ...(prev || {}),
-                    engineResult: evt.engineResult,
-                    adviceMarkdown: accumulatedMd
-                  }));
-                }
-              } else if (evt.type === 'delta') {
-                accumulatedMd += evt.delta;
-                setStreamingMarkdown(accumulatedMd);
-              } else if (evt.type === 'complete') {
-                receivedComplete = true;
-                setResult(evt);
-                setStreamingMarkdown('');
-                setSyncedDocNames(attachedTextDocs.map(d => d.name));
-                setSyncedImageNames(attachedImages.map(i => i.name));
-                if (evt.session) {
-                  setActiveSession(evt.session);
-                  setCaseTitle(evt.session.title || '');
-                }
-                if (Array.isArray(evt.sessions)) {
-                  setSessions(evt.sessions);
-                }
-              } else if (evt.type === 'error') {
-                throw new Error(evt.error || 'Streaming error');
-              }
+              processSsePart(part);
+            }
+          }
+          buffer += decoder.decode();
+          if (buffer.trim()) {
+            for (const part of buffer.split('\n\n')) {
+              processSsePart(part);
             }
           }
 
@@ -1955,6 +1964,7 @@ Selling AI software or services does **not** automatically mean you must registe
                         <option value="op-evidence">The other side's evidence</option>
                         <option value="written-arguments">Written arguments explaining each side's case</option>
                         <option value="execution-s71-s72">Enforcing a favourable order that is not being followed</option>
+                        <option value="other-or-unsure">Other court/forum or not sure of stage — explain below</option>
                       </select>
                     </div>
                     <div>
@@ -2030,6 +2040,22 @@ Selling AI software or services does **not** automatically mean you must registe
                       >
                         📋 Paste from Clipboard
                       </button>
+                      {(midcaseNotes || serviceDate || nextHearingDate) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            voice.reset();
+                            setStage('other-or-unsure');
+                            setServiceDate('');
+                            setNextHearingDate('');
+                            setOpAdjournments(0);
+                            setMidcaseNotes('');
+                          }}
+                          class="text-xs text-zinc-400 hover:text-zinc-700 px-2 py-1"
+                        >
+                          Clear sample details
+                        </button>
+                      )}
                     </div>
                     <button
                       onClick={() => runAnalysis('midcase-battle-card')}
@@ -2095,7 +2121,7 @@ Selling AI software or services does **not** automatically mean you must registe
                         <input
                           type="file"
                           multiple
-                          accept="image/*,.txt,.md,.csv,.json"
+                          accept="image/*,.pdf,.docx,.zip,.txt,.md,.csv,.json"
                           class="hidden"
                           onChange={handleFileUpload}
                         />
@@ -2153,10 +2179,10 @@ Selling AI software or services does **not** automatically mean you must registe
             {/* Live Streaming Output OR Completed Result */}
             {(streamingMarkdown || result) && (
               <div class="min-w-0 mt-6 bg-white rounded-2xl border border-zinc-200 p-4 sm:p-6 space-y-5 shadow-sm">
-                {result?.engineResult?.disposalPace && (
+                {result?.engineResult?.disposalPace && Number.isFinite(result.engineResult.disposalPace.daysSinceNotice ?? result.engineResult.disposalPace.daysElapsed ?? result.engineResult.disposalPace.elapsedDays) && (
                   <div class="flex flex-wrap gap-2 pb-4 border-b border-zinc-100">
                     <span class="text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200 font-medium">
-                      Elapsed: {result.engineResult.disposalPace.daysElapsed ?? result.engineResult.disposalPace.elapsedDays}d / {result.engineResult.disposalPace.targetDays ?? result.engineResult.disposalPace.statutoryTargetDays}d statutory target
+                      Elapsed: {result.engineResult.disposalPace.daysSinceNotice ?? result.engineResult.disposalPace.daysElapsed ?? result.engineResult.disposalPace.elapsedDays}d / {result.engineResult.disposalPace.targetDays ?? result.engineResult.disposalPace.statutoryTargetDays}d statutory target
                     </span>
                     {result.engineResult.verification && (
                       <span class={`text-xs px-2.5 py-1 rounded-full border font-medium ${
