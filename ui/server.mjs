@@ -12,6 +12,7 @@ import {
 } from '../src/engine/consumer-rules.mjs';
 import {
   detectLegalDomain,
+  autoSenseIntakeFromText,
   extractPaidAmountInr,
   evaluateConsumerPecuniaryAndFee,
   evaluateNiAct138Deadlines,
@@ -941,12 +942,27 @@ const server = http.createServer(async (req, res) => {
           ? effectiveRawInput.slice(effectiveRawInput.indexOf('ATTACHED FOLDER / TEXT DOCUMENTS:'))
           : '';
 
-        // Auto-infer & override unchecked UI defaults from the folder record before running the deterministic rule engine!
-        const { inferredCaseState, inferredReasons } = inferCaseStateFromFolder({
+        // Auto-infer & override unchecked UI defaults from the folder record + natural-language omnibox before running the deterministic rule engine!
+        const folderInferred = inferCaseStateFromFolder({
           fileNames: [],
           combinedText: effectiveRawInput,
           currentCaseState: caseState
         });
+        const autoSensed = autoSenseIntakeFromText({
+          door,
+          mode,
+          caseState: folderInferred.inferredCaseState,
+          rawInput: effectiveRawInput
+        });
+        const effectiveDoor = autoSensed.door;
+        const effectiveMode = autoSensed.mode;
+        const inferredCaseState = autoSensed.caseState;
+        const inferredReasons = [
+          ...(door === 'unified' || mode === 'auto'
+            ? [`Auto-sensed workflow: ${autoSensed.autoDetectedCategoryLabel} (mode: ${effectiveMode})`]
+            : []),
+          ...folderInferred.inferredReasons
+        ];
 
         // Per-Turn Intent Classifier (prevents burning Opus 4.6 tokens on simple date/fact follow-ups)
         const turnIntent = classifyTurnIntent(userQuestionOnly, isFollowUpTurn);
@@ -962,7 +978,7 @@ const server = http.createServer(async (req, res) => {
 
         const resolvedSeniorModel = (model === 'auto' && turnIntent.recommendedTier === 'fast-or-balanced')
           ? 'claude-sonnet-4.6'
-          : resolveRoutedModel(model, mode, hasImages, isComplexCase);
+          : resolveRoutedModel(model, effectiveMode, hasImages, isComplexCase);
 
         const priorTurnsContext = buildPriorTurnsContext(existingSession?.turns || [], 1200, 1500);
 
@@ -999,7 +1015,10 @@ const server = http.createServer(async (req, res) => {
           inferredCaseState.proposedGapDays = Math.max(1, Math.round(gapMs / (1000 * 60 * 60 * 24)));
         }
 
-        const engineResult = computeCaseEngine(inferredCaseState, { door, mode, rawInput: effectiveRawInput });
+        const engineResult = computeCaseEngine(inferredCaseState, { door: effectiveDoor, mode: effectiveMode, rawInput: effectiveRawInput });
+        engineResult.autoDetectedCategoryLabel = autoSensed.autoDetectedCategoryLabel;
+        engineResult.effectiveDoor = effectiveDoor;
+        engineResult.effectiveMode = effectiveMode;
         engineResult.inferredCaseState = inferredCaseState;
         engineResult.inferredReasons = inferredReasons;
         engineResult.isComplexCase = isComplexCase;
@@ -1008,7 +1027,7 @@ const server = http.createServer(async (req, res) => {
         const matchedNames = (engineResult.matchedTactics || []).map(t => t.title).join(', ') || 'Standard stage review';
 
         const ruleLogs = [
-          `✓ Detected Legal Domain & Forum: ${engineResult.domainInfo?.label || mode}`,
+          `✓ Detected Legal Domain & Forum: ${engineResult.domainInfo?.label || effectiveMode}`,
           ...(inferredReasons.length ? inferredReasons.map(r => `✓ Auto-Inferred from Record: ${r}`) : ['No overrides inferred from folder; using form inputs.']),
           inferredCaseState.multiOpSummary ? `✓ Party Status Matrix: ${inferredCaseState.multiOpSummary}` : null,
           engineResult.consumerPecuniary
@@ -1037,7 +1056,7 @@ const server = http.createServer(async (req, res) => {
         sendEvent('step', {
           stepId: 'rules',
           status: 'done',
-          detail: mode === 'company-advisor'
+          detail: effectiveMode === 'company-advisor'
             ? 'No company compliance calculator is available. Exact dates and fees need verification.'
             : engineResult.domainInfo?.isConsumerForum
             ? `Found ${(engineResult.matchedTactics || []).length} possible procedural step(s). These depend on the forum and the accuracy of the supplied facts.`
@@ -1120,18 +1139,18 @@ const server = http.createServer(async (req, res) => {
           detail: 'Checking verified Indian statutory references, official .gov.in portals & your documents...'
         });
 
-        const retrievalQuery = userQuestionOnly || `${mode} ${inferredCaseState.stage || ''} ${inferredCaseState.multiOpSummary || ''} order sheet rejoinder written version`;
+        const retrievalQuery = userQuestionOnly || `${effectiveMode} ${inferredCaseState.stage || ''} ${inferredCaseState.multiOpSummary || ''} order sheet rejoinder written version`;
         const { selectedText: retrievedChunksText, matchedSources } = folderCorpusOnly
           ? retrieveRelevantFolderChunks(folderCorpusOnly, retrievalQuery, 26000)
           : { selectedText: '(No external case folder uploaded — use the user question and the Verified Reference Pack / Live Web Lookup below)', matchedSources: [] };
 
         const groundedLegal = await buildGroundedLegalContext(
           `${userQuestionOnly || effectiveRawInput} ${inferredCaseState.subTrack || ''} ${engineResult.domainInfo?.domain || ''} ${priorTurnsContext.slice(0, 600)}`,
-          mode
+          effectiveMode
         );
         const shouldRunAdvocateBench = (
-          door === 'lawyer-workbench' ||
-          mode === 'lawyer-research-bench' ||
+          effectiveDoor === 'lawyer-workbench' ||
+          effectiveMode === 'lawyer-research-bench' ||
           matchLandmarkJudgmentsAndBareActs(`${userQuestionOnly || effectiveRawInput} ${priorTurnsContext.slice(0, 600)}`).length > 0
         );
         const advocateResearch = shouldRunAdvocateBench
@@ -1149,7 +1168,7 @@ const server = http.createServer(async (req, res) => {
           };
         }
 
-        const systemPrompt = buildAnalysisSystemPrompt({ mode, isFollowUpTurn });
+        const systemPrompt = buildAnalysisSystemPrompt({ mode: effectiveMode, isFollowUpTurn });
 
         // Pass any newly uploaded images (`images` is already filtered to unsyncedImages by the client) on both initial and follow-up turns!
         const sendImagesToSenior = hasImages ? rankedImages.slice(0, 6) : [];
@@ -1158,7 +1177,7 @@ const server = http.createServer(async (req, res) => {
           : '';
 
         const userPrompt = `=== STATIC CASE WORKSPACE PREFIX (KV-CACHE ALIGNED) ===
-MODE: ${mode}
+MODE: ${effectiveMode}
 CASE STATE (form inputs and any record-based inferences; not independently verified):
 ${JSON.stringify(inferredCaseState, null, 2)}
 ${inferredReasons.length ? `\nAUTO-DETECTED FACTS FROM FOLDER ORDER SHEETS:\n- ${inferredReasons.join('\n- ')}\n` : ''}
@@ -1204,14 +1223,14 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
           detail: 'Explaining your situation, options and most useful next steps...',
           logs: [
             `Senior Counsel Model: ${resolvedSeniorModel}`,
-            `Synthesizing CPA 2019 statutory findings + Junior Clerk Digest + ${matchedSources.length} retrieved document sections...`
+            `Synthesizing statutory findings + Junior Clerk Digest + ${matchedSources.length} retrieved document sections...`
           ]
         });
 
         const llmRes = await callCopilotModel({
           userId,
           model: resolvedSeniorModel,
-          operation: mode,
+          operation: effectiveMode,
           caseId: sessionId || caseState.id || 'live-workspace',
           systemPrompt,
           userPrompt,
@@ -1246,8 +1265,8 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
           userId,
           sessionId: existingSession?.id || sessionId,
           title: saveCaseTitle || existingSession?.title,
-          door,
-          mode,
+          door: effectiveDoor,
+          mode: effectiveMode,
           caseState: inferredCaseState,
           folderDigest: activeFolderDigest,
           userInput: effectiveRawInput,
@@ -1313,17 +1332,29 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
       const priorTurnsContext = buildPriorTurnsContext(existingSession?.turns || [], 600, 900);
       const effectiveRawInput = redactPiiForCloud(rawInput);
 
-      const { inferredCaseState } = inferCaseStateFromFolder({
+      const folderInferred = inferCaseStateFromFolder({
         fileNames: [],
         combinedText: effectiveRawInput,
         currentCaseState: caseState
       });
+      const autoSensed = autoSenseIntakeFromText({
+        door,
+        mode,
+        caseState: folderInferred.inferredCaseState,
+        rawInput: effectiveRawInput
+      });
+      const effectiveDoor = autoSensed.door;
+      const effectiveMode = autoSensed.mode;
+      const inferredCaseState = autoSensed.caseState;
 
-      const engineResult = computeCaseEngine(inferredCaseState, { door, mode, rawInput: effectiveRawInput });
-      const groundedLegal = await buildGroundedLegalContext(effectiveRawInput, mode);
+      const engineResult = computeCaseEngine(inferredCaseState, { door: effectiveDoor, mode: effectiveMode, rawInput: effectiveRawInput });
+      engineResult.autoDetectedCategoryLabel = autoSensed.autoDetectedCategoryLabel;
+      engineResult.effectiveDoor = effectiveDoor;
+      engineResult.effectiveMode = effectiveMode;
+      const groundedLegal = await buildGroundedLegalContext(effectiveRawInput, effectiveMode);
       const shouldRunAdvocateBench = (
-        door === 'lawyer-workbench' ||
-        mode === 'lawyer-research-bench' ||
+        effectiveDoor === 'lawyer-workbench' ||
+        effectiveMode === 'lawyer-research-bench' ||
         matchLandmarkJudgmentsAndBareActs(effectiveRawInput).length > 0
       );
       const advocateResearch = shouldRunAdvocateBench
@@ -1340,7 +1371,7 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
         };
       }
       const systemPrompt = buildAnalysisSystemPrompt({
-        mode,
+        mode: effectiveMode,
         isFollowUpTurn: Boolean(existingSession?.turns?.length)
       });
 
@@ -1348,7 +1379,7 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
         ? `\n\nATTACHED SCREENSHOTS / IMAGES (${images.length}): ${images.map((img, i) => `[Image ${i + 1}: ${img.name || 'screenshot'}]`).join(', ')}. Carefully read all visible text, timestamps, amounts, and court/chat details inside the attached images.`
         : '';
 
-      const userPrompt = `MODE: ${mode}
+      const userPrompt = `MODE: ${effectiveMode}
 CASE STATE (JSON):
 ${JSON.stringify(inferredCaseState, null, 2)}
 
@@ -1363,8 +1394,8 @@ ${effectiveRawInput || '(See attached images and Case State above)'}${imageSumma
 
       const llmRes = await callCopilotModel({
         userId,
-        model,
-        operation: mode,
+        model: model === 'auto' ? resolveRoutedModel('auto', effectiveMode, Array.isArray(images) && images.length > 0, false) : model,
+        operation: effectiveMode,
         caseId: sessionId || caseState.id || 'live-workspace',
         systemPrompt,
         userPrompt,
@@ -1382,8 +1413,8 @@ ${effectiveRawInput || '(See attached images and Case State above)'}${imageSumma
         userId,
         sessionId: existingSession?.id || sessionId,
         title: saveCaseTitle || existingSession?.title,
-        door,
-        mode,
+        door: effectiveDoor,
+        mode: effectiveMode,
         caseState: inferredCaseState,
         userInput: rawInput,
         imagesCount: Array.isArray(images) ? images.length : 0,
