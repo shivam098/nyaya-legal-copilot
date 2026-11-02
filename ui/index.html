@@ -3774,6 +3774,118 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                   </div>
                 )}
 
+                {result?.engineResult?.practitionerIntelligence && (
+                  <div class="p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200/90 space-y-3 text-xs">
+                    {result.engineResult.practitionerIntelligence.instantTriage && (
+                      <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2 pb-2.5 border-b border-zinc-200/70">
+                        <div class="space-y-1">
+                          <div class="flex flex-wrap items-center gap-1.5">
+                            <span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-950 font-semibold text-[10px] uppercase tracking-wider">
+                              ⚡ Instant Triage
+                            </span>
+                            <span class="font-bold text-zinc-900">
+                              {result.engineResult.practitionerIntelligence.instantTriage.headline}
+                            </span>
+                          </div>
+                          <p class="text-zinc-700 leading-relaxed">
+                            <strong>Immediate First Move:</strong> {result.engineResult.practitionerIntelligence.instantTriage.firstMoveNow}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {result.engineResult.practitionerIntelligence.ingredientTranslations?.length > 0 && (
+                      <div class="space-y-1.5">
+                        <div class="text-[11px] font-semibold uppercase tracking-wider text-amber-900">
+                          🔍 Everyday Term → Actual Legal Ingredient Check
+                        </div>
+                        {result.engineResult.practitionerIntelligence.ingredientTranslations.map(tr => (
+                          <div key={tr.id} class="p-2.5 rounded-xl bg-white border border-amber-200/90 space-y-1">
+                            <div class="font-semibold text-zinc-900">
+                              “{tr.laymanTerm}” → <span class="text-amber-900">{tr.actualLegalConcept}</span>
+                            </div>
+                            <div class="text-zinc-600 leading-relaxed">{tr.explanation}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {result.engineResult.practitionerIntelligence.factProbing?.firCognizabilityAnalysis && (
+                      <div class="p-2.5 rounded-xl bg-white border border-purple-200/90 space-y-1">
+                        <div class="font-semibold text-purple-950">
+                          🛡️ BNSS First Schedule & Police Station Check: {result.engineResult.practitionerIntelligence.factProbing.firCognizabilityAnalysis.scheduleStatus}
+                        </div>
+                        <div class="text-zinc-600 leading-relaxed">
+                          {result.engineResult.practitionerIntelligence.factProbing.firCognizabilityAnalysis.whyPoliceRefused}
+                        </div>
+                        <div class="text-zinc-800 font-medium pt-0.5">
+                          What to do at the Thana: {result.engineResult.practitionerIntelligence.factProbing.firCognizabilityAnalysis.whatToTellPoliceOrDo}
+                        </div>
+                      </div>
+                    )}
+
+                    {result.engineResult.practitionerIntelligence.foresightAndPrayer?.prayerClauseAudit && (
+                      <div class={`p-2.5 rounded-xl border space-y-1.5 ${
+                        result.engineResult.practitionerIntelligence.foresightAndPrayer.prayerClauseAudit.status === 'COMPLETE'
+                          ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                          : 'bg-amber-50/80 border-amber-300 text-amber-950'
+                      }`}>
+                        <div class="font-bold">
+                          📜 Plaint / Petition “Prayer Clause” Audit: {result.engineResult.practitionerIntelligence.foresightAndPrayer.prayerClauseAudit.status === 'COMPLETE' ? 'All Core Reliefs Present' : 'Missing Reliefs Detected Before Filing'}
+                        </div>
+                        {result.engineResult.practitionerIntelligence.foresightAndPrayer.prayerClauseAudit.missingPrayers?.length > 0 && (
+                          <ul class="list-disc pl-4 space-y-0.5 text-zinc-800">
+                            {result.engineResult.practitionerIntelligence.foresightAndPrayer.prayerClauseAudit.missingPrayers.map((mp, idx) => (
+                              <li key={idx}><strong>Add to Prayer:</strong> {mp}</li>
+                            ))}
+                          </ul>
+                        )}
+                        <div class="text-[11px] text-zinc-600">
+                          {result.engineResult.practitionerIntelligence.foresightAndPrayer.prayerClauseAudit.practitionerRule}
+                        </div>
+                      </div>
+                    )}
+
+                    {(result.engineResult.practitionerIntelligence.foresightAndPrayer?.downstreamWarnings?.length > 0 ||
+                      result.engineResult.practitionerIntelligence.matchedTrajectories?.length > 0) && (
+                      <details class="pt-1">
+                        <summary class="cursor-pointer font-semibold text-zinc-700 hover:text-zinc-900">
+                          🧭 View Downstream Trap Foresight, Burden of Proof & Real Case Trajectory ({(result.engineResult.practitionerIntelligence.foresightAndPrayer?.downstreamWarnings?.length || 0) + (result.engineResult.practitionerIntelligence.matchedTrajectories?.length || 0)})
+                        </summary>
+                        <div class="mt-2.5 space-y-2">
+                          {result.engineResult.practitionerIntelligence.foresightAndPrayer?.burdenOfProofGuide && (
+                            <div class="p-2.5 rounded-xl bg-white border border-zinc-200 space-y-0.5">
+                              <div class="font-semibold text-zinc-900">
+                                ⚖️ Standard & Burden of Proof: {result.engineResult.practitionerIntelligence.foresightAndPrayer.burdenOfProofGuide.category}
+                              </div>
+                              <div class="text-zinc-600 leading-relaxed">
+                                {result.engineResult.practitionerIntelligence.foresightAndPrayer.burdenOfProofGuide.principle}
+                              </div>
+                            </div>
+                          )}
+                          {result.engineResult.practitionerIntelligence.foresightAndPrayer?.downstreamWarnings?.map(w => (
+                            <div key={w.id} class="p-2.5 rounded-xl bg-white border border-amber-200 space-y-0.5">
+                              <div class="font-semibold text-amber-950">{w.title}</div>
+                              <div class="text-zinc-600 leading-relaxed">{w.detail}</div>
+                            </div>
+                          ))}
+                          {result.engineResult.practitionerIntelligence.matchedTrajectories?.map(trj => (
+                            <div key={trj.id} class="p-2.5 rounded-xl bg-white border border-zinc-200 space-y-1">
+                              <div class="font-semibold text-zinc-900">🧭 Practitioner Trajectory: {trj.title}</div>
+                              <div class="text-zinc-500"><strong>Why people get stuck:</strong> {trj.wherePeopleGetStuck}</div>
+                              <ul class="list-disc pl-4 space-y-0.5 text-zinc-700">
+                                {trj.practitionerTurnOfEvents.map((st, sIdx) => (
+                                  <li key={sIdx}>{st}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                )}
+
                 <div
                   class="markdown-body max-w-none"
                   dangerouslySetInnerHTML={renderFormattedMarkdown(streamingMarkdown || result?.adviceMarkdown || '')}
@@ -3877,7 +3989,37 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                       )}
                     </div>
 
-                    <div class="pt-4 border-t border-zinc-200/80 space-y-2">
+                    <div class="pt-4 border-t border-zinc-200/80 space-y-3">
+                      {result?.engineResult?.practitionerIntelligence?.factProbing?.clarifyingQuestions?.length > 0 && (
+                        <div class="p-3 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2 text-xs">
+                          <div class="font-semibold text-amber-950">
+                            💬 Lawyer's Clarifying Questions (tap an option or type below to sharpen your plan):
+                          </div>
+                          {result.engineResult.practitionerIntelligence.factProbing.clarifyingQuestions.map((cq) => (
+                            <div key={cq.id} class="space-y-1.5">
+                              <div class="font-medium text-zinc-900">{cq.question}</div>
+                              <div class="text-[11px] text-zinc-600">{cq.whyLawyerAsks}</div>
+                              <div class="flex flex-wrap gap-1.5 pt-0.5">
+                                {(cq.quickReplies || []).map((qr, qIdx) => (
+                                  <button
+                                    key={qIdx}
+                                    type="button"
+                                    disabled={loading || voice.busy}
+                                    onClick={() => {
+                                      setFollowUpText(qr);
+                                      runAnalysis(activeSession?.mode, qr);
+                                    }}
+                                    class="text-left text-xs px-2.5 py-1.5 rounded-lg bg-white hover:bg-amber-100 text-zinc-800 border border-amber-300 font-medium transition disabled:opacity-50"
+                                  >
+                                    {qr} →
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
                       <label htmlFor="follow-up-text" class="text-xs font-semibold text-zinc-700 block">
                         Ask about anything unclear, or tell us what changed
                       </label>

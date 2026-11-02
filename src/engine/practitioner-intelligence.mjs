@@ -1,0 +1,521 @@
+/**
+ * Practitioner Intelligence Engine (Improvements #1–#5 from Lawyer Consultation)
+ *
+ * Implements how an experienced Indian trial/chamber advocate structurally thinks:
+ * 1. Conversational "WhatsApp-Style" Fact-Probing & BNSS First Schedule / s.173(3) Cognizability Check
+ * 2. Layman-to-Legal Statutory Ingredient Translator (Theft vs Misappropriation/CBT, Assault vs Hurt, Art. 12 State)
+ * 3. Downstream Risk Foresight, Burden-of-Proof Framing & Plaint "Prayer Clause" Auditor
+ * 4. Instant <1s Empathetic First-Response Triage (before deep LLM research completes)
+ * 5. Structured "How a Local Lawyer Thinks" End-to-End Case-Trajectory Repository
+ */
+
+/**
+ * 1. LAYMAN-TO-LEGAL INGREDIENT TRANSLATOR (#2)
+ * Translates everyday words ("chori", "fraud", "assault", "dowry harassment", "fundamental right")
+ * into exact statutory ingredients under BNS/BNSS 2023 & Civil Law.
+ */
+export const LAYMAN_TO_LEGAL_INGREDIENT_RULES = [
+  {
+    id: 'chori-vs-entrustment-cbt',
+    triggerRegex: /\b(chori|चोरी|stole|stolen|theft)\b/i,
+    entrustmentRegex: /\b(gave\s+him|gave\s+her|handed\s+over|for\s+safekeeping|lent|borrowed|kept\s+with|entrusted|rakhne\s+ke\s+liye|diya\s+tha|रखने\s+के\s+लिए|दिया\s+था|refusing\s+to\s+return|not\s+returning)\b/i,
+    laymanTerm: 'Theft / Chori (चोरी)',
+    actualLegalConcept: 'Criminal Misappropriation (Section 314 BNS / s.403 IPC) or Criminal Breach of Trust (Section 316 BNS / s.406 IPC)',
+    explanation:
+      'In everyday speech people call any unreturned item "Theft (चोरी)". In law, Theft (Section 303 BNS / s.378 IPC) ONLY applies when someone takes property out of your possession WITHOUT your consent. If you voluntarily handed over or entrusted the property/money/jewellery/vehicle to someone and they dishonestly kept or misused it, it is NOT Theft—it is Criminal Misappropriation (Section 314 BNS) or Criminal Breach of Trust (Section 316(2) BNS). Quoting the wrong section at the police station is a top reason police turn complainants away.'
+  },
+  {
+    id: 'theft-below-5000-non-cognizable',
+    triggerRegex: /\b(chori|चोरी|stole|stolen|theft|pickpocket|shoplift)\b/i,
+    laymanTerm: 'Petty Theft (< ₹5,000 Value)',
+    actualLegalConcept: 'BNS Section 303(2) Proviso & BNSS First Schedule — Non-Cognizable if property value is less than ₹5,000 (first conviction)',
+    explanation:
+      'Under the Bharatiya Nyaya Sanhita (BNS), 2023 Section 303(2) Proviso read with the BNSS First Schedule, where the value of stolen property is LESS than ₹5,000 (first offence), the offence has been made NON-COGNIZABLE and bailable (punishable with community service upon return/restoration of property). For non-cognizable offences, police record an NCR (Non-Cognizable Report) under Section 174 BNSS and cannot register a regular FIR without a Magistrate\'s order unless snatching (Section 304 BNS), house-trespass/burglary (Section 305 BNS), or force/robbery (Section 309 BNS) was involved.'
+  },
+  {
+    id: 'assault-vs-criminal-force-hurt',
+    triggerRegex: /\b(assault|assaulted|gesture|raised\s+hand|tried\s+to\s+hit|marne\s+ka\s+ishara|मारने\s+का|हाथ\s+उठाया|slapped|beaten|mara|पीट\s+दिया)\b/i,
+    laymanTerm: 'Assault / Maar-Peet',
+    actualLegalConcept: 'Assault (Section 130 BNS / s.351 IPC) vs. Criminal Force (Section 129 BNS) vs. Voluntarily Causing Hurt (Section 115(2) BNS / s.323 IPC)',
+    explanation:
+      'In common parlance "assault" means physical beating. Under Indian criminal law, a threatening gesture or preparation that makes you apprehend immediate force WITHOUT physical contact is "Assault" (Section 130 BNS / s.351 IPC); actual unwanted contact is "Criminal Force" (Section 129 BNS); and causing bodily pain/injury is "Hurt" (Section 115(2) BNS — non-cognizable for simple hurt unless coupled with grievous hurt s.117, wrongful restraint s.126(2), weapon s.118, or house trespass).'
+  },
+  {
+    id: 'dowry-label-vs-marital-discord',
+    triggerRegex: /\b(dowry\s+harassment|dahej\s+utpidan|दहेज\s+उत्पीड़न|498\s*-?\s*a|husband\s+not\s+calling|pati\s+bula\s+nahi\s+rahe|argument\s+with\s+husband|nok\s*-?\s*jhok|नोकझोंक)\b/i,
+    laymanTerm: 'Dowry Harassment / Matrimonial Dispute',
+    actualLegalConcept: 'Section 85 BNS (498A IPC) Cruelty vs. Section 12 PWDVA Civil Residence/Maintenance vs. Section 9 HMA Restitution / Mediation',
+    explanation:
+      'Not every marital quarrel or separation is a criminal Section 85 BNS (498A IPC) FIR case. Section 85/86 BNS requires grave conduct likely to drive the woman to suicide/grave injury OR harassment to coerce unlawful property/dowry demand. If the dispute is an ordinary marital tiff where a spouse left after an argument and wants cohabitation restored, filing an FIR destroys reconciliation—the legal remedy is Family Counselling / Mediation or Restitution of Conjugal Rights (Section 9 HMA), or a civil Magistrate application under Section 12 PWDVA if shelter/maintenance/streedhan is withheld.'
+  },
+  {
+    id: 'cheating-vs-civil-breach',
+    triggerRegex: /\b(fraud|cheated|cheating|dhokha|धोखाधड़ी|420|did\s+not\s+pay\s+back|payment\s+stuck|refused\s+to\s+refund)\b/i,
+    laymanTerm: 'Fraud / Cheating (420)',
+    actualLegalConcept: 'Cheating (Section 318(4) BNS / s.420 IPC) vs. Civil Breach of Contract (Section 73 Contract Act / Consumer / MSME)',
+    explanation:
+      'Police frequently refuse FIRs when someone says "I was cheated" in a business or purchase deal because mere failure to keep a promise is a Civil Breach of Contract, NOT criminal Cheating. To make out criminal Cheating under Section 318 BNS (old s.420 IPC), you must show fraudulent or dishonest intention AT THE VERY INCEPTION (from Day 1 when the money was taken, e.g., fake title, forged document, non-existent goods, or immediate diversion of funds).'
+  },
+  {
+    id: 'article-12-state-vs-private',
+    triggerRegex: /\b(fundamental\s+right|article\s+12|article\s+14|article\s+19|article\s+21|article\s+32|article\s+226|writ\s+petition|bcci|mौलिक\s+अधिकार)\b/i,
+    laymanTerm: 'Fundamental Rights / Writ Petition Against Any Organization',
+    actualLegalConcept: 'Article 12 "State" Instrumentality Test (Article 32 SC vs. Article 226 HC Public Function Writ)',
+    explanation:
+      'Most Fundamental Rights (like Articles 14, 19, 21) are enforceable against the "State" under Article 12 of the Constitution (Government, statutory authorities, or bodies financially, functionally, and administratively dominated by the Government per Ajay Hasia / Pradeep Kumar Biswas). For bodies like BCCI or private institutions discharging a public duty/monopoly, the Supreme Court held in Zee Telefilms v. Union of India that while not "State" for an Article 32 writ before the Supreme Court, they are amenable to High Court Writ Jurisdiction under Article 226 for public-function violations.'
+  }
+];
+
+export function translateLaymanToLegalIngredients(rawInput = '', paidAmountInr = null) {
+  const text = String(rawInput || '');
+  const translations = [];
+
+  for (const rule of LAYMAN_TO_LEGAL_INGREDIENT_RULES) {
+    if (!rule.triggerRegex.test(text)) continue;
+    if (rule.id === 'chori-vs-entrustment-cbt') {
+      translations.push({
+        id: rule.id,
+        laymanTerm: rule.laymanTerm,
+        actualLegalConcept: rule.entrustmentRegex.test(text)
+          ? 'Criminal Breach of Trust / Misappropriation (Section 316 / 314 BNS) — NOT Theft'
+          : rule.actualLegalConcept,
+        explanation: rule.explanation,
+        confirmedByFacts: rule.entrustmentRegex.test(text)
+      });
+    } else if (rule.id === 'theft-below-5000-non-cognizable') {
+      if (paidAmountInr !== null && paidAmountInr >= 5000 && !/\b(5000|5,000|five\s+thousand|पांच\s+हजार)\b/i.test(text)) {
+        continue;
+      }
+      translations.push({
+        id: rule.id,
+        laymanTerm: rule.laymanTerm,
+        actualLegalConcept: rule.actualLegalConcept,
+        explanation: rule.explanation,
+        confirmedByFacts: Boolean(paidAmountInr !== null && paidAmountInr < 5000)
+      });
+    } else {
+      translations.push({
+        id: rule.id,
+        laymanTerm: rule.laymanTerm,
+        actualLegalConcept: rule.actualLegalConcept,
+        explanation: rule.explanation,
+        confirmedByFacts: true
+      });
+    }
+  }
+
+  return translations;
+}
+
+/**
+ * 2. CONVERSATIONAL FACT-PROBING & BNSS FIRST SCHEDULE / s.173(3) COGNIZABILITY ENGINE (#1)
+ * Determines what a real advocate would ask first before prescribing bookish procedure,
+ * and checks BNSS First Schedule cognizability + BNSS s.173(3) preliminary inquiry rules.
+ */
+export function evaluateConversationalFactProbing({
+  rawInput = '',
+  domainInfo = {},
+  paidAmountInr = null,
+  caseState = {}
+} = {}) {
+  const text = String(rawInput || '');
+  const lower = text.toLowerCase();
+  const clarifyingQuestions = [];
+  let firCognizabilityAnalysis = null;
+
+  const mentionsFirRefusalOrPolice = /\b(fir\b|police\s+refus|not\s+registering\s+fir|thana|थाना|पुलिस|एफआईआर| दर्ज\s+नहीं|173\s+bnss|154\s+crpc|156\(3\)|175\(3\))\b/i.test(text);
+  const mentionsTheft = /\b(chori|चोरी|theft|stole|stolen)\b/i.test(text);
+  const mentionsSnatchingOrRobbery = /\b(snatch|snatched|robbery|loot|gunpoint|knife|house\s+break|burglary|ताला\s+तोड़)\b/i.test(text);
+  const mentionsMatrimonial = domainInfo.domain === 'matrimonial-family' || /\b(dowry|dahej|दहेज|498\s*-?\s*a|husband|wife|in-laws|caw\s+cell|mahila\s+thana|पति|पत्नी)\b/i.test(text);
+
+  if (mentionsFirRefusalOrPolice || domainInfo.domain === 'criminal-bns-bnss') {
+    // Determine BNSS First Schedule status & BNSS s.173(3) preliminary inquiry applicability
+    if (mentionsTheft && !mentionsSnatchingOrRobbery && paidAmountInr !== null && paidAmountInr < 5000) {
+      firCognizabilityAnalysis = {
+        scheduleStatus: 'NON-COGNIZABLE under BNSS First Schedule (BNS s.303(2) Proviso — Theft below ₹5,000)',
+        preliminaryInquiryApplies: false,
+        whyPoliceRefused: `Because the stolen amount/value (₹${paidAmountInr.toLocaleString('en-IN')}) is below ₹5,000 and no force/snatching or house-breaking was used, BNS Section 303(2) Proviso classifies this first offence as Non-Cognizable. Police cannot register a regular FIR under Section 173(1) BNSS without a Magistrate's order.`,
+        whatToTellPoliceOrDo:
+          'Ask the Duty Officer to record a Non-Cognizable Report (NCR) in the station diary under Section 174(1) BNSS and give you a free copy, OR if snatching (Section 304 BNS) / house-trespass (Section 305 BNS) occurred, state those exact facts in writing so it becomes Cognizable.'
+      };
+    } else if (mentionsMatrimonial || /\b(commercial|business\s+dispute|breach\s+of\s+trust|cheating|420|318\s+bns)\b/i.test(text)) {
+      firCognizabilityAnalysis = {
+        scheduleStatus: 'COGNIZABLE (Subject to BNSS Section 173(3) & Lalita Kumari Preliminary Inquiry Rules)',
+        preliminaryInquiryApplies: true,
+        whyPoliceRefused:
+          'Under the Supreme Court Constitution Bench ruling in Lalita Kumari v. Govt. of UP ((2014) 2 SCC 1) AND newly codified Section 173(3) of the BNSS, 2023, for offences punishable with 3 to 7 years (and matrimonial/family or commercial disputes), the SHO—with prior permission from an officer not below the rank of DSP/ACP—may conduct a Preliminary Inquiry within 14 days to check if a prima facie cognizable offence exists before registering the FIR.',
+        whatToTellPoliceOrDo:
+          'Do not just accept an oral refusal. Hand over a written complaint stamped with a Receiving/DD Entry number and ask: (1) If the facts disclose a clear cognizable offence, register the FIR under Section 173(1) BNSS; or (2) If conducting a Section 173(3) BNSS Preliminary Inquiry with DSP permission, record the entry and complete it within the statutory 14-day cap.'
+      };
+    } else {
+      firCognizabilityAnalysis = {
+        scheduleStatus: 'Check BNSS First Schedule Ingredients (Cognizable vs. Non-Cognizable)',
+        preliminaryInquiryApplies: false,
+        whyPoliceRefused:
+          'Police often turn complainants away when the oral complaint sounds like a civil money recovery, a minor non-cognizable scuffle (Section 115(2) BNS simple hurt), or petty theft (< ₹5,000 under BNS s.303(2)).',
+        whatToTellPoliceOrDo:
+          'Before escalating to the SP (Section 173(4) BNSS) or Magistrate (Section 175(3) BNSS), ensure your written complaint clearly sets out the statutory ingredients of a Cognizable offence (e.g., snatching s.304 BNS, cheating from inception s.318(4) BNS, extortion s.308 BNS, or grievous hurt/wrongful restraint) and obtain a stamped receiving or e-FIR number.'
+      };
+    }
+
+    // Probing questions a real lawyer asks when FIR refusal is mentioned without full facts
+    if (!paidAmountInr && /\b(chori|theft|fraud|cheating|money|पैसा|चोरी|धोखाधड़ी)\b/i.test(text)) {
+      clarifyingQuestions.push({
+        id: 'probe-amount-and-handover',
+        question: 'What is the approximate rupee value/amount involved, and was the money/item taken without your knowledge or handed over by you on trust?',
+        whyLawyerAsks: 'Under BNS s.303(2), theft below ₹5,000 is non-cognizable; and if you handed it over yourself, the offence is Criminal Breach of Trust (s.316 BNS) or Cheating (s.318 BNS), not Theft.',
+        quickReplies: [
+          'Amount is above ₹5,000 and it was taken without my consent',
+          'I transferred/handed over the money on a false promise (Cheating from Day 1)',
+          'Amount is under ₹5,000, or it was a business/loan repayment dispute'
+        ]
+      });
+    }
+
+    if (mentionsFirRefusalOrPolice && !/\b(written\s+complaint|dd\s+entry|receiving|sp\s+office|registered\s+post)\b/i.test(lower)) {
+      clarifyingQuestions.push({
+        id: 'probe-police-visit-details',
+        question: 'What exact incident did you report at the police station, and did you give a written application (with receiving) or only speak orally?',
+        whyLawyerAsks: 'A lawyer first checks whether your facts disclose a cognizable offence under the BNSS First Schedule and whether police invoked a 14-day Preliminary Inquiry under Section 173(3) BNSS.',
+        quickReplies: [
+          'Police refused orally without taking my written complaint',
+          'I gave a written complaint at the Thana but got no FIR number',
+          'Police said it is a civil / family matter and asked us to settle'
+        ]
+      });
+    }
+  }
+
+  // Matrimonial Probing: Distinguish genuine cruelty/DV/streedhan deprivation vs minor marital argument ("Restitution vs FIR" from cr3 14:22-15:10)
+  if (mentionsMatrimonial && caseState.role !== 'defender') {
+    const hasSpecificCrueltyOrLockout = /\b(locked\s+me\s+out|beaten|hit\s+me|threw\s+me\s+out|kept\s+my\s+jewellery|streedhan|stridhan|demanded\s+rs|demanded\s+car|demanded\s+cash)\b/i.test(lower);
+    if (!hasSpecificCrueltyOrLockout) {
+      clarifyingQuestions.push({
+        id: 'probe-matrimonial-goal',
+        question: 'To guide you like a personal advocate: was there physical violence, lockout from the house, or retention of your streedhan/jewellery, OR was it a marital disagreement where you want to reconcile and resume living together?',
+        whyLawyerAsks: 'If you want reconciliation after a minor disagreement, rushing into a criminal FIR (Section 85 BNS / 498A) can permanently break the marriage—Family Counselling or Section 9 HMA (Restitution) is better. If you face violence, lockout, or streedhan retention, Section 12 PWDVA before the Magistrate gives immediate protection, residence, and maintenance.',
+        quickReplies: [
+          'It was a disagreement / he is not calling me back — I want peaceful resolution or counselling',
+          'I was pushed out / locked out and need shelter, maintenance & my streedhan back (PWDVA s.12)',
+          'There is severe dowry demand / physical cruelty and I want strict criminal action (BNS s.85)'
+        ]
+      });
+    }
+  }
+
+  // Property / Builder / Land Fraud Probing: Check if a bank home loan / EMI is running in parallel (from cr2 3:15-6:45)
+  if (domainInfo.domain === 'property-rera' && !/\b(loan|emi|bank|hdfc|sbi|icici|subvention|tripartite)\b/i.test(lower)) {
+    clarifyingQuestions.push({
+      id: 'probe-property-bank-loan',
+      question: 'Is there an active Bank Home Loan / EMI or Tripartite Subvention Agreement on this property, and do you want to stay in the project (possession + delay interest) or exit with a full refund?',
+      whyLawyerAsks: 'In builder/land disputes where a bank loan is running, the bank will still pursue EMI recovery (SARFAESI / ECS bounce) unless your petition specifically prays for relief covering the lender/tripartite liability.',
+      quickReplies: [
+        'Yes, I have an active bank home loan / EMI running on this property',
+        'No bank loan — I paid from my own savings and want possession + delay interest',
+        'I want a 100% refund with interest because the project/title is stuck'
+      ]
+    });
+  }
+
+  return {
+    firCognizabilityAnalysis,
+    clarifyingQuestions: clarifyingQuestions.slice(0, 3)
+  };
+}
+
+/**
+ * 3. DOWNSTREAM TRAP FORESIGHT, BURDEN-OF-PROOF FRAMING & PLAINT "PRAYER CLAUSE" AUDITOR (#3)
+ */
+export function evaluateDownstreamTrapsAndAuditPrayer({
+  rawInput = '',
+  domainInfo = {}
+} = {}) {
+  const text = String(rawInput || '');
+  const lower = text.toLowerCase();
+  const downstreamWarnings = [];
+
+  // Trap 1: Builder/Land Fraud + Active Bank Loan (BHU Legal Aid / Jamtara Case from cr2 3:15-6:45)
+  if (domainInfo.domain === 'property-rera' || /\b(builder|flat|plot|land\s+fraud|zameen|जमीन|bhu\s+legal|bank\s+loan|home\s+loan|emi)\b/i.test(lower)) {
+    if (/\b(loan|emi|bank|subvention|tripartite|finance|housing\s+finance)\b/i.test(lower)) {
+      downstreamWarnings.push({
+        id: 'trap-builder-bank-loan-recovery',
+        title: '⚠️ Downstream Trap Alert: Parallel Bank Loan / EMI Recovery While Property is Stuck',
+        detail:
+          'Even if the builder or land seller defrauded you, the lending bank treats the loan agreement as an independent debt and may trigger ECS bounce notices (Section 138 NI Act), CIBIL damage, or SARFAESI recovery. Do NOT simply stop EMIs silently without legal protection: check the Tripartite Agreement / RBI Housing Finance rules (which forbid banks from disbursing loan tranches upfront without matching construction stages), put the bank\'s Nodal Officer on written notice of the builder fraud, and explicitly include a relief/prayer regarding the loan/tripartite liability in your RERA/Consumer/Civil petition.'
+      });
+    }
+  }
+
+  // Trap 2: Out-of-Court Settlement / Post-Dated Cheque Trap during Ongoing Dispute (cr2 4:40-6:00)
+  if (/\b(settle|settlement|compromise|out\s+of\s+court|withdraw\s+the\s+case|samjhauta|समझौता)\b/i.test(lower) || domainInfo.domain !== 'corporate-roc') {
+    downstreamWarnings.push({
+      id: 'trap-unconditional-withdrawal-settlement',
+      title: '🛡️ Settlement Foresight: Never Withdraw a Case on Oral Promises or Uncleared Post-Dated Cheques',
+      detail:
+        'A common tactic by opposite parties once they feel pressure is to offer an informal "out-of-court settlement" or post-dated cheques in exchange for immediate withdrawal of your complaint. Never withdraw unconditionally: insist on either (a) upfront RTGS/NEFT/Demand Draft clearance before withdrawal, or (b) a formal written Compromise Memo / Lok Adalat Award recorded by the court with an explicit clause that if any installment defaults, the original claim revives automatically with penalty.'
+    });
+  }
+
+  // Burden & Standard of Proof Framing (cr3 19:30-21:30)
+  let burdenOfProofGuide = {
+    category: 'Civil / Consumer Preponderance of Probabilities ("Weighing of Evidence")',
+    principle:
+      'In Civil Courts, Consumer Commissions, and RERA, the standard is "preponderance of probabilities" (weighing of evidence)—not proof beyond reasonable doubt. The party with the clearer chronological paper trail (invoices, written job sheets, bank transfers, dated notices, and admissions) wins the balance.'
+  };
+
+  if (domainInfo.domain === 'criminal-bns-bnss') {
+    burdenOfProofGuide = {
+      category: 'Criminal Law ("Proof Beyond Reasonable Doubt" + Statutory Safeguards)',
+      principle:
+        'In criminal proceedings, the prosecution must prove guilt "beyond reasonable doubt", and at the FIR/bail stage the court looks at whether the statutory ingredients of a cognizable offence are made out on the face of the record and whether custodial interrogation is necessary (bail is the rule, jail is the exception).'
+    };
+  } else if (domainInfo.domain === 'cheque-bounce-138') {
+    burdenOfProofGuide = {
+      category: 'Quasi-Criminal Reverse Burden (Sections 138 & 139 NI Act)',
+      principle:
+        'Once the signature on the dishonoured cheque and timely 30-day statutory demand notice are established, Section 139 of the NI Act raises a mandatory statutory presumption that the cheque was issued for a legally enforceable debt—shifting the burden onto the drawer to rebut it by preponderance of probabilities.'
+    };
+  } else if (domainInfo.domain === 'matrimonial-family') {
+    burdenOfProofGuide = {
+      category: 'Quasi-Criminal / Family Welfare Standard (Section 144 BNSS & Section 12 PWDVA)',
+      principle:
+        'Maintenance (Section 144 BNSS / old s.125 CrPC) and Domestic Violence (Section 12 PWDVA) proceedings are quasi-criminal/welfare remedies: once the applicant establishes a prima facie domestic/marital relationship and inability to maintain herself, the onus shifts to the respondent to prove his defence or income via mandatory Rajnesh v. Neha Assets & Liabilities Affidavits.'
+    };
+  }
+
+  // Plaint / Petition "Prayer Clause" Auditor (cr2 4:10-6:00)
+  // Runs when the user pastes or attaches a draft plaint, complaint, petition, or prayer clause
+  let prayerClauseAudit = null;
+  const looksLikeDraftOrPlaint = /\b(prayer|wherefore|most\s+respectfully\s+prayed|relief\s+sought|reliefs?\s+claimed|in\s+the\s+court\s+of|before\s+the\s+district\s+consumer|plaint\s+under|complaint\s+under\s+section)\b/i.test(text);
+
+  if (looksLikeDraftOrPlaint) {
+    const missingPrayers = [];
+    const presentPrayers = [];
+
+    if (/\b(interest|%\s*p\.?a\.?|per\s+annum)\b/i.test(text)) {
+      presentPrayers.push('Pendente lite and future interest claimed');
+    } else {
+      missingPrayers.push('Explicit prayer for pendente lite and future interest (% per annum from date of payment/default until actual realization)');
+    }
+
+    if (/\b(cost\s+of\s+litigation|litigation\s+costs?|costs?\s+of\s+the\s+suit|costs?\s+of\s+this\s+complaint)\b/i.test(text)) {
+      presentPrayers.push('Costs of litigation claimed');
+    } else {
+      missingPrayers.push('Prayer for costs of litigation / legal expenses');
+    }
+
+    if (/\b(interim\s+relief|temporary\s+injunction|order\s+39|section\s+36|stay\s+on\s+cancellation|restrain)\b/i.test(text)) {
+      presentPrayers.push('Interim protection / injunction prayer included');
+    } else if (['property-rera', 'inheritance-partition', 'matrimonial-family'].includes(domainInfo.domain)) {
+      missingPrayers.push('Interim / Ad-interim relief prayer (e.g., restraining third-party sale/cancellation under Order 39 CPC / RERA s.36 / PWDVA s.23)');
+    }
+
+    if (/\b(loan|emi|bank|tripartite|subvention)\b/i.test(text) && !/\b(prayer|direct)[\s\S]{0,250}\b(bank|lender|emi|tripartite)\b/i.test(text)) {
+      missingPrayers.push('Specific prayer addressing the Bank / Tripartite Loan liability (critical so the buyer is not left paying EMIs on a defrauded/delayed property)');
+    }
+
+    if (/\b(any\s+other\s+order|any\s+other\s+relief|pass\s+such\s+other)\b/i.test(text)) {
+      presentPrayers.push('Omnibus residual relief clause ("any other relief deemed fit") included');
+    } else {
+      missingPrayers.push('Omnibus residual prayer ("Pass any other or further order(s) as this Hon\'ble Court/Commission may deem fit in the interest of justice")');
+    }
+
+    prayerClauseAudit = {
+      audited: true,
+      status: missingPrayers.length === 0 ? 'COMPLETE' : 'NEEDS_ADDITIONS',
+      presentPrayers,
+      missingPrayers,
+      practitionerRule:
+        'Advocate Rule: A court cannot grant a final relief that you forgot to ask for in the Prayer clause. Verify every item above before filing.'
+    };
+  }
+
+  return {
+    downstreamWarnings,
+    burdenOfProofGuide,
+    prayerClauseAudit
+  };
+}
+
+/**
+ * 5. STRUCTURED "HOW A LOCAL LAWYER THINKS" CASE-TRAJECTORY MEMORY (#5)
+ * Real end-to-end practitioner "turn of events" trajectories so Nyaya applies courtroom & thana experience.
+ */
+export const PRACTITIONER_CASE_TRAJECTORIES = [
+  {
+    id: 'trajectory-police-fir-refusal',
+    title: 'Thana Refuses FIR → Ingredient Framing & BNSS s.173(1)/(3)/(4) Unlock',
+    matchRegex: /\b(fir\b|police\s+refus|not\s+registering|thana|थाना|पुलिस|173\s+bnss|154\s+crpc)\b/i,
+    initialGrievance: 'Client visits police station; duty officer orally refuses to take complaint saying "Yeh civil matter hai" or "Pehle जांच करेंगे".',
+    wherePeopleGetStuck: 'Generic AI tells them to immediately mail the SP and file a Magistrate petition, wasting weeks when the complaint itself lacked cognizable ingredients or ignored BNSS s.173(3).',
+    practitionerTurnOfEvents: [
+      'Step 1 (Ingredient Check): Verify BNSS First Schedule—ensure the written complaint states clear cognizable ingredients (e.g., dishonest inducement from Day 1 under BNS s.318(4), entrustment breach under s.316(2), or theft >= ₹5,000 / snatching s.304).',
+      'Step 2 (Counter Announcement at Thana): Hand over a written complaint in duplicate, demand a DD/GD receiving number (or file via state e-FIR portal), and if the offence carries 3–7 years, ask whether the SHO has sought DSP permission for a 14-day Preliminary Inquiry under Section 173(3) BNSS.',
+      'Step 3 (Escalation with Proof): Only after attaching the stamped receiving / speed-post receipt, escalate to the SP/DCP under Section 173(4) BNSS, followed by a Section 175(3) BNSS Magistrate application supported by a mandatory Priyanka Srivastava affidavit.'
+    ]
+  },
+  {
+    id: 'trajectory-matrimonial-argument-vs-cruelty',
+    title: 'Matrimonial Quarrel vs. 498A/BNS 85 & PWDVA s.12 Triage',
+    matchRegex: /\b(dowry|dahej|दहेज|498\s*-?\s*a|bns\s*85|husband|wife|in-laws|caw\s+cell|mahila\s+thana|streedhan)\b/i,
+    initialGrievance: 'Spouse reports "dowry harassment" or receives a CAW Cell call after a marital dispute.',
+    wherePeopleGetStuck: 'Filing a mechanical criminal FIR over a minor marital tiff permanently destroys reconciliation; conversely, filing Section 9 HMA (Restitution) when locked out fails to recover streedhan or emergency shelter.',
+    practitionerTurnOfEvents: [
+      'Step 1 (Goal Discovery): Separate (a) minor domestic argument where the client wants reconciliation (use Family Mediation / Section 9 HMA) from (b) lockout/violence/streedhan deprivation.',
+      'Step 2 (Single-Window Civil Shield): For shelter, streedhan/passport return, and child maintenance, file a Section 12 PWDVA application before the Judicial Magistrate (combining ss.18, 19, 19(8), 20, 21) + Section 144 BNSS maintenance.',
+      'Step 3 (CAW Cell Defence): If summoned to CAW Cell on BNS s.85 (498A IPC — Cognizable & NON-BAILABLE, max 3 yrs), rely on Arnesh Kumar & Section 35(3) BNSS Notice of Appearance, attend counselling calmly with a written chronology, and preserve chat/audio proof of any extortionate demand.'
+    ]
+  },
+  {
+    id: 'trajectory-land-builder-loan-fraud',
+    title: 'Builder / Land Fraud with Active Bank Home Loan (BHU Legal Aid / Jamtara Trajectory)',
+    matchRegex: /\b(builder|rera|maharera|flat\s+delay|land\s+fraud|plot\s+fraud|tripartite|subvention|home\s+loan)\b/i,
+    initialGrievance: 'Buyer paid money + took a bank loan for a flat/plot; builder/seller defaulted or had defective title, and now the bank is harassing the buyer for EMIs.',
+    wherePeopleGetStuck: 'Plaint/complaint only sues the builder with a defective Prayer clause, leaving the bank free to ruin the buyer\'s CIBIL and initiate SARFAESI/ECS bounce proceedings.',
+    practitionerTurnOfEvents: [
+      'Step 1 (Concurrent Forum Choice): Under Imperia Structures & Newtech Promoters, choose RERA Regulatory Authority (Sections 18(1) & 31 + Section 36 stay) for possession + monthly delay interest, or Consumer Commission (District up to ₹50L paid; State ₹50L–₹2Cr) for refund + compensation.',
+      'Step 2 (Bank / Tripartite Shield): Put the bank on written notice of any Tripartite Agreement / RBI construction-linked disbursal violation so the builder\'s liability for subvention/interest is documented.',
+      'Step 3 (Prayer Clause Audit): Explicitly pray for principal/possession, quantified interest, interim stay on cancellation/coercive recovery, tripartite bank directions, litigation costs, and omnibus relief.'
+    ]
+  },
+  {
+    id: 'trajectory-service-contract-refund-demand',
+    title: 'Client / Customer Demanding Unfair Refund After Partial Delivery (Website / Service Dispute)',
+    matchRegex: /\b(website|freelanc|agency|client\s+demanding\s+refund|22,?000|35,?000|scope\s+of\s+work|partial\s+work|milestone)\b/i,
+    initialGrievance: 'Service provider / developer built substantial work (e.g., ₹22,000 advance on ₹35,000 project), client stops cooperating or demands 100% refund with legal threats.',
+    wherePeopleGetStuck: 'Panicking at a legal notice or failing to document delivery milestones and client approval bottlenecks.',
+    practitionerTurnOfEvents: [
+      'Step 1 (Evidence Lock): Export timestamped staging links, Git commits, WhatsApp/email approvals, and requests where the client delayed inputs.',
+      'Step 2 (Measured Reply to Notice): Send a calm, point-by-point reply placing on record the completed percentage of work, readiness to perform the balance upon receipt of pending inputs/milestone payment, and quantum meruit (Section 70 Contract Act) entitlement for work already delivered.',
+      'Step 3 (Settlement / Cure Offer): Offer a clear 7-day window for a joint handover call or structured sign-off so any Consumer/Civil forum sees you acted in good faith.'
+    ]
+  },
+  {
+    id: 'trajectory-urgent-assault-intimidation',
+    title: 'Sudden Physical Assault / Public Intimidation (Goa Assault Fast-Triage Trajectory)',
+    matchRegex: /\b(beaten|beat\s+me|attacked|mob|goons|hospital|injury|bleeding|threatened\s+to\s+kill|मारपीट|पीट\s+दिया)\b/i,
+    initialGrievance: 'Victim was physically attacked or intimidated and is in shock/anger needing immediate action within minutes, not 2 days later.',
+    wherePeopleGetStuck: 'Delaying medical examination (MLC) or CCTV preservation while waiting for long legal research.',
+    practitionerTurnOfEvents: [
+      'Step 1 (First 60 Minutes — MLC & 112): Dial 112 (creates an automatic PCR log) and go to the nearest Government Hospital for a Medico-Legal Case (MLC) injury report—this is the single strongest piece of evidence.',
+      'Step 2 (CCTV & Witness Lock): Immediately note nearby shop/traffic CCTV cameras (most overwrite in 3–7 days) and request the IO in writing to seize the DVR.',
+      'Step 3 (Zero FIR / Section 173(1) BNSS): File a written complaint or Zero FIR at the nearest police station citing exact hurt/wrongful-restraint/intimidation sections (BNS ss.115(2), 126(2), 351(2)/(3)).'
+    ]
+  }
+];
+
+export function matchPractitionerCaseTrajectories(rawInput = '', domainInfo = {}) {
+  const text = `${rawInput} ${domainInfo.domain || ''} ${domainInfo.label || ''}`;
+  return PRACTITIONER_CASE_TRAJECTORIES.filter(t => t.matchRegex.test(text)).slice(0, 2);
+}
+
+/**
+ * 4. INSTANT <1s TRIAGE CARD BUILDER (#4)
+ * Sent immediately in the first SSE event so an anxious or urgent user gets
+ * calm, empathetic, actionable orientation in <100ms while Senior Counsel streams.
+ */
+export function buildInstantTriageCard({
+  rawInput = '',
+  domainInfo = {},
+  autoDetectedCategoryLabel = '',
+  paidAmountInr = null,
+  niAct138 = null,
+  criminalRules = null,
+  practitionerAnalysis = {}
+} = {}) {
+  const firstProbing = practitionerAnalysis.factProbing?.clarifyingQuestions?.[0] || null;
+  const firstTranslation = practitionerAnalysis.ingredientTranslations?.[0] || null;
+  const firCheck = practitionerAnalysis.factProbing?.firCognizabilityAnalysis || null;
+
+  let headline = `Detected: ${autoDetectedCategoryLabel || domainInfo.label || 'Indian Legal Matter'}`;
+  let immediateReassurance = 'Nyaya has locked in your facts and statutory rules. Here is your immediate 10-second orientation while your full roadmap and drafts stream below:';
+  let firstMoveNow = 'Preserve your chronological proof (invoices, bank/UPI refs, WhatsApp chats, and dated notices) in one folder.';
+
+  if (niAct138) {
+    headline = `🏦 Urgent NI Act Section 138 Cheque Bounce Clock`;
+    firstMoveNow = niAct138.noticeWindowExpired
+      ? `Your 30-day statutory notice window from ${niAct138.dishonourDate} expired on ${niAct138.noticeDeadlineDate}. Check if cheque validity allows re-presentation or pursue Civil Order 37 Summary Recovery.`
+      : `You have ${niAct138.daysRemainingForNotice} day(s) left (until ${niAct138.noticeDeadlineDate}) to dispatch a mandatory written 15-day statutory demand notice via Speed Post + WhatsApp/Email. Jurisdiction lies at the PAYEE'S bank branch (Section 142(2)(a)).`;
+  } else if (firCheck) {
+    headline = `🛡️ Police / FIR Triage: ${firCheck.scheduleStatus}`;
+    firstMoveNow = firCheck.whatToTellPoliceOrDo;
+  } else if (criminalRules?.matchedOffences?.length) {
+    const off = criminalRules.matchedOffences[0];
+    headline = `🛡️ ${off.bnsSection} (${off.ipcSection}) — ${off.bailable ? 'Bailable' : 'NON-BAILABLE'}`;
+    firstMoveNow = off.arneshKumarNoticeApplies
+      ? `Automatic arrest is barred (punishment <= 7 yrs) under Arnesh Kumar & Section 35(3) BNSS Notice of Appearance. Prepare a calm written chronology before appearing.`
+      : `Because punishment exceeds 7 years, Section 35(3) BNSS notice protection does not automatically apply—consult counsel immediately for Section 482 BNSS Anticipatory Bail.`;
+  } else if (domainInfo.domain === 'property-rera') {
+    headline = `🏠 Property / Builder Dispute — Concurrent RERA & Consumer Remedies`;
+    firstMoveNow = `Under Imperia Structures & Newtech Promoters, RERA (s.18/s.31) and Consumer Commission remedies are concurrent. If a bank home loan is running, put the bank on written notice alongside the builder.`;
+  } else if (domainInfo.domain === 'matrimonial-family') {
+    headline = `👨‍👩‍👧 Matrimonial & Family Protection Triage`;
+    firstMoveNow = `If seeking shelter, streedhan return, or maintenance, a single-window Magistrate application under Section 12 PWDVA + Section 144 BNSS applies. If it is a minor disagreement and you want reconciliation, start with Family Counselling / Mediation rather than an FIR.`;
+  } else if (domainInfo.domain === 'inheritance-partition') {
+    headline = `📜 Family Property & Succession (HSA 1956 + Order 39 CPC)`;
+    firstMoveNow = `Class I heirs (including married daughters under Section 6 HSA) hold equal shares. Serve a written objection with Death Certificate to the Bank/Sub-Registrar and file a Partition Suit + Order 39 Rules 1 & 2 CPC Temporary Injunction.`;
+  } else if (domainInfo.isConsumerForum) {
+    headline = `⚡ Consumer Escalation Triage${paidAmountInr ? ` (Amount: ₹${paidAmountInr.toLocaleString('en-IN')})` : ''}`;
+    firstMoveNow = `Start with the lowest-headache move before court: demand a written job-sheet/refusal reason, escalate to the brand's Grievance/Nodal Officer, and file a free complaint on National Consumer Helpline (NCH 1915 / consumerhelpline.gov.in) or RBI/Insurance Ombudsman.`;
+  }
+
+  return {
+    generatedAtMs: Date.now(),
+    headline,
+    immediateReassurance,
+    firstMoveNow,
+    keyIngredientTranslation: firstTranslation
+      ? `${firstTranslation.laymanTerm} → ${firstTranslation.actualLegalConcept}`
+      : null,
+    topClarifyingQuestion: firstProbing ? firstProbing.question : null,
+    quickReplies: firstProbing ? firstProbing.quickReplies : []
+  };
+}
+
+/**
+ * Master entry point called by computeCaseEngine in ui/server.mjs
+ */
+export function runPractitionerIntelligence({
+  rawInput = '',
+  domainInfo = {},
+  paidAmountInr = null,
+  caseState = {},
+  autoDetectedCategoryLabel = '',
+  niAct138 = null,
+  criminalRules = null
+} = {}) {
+  const ingredientTranslations = translateLaymanToLegalIngredients(rawInput, paidAmountInr);
+  const factProbing = evaluateConversationalFactProbing({
+    rawInput,
+    domainInfo,
+    paidAmountInr,
+    caseState
+  });
+  const foresightAndPrayer = evaluateDownstreamTrapsAndAuditPrayer({
+    rawInput,
+    domainInfo
+  });
+  const matchedTrajectories = matchPractitionerCaseTrajectories(rawInput, domainInfo);
+
+  const partial = {
+    ingredientTranslations,
+    factProbing,
+    foresightAndPrayer,
+    matchedTrajectories
+  };
+
+  const instantTriage = buildInstantTriageCard({
+    rawInput,
+    domainInfo,
+    autoDetectedCategoryLabel,
+    paidAmountInr,
+    niAct138,
+    criminalRules,
+    practitionerAnalysis: partial
+  });
+
+  return {
+    ...partial,
+    instantTriage
+  };
+}

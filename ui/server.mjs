@@ -43,6 +43,9 @@ import {
   transcribeAudioBuffer
 } from '../src/engine/audio-transcriber.mjs';
 import {
+  runPractitionerIntelligence
+} from '../src/engine/practitioner-intelligence.mjs';
+import {
   listSessionsForUser,
   getSessionWithTurnsForUser,
   saveOrAppendSessionTurn,
@@ -578,6 +581,15 @@ function computeCaseEngine(caseState = {}, { door = '', mode = '', rawInput = ''
       })
     : null;
 
+  const practitionerIntelligence = runPractitionerIntelligence({
+    rawInput,
+    domainInfo,
+    paidAmountInr,
+    caseState,
+    niAct138,
+    criminalRules
+  });
+
   return {
     evaluationDate: today,
     domainInfo,
@@ -590,7 +602,8 @@ function computeCaseEngine(caseState = {}, { door = '', mode = '', rawInput = ''
     lawyerAudit,
     niAct138,
     criminalRules,
-    civilRules
+    civilRules,
+    practitionerIntelligence
   };
 }
 
@@ -1088,6 +1101,18 @@ const server = http.createServer(async (req, res) => {
             : null,
           engineResult.domainInfo?.isConsumerForum
             ? `✓ Matched Practitioner Tactics (${(engineResult.matchedTactics || []).length}): ${matchedNames}`
+            : null,
+          engineResult.practitionerIntelligence?.ingredientTranslations?.length
+            ? `✓ Layman-to-Legal Ingredient Check: ${engineResult.practitionerIntelligence.ingredientTranslations.map(t => `${t.laymanTerm} → ${t.actualLegalConcept}`).join(' | ')}`
+            : null,
+          engineResult.practitionerIntelligence?.factProbing?.firCognizabilityAnalysis
+            ? `✓ BNSS First Schedule / FIR Check: ${engineResult.practitionerIntelligence.factProbing.firCognizabilityAnalysis.scheduleStatus}`
+            : null,
+          engineResult.practitionerIntelligence?.foresightAndPrayer?.prayerClauseAudit
+            ? `✓ Plaint Prayer Clause Audit: ${engineResult.practitionerIntelligence.foresightAndPrayer.prayerClauseAudit.status} (${engineResult.practitionerIntelligence.foresightAndPrayer.prayerClauseAudit.missingPrayers.length} missing relief(s) flagged)`
+            : null,
+          engineResult.practitionerIntelligence?.matchedTrajectories?.length
+            ? `✓ Practitioner Case Trajectory Matched: ${engineResult.practitionerIntelligence.matchedTrajectories.map(t => t.title).join(' | ')}`
             : null
         ].filter(Boolean);
 
