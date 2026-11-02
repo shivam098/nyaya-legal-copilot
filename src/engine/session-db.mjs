@@ -131,6 +131,32 @@ try {
   if (!uCols.some(c => c.name === 'monthly_limit_inr')) {
     db.exec(`ALTER TABLE users ADD COLUMN monthly_limit_inr REAL DEFAULT 500`);
   }
+  if (!uCols.some(c => c.name === 'device_id')) {
+    db.exec(`ALTER TABLE users ADD COLUMN device_id TEXT DEFAULT ''`);
+  }
+  if (!uCols.some(c => c.name === 'hw_fingerprint')) {
+    db.exec(`ALTER TABLE users ADD COLUMN hw_fingerprint TEXT DEFAULT ''`);
+  }
+  if (!uCols.some(c => c.name === 'ip_hash')) {
+    db.exec(`ALTER TABLE users ADD COLUMN ip_hash TEXT DEFAULT ''`);
+  }
+
+  const tCols = db.prepare(`PRAGMA table_info(turns)`).all();
+  if (!tCols.some(c => c.name === 'device_id')) {
+    db.exec(`ALTER TABLE turns ADD COLUMN device_id TEXT DEFAULT ''`);
+  }
+  if (!tCols.some(c => c.name === 'hw_fingerprint')) {
+    db.exec(`ALTER TABLE turns ADD COLUMN hw_fingerprint TEXT DEFAULT ''`);
+  }
+  if (!tCols.some(c => c.name === 'ip_hash')) {
+    db.exec(`ALTER TABLE turns ADD COLUMN ip_hash TEXT DEFAULT ''`);
+  }
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_turns_device_id ON turns(device_id);
+    CREATE INDEX IF NOT EXISTS idx_turns_hw_fp ON turns(hw_fingerprint);
+    CREATE INDEX IF NOT EXISTS idx_turns_ip_hash ON turns(ip_hash);
+  `);
 } catch {
   // ignore
 }
@@ -340,10 +366,22 @@ export function saveOrAppendSessionTurn({
   model,
   tokens = 0,
   costInr = 0,
-  latencyMs = 0
+  latencyMs = 0,
+  deviceId = '',
+  hwFingerprint = '',
+  ipHash = ''
 }) {
   const cleanUserId = String(userId || 'founder-local').trim();
   ensureUserRecord(cleanUserId);
+  if (deviceId || hwFingerprint || ipHash) {
+    db.prepare(`
+      UPDATE users
+      SET device_id = COALESCE(NULLIF(?, ''), device_id),
+          hw_fingerprint = COALESCE(NULLIF(?, ''), hw_fingerprint),
+          ip_hash = COALESCE(NULLIF(?, ''), ip_hash)
+      WHERE id = ?
+    `).run(deviceId || '', hwFingerprint || '', ipHash || '', cleanUserId);
+  }
 
   const now = new Date().toISOString();
   let existing = sessionId
@@ -396,8 +434,9 @@ export function saveOrAppendSessionTurn({
   db.prepare(`
     INSERT INTO turns (
       session_id, turn_index, user_input, images_count, folder_path,
-      engine_result_json, assistant_markdown, model, tokens, cost_inr, latency_ms, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      engine_result_json, assistant_markdown, model, tokens, cost_inr, latency_ms,
+      device_id, hw_fingerprint, ip_hash, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     finalSessionId,
     nextTurnIndex,
@@ -410,6 +449,9 @@ export function saveOrAppendSessionTurn({
     tokens,
     costInr,
     latencyMs,
+    deviceId || '',
+    hwFingerprint || '',
+    ipHash || '',
     now
   );
 
@@ -433,34 +475,84 @@ export function deleteSessionForUser(userId, sessionId) {
   return { deleted: true, id: sessionId };
 }
 
-export function getUserMonthlyUsageQuota(userId, referenceDateIso = new Date().toISOString()) {
+/**
+ * Computes monthly Free Trial quota across THREE anti-bypass signals:
+ * 1. Account (`user_id`) spend in current `YYYY-MM` month
+ * 2. Persistent `HttpOnly` Device Cookie (`device_id` / `nyaya_did`) spend across all accounts on that browser
+ * 3. Combined Hardware Fingerprint (`hw_fingerprint` — WebGL/Screen/CPU) + `CF-Connecting-IP` (`ip_hash`) spend
+ *    so opening Incognito and signing up with a brand-new email shares the exact same ₹500/month cap!
+ */
+export function getUserMonthlyUsageQuota(userId, options = {}) {
   const cleanId = String(userId || 'founder-local').trim();
   const userRow = ensureUserRecord(cleanId);
+  const referenceDateIso = typeof options === 'string'
+    ? options
+    : (options?.referenceDateIso || new Date().toISOString());
   const currentMonthPrefix = String(referenceDateIso).slice(0, 7); // YYYY-MM
 
-  const spendRow = db.prepare(`
+  const effDeviceId = String(options?.deviceId || userRow?.device_id || '').trim();
+  const effHwFp = String(options?.hwFingerprint || userRow?.hw_fingerprint || '').trim();
+  const effIpHash = String(options?.ipHash || userRow?.ip_hash || '').trim();
+
+  const userSpendRow = db.prepare(`
     SELECT COALESCE(SUM(t.cost_inr), 0) AS month_spend_inr, COUNT(t.id) AS month_turns
     FROM turns t
     JOIN sessions s ON s.id = t.session_id
     WHERE s.user_id = ? AND substr(t.created_at, 1, 7) = ?
   `).get(cleanId, currentMonthPrefix);
 
+  let deviceSpendInr = 0;
+  if (effDeviceId) {
+    const devRow = db.prepare(`
+      SELECT COALESCE(SUM(cost_inr), 0) AS spend
+      FROM turns
+      WHERE device_id = ? AND substr(created_at, 1, 7) = ?
+    `).get(effDeviceId, currentMonthPrefix);
+    deviceSpendInr = Number(devRow?.spend || 0);
+  }
+
+  let fpIpSpendInr = 0;
+  if (effHwFp && effIpHash) {
+    const fpIpRow = db.prepare(`
+      SELECT COALESCE(SUM(cost_inr), 0) AS spend
+      FROM turns
+      WHERE hw_fingerprint = ? AND ip_hash = ? AND substr(created_at, 1, 7) = ?
+    `).get(effHwFp, effIpHash, currentMonthPrefix);
+    fpIpSpendInr = Number(fpIpRow?.spend || 0);
+  } else if (effHwFp) {
+    const fpRow = db.prepare(`
+      SELECT COALESCE(SUM(cost_inr), 0) AS spend
+      FROM turns
+      WHERE hw_fingerprint = ? AND substr(created_at, 1, 7) = ?
+    `).get(effHwFp, currentMonthPrefix);
+    fpIpSpendInr = Number(fpRow?.spend || 0);
+  }
+
   const isSuperAdmin = userRow?.role === 'superadmin';
   const monthlyLimitInr = isSuperAdmin
     ? Number(userRow?.monthly_limit_inr || 1000000)
     : Number(userRow?.monthly_limit_inr ?? DEFAULT_MONTHLY_TRIAL_LIMIT_INR);
-  const monthlySpendInr = Number((spendRow?.month_spend_inr || 0).toFixed(4));
-  const monthlyRemainingInr = Math.max(0, Number((monthlyLimitInr - monthlySpendInr).toFixed(4)));
-  const quotaExceeded = !isSuperAdmin && monthlySpendInr >= monthlyLimitInr;
+
+  const userOwnSpendInr = Number((userSpendRow?.month_spend_inr || 0).toFixed(4));
+  const effectiveSpendInr = isSuperAdmin
+    ? userOwnSpendInr
+    : Number(Math.max(userOwnSpendInr, deviceSpendInr, fpIpSpendInr).toFixed(4));
+  const monthlyRemainingInr = Math.max(0, Number((monthlyLimitInr - effectiveSpendInr).toFixed(4)));
+  const quotaExceeded = !isSuperAdmin && effectiveSpendInr >= monthlyLimitInr;
+  const sharedFromDeviceOrIp = !isSuperAdmin && effectiveSpendInr > userOwnSpendInr;
 
   return {
     month: currentMonthPrefix,
     plan: isSuperAdmin ? 'founder-unlimited' : (userRow?.plan || 'trial-500'),
     isTrial: !isSuperAdmin,
     monthlyLimitInr,
-    monthlySpendInr,
+    monthlySpendInr: effectiveSpendInr,
+    userOwnSpendInr,
+    deviceSpendInr: Number(deviceSpendInr.toFixed(4)),
+    fpIpSpendInr: Number(fpIpSpendInr.toFixed(4)),
+    sharedFromDeviceOrIp,
     monthlyRemainingInr,
-    monthTurns: Number(spendRow?.month_turns || 0),
+    monthTurns: Number(userSpendRow?.month_turns || 0),
     quotaExceeded
   };
 }
@@ -531,7 +623,10 @@ export function registerOrLoginWithPassword({
   emailOrId = '',
   password = '',
   displayName = '',
-  mode = 'auto'
+  mode = 'auto',
+  deviceId = '',
+  hwFingerprint = '',
+  ipHash = ''
 } = {}) {
   const rawIdentifier = String(emailOrId || '').trim().toLowerCase();
   const rawPassword = String(password || '');
@@ -568,11 +663,16 @@ export function registerOrLoginWithPassword({
     } else if (!verifyPassword(rawPassword, userRow.password_hash)) {
       throw new Error('Incorrect password for this account. If you are creating a new account, use a different email/ID.');
     }
-    if (displayName && displayName.trim()) {
-      db.prepare('UPDATE users SET display_name = ?, last_seen_at = ? WHERE id = ?').run(displayName.trim(), now, userRow.id);
-    } else {
-      db.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').run(now, userRow.id);
-    }
+    db.prepare(`
+      UPDATE users
+      SET display_name = COALESCE(NULLIF(?, ''), display_name),
+          device_id = COALESCE(NULLIF(?, ''), device_id),
+          hw_fingerprint = COALESCE(NULLIF(?, ''), hw_fingerprint),
+          ip_hash = COALESCE(NULLIF(?, ''), ip_hash),
+          last_seen_at = ?
+      WHERE id = ?
+    `).run((displayName || '').trim(), deviceId || '', hwFingerprint || '', ipHash || '', now, userRow.id);
+
     userRow = db.prepare('SELECT * FROM users WHERE id = ?').get(userRow.id);
     const token = issueAuthTokenForUser(userRow.id);
     return {
@@ -591,9 +691,9 @@ export function registerOrLoginWithPassword({
   const pwHash = hashPassword(rawPassword);
 
   db.prepare(`
-    INSERT INTO users (id, display_name, email, password_hash, role, auth_provider, plan, monthly_limit_inr, created_at, last_seen_at)
-    VALUES (?, ?, ?, ?, 'user', 'password', 'trial-500', ?, ?, ?)
-  `).run(newUserId, derivedName, lookupEmail, pwHash, DEFAULT_MONTHLY_TRIAL_LIMIT_INR, now, now);
+    INSERT INTO users (id, display_name, email, password_hash, role, auth_provider, plan, monthly_limit_inr, device_id, hw_fingerprint, ip_hash, created_at, last_seen_at)
+    VALUES (?, ?, ?, ?, 'user', 'password', 'trial-500', ?, ?, ?, ?, ?, ?)
+  `).run(newUserId, derivedName, lookupEmail, pwHash, DEFAULT_MONTHLY_TRIAL_LIMIT_INR, deviceId || '', hwFingerprint || '', ipHash || '', now, now);
 
   userRow = db.prepare('SELECT * FROM users WHERE id = ?').get(newUserId);
   const token = issueAuthTokenForUser(userRow.id);
@@ -608,7 +708,14 @@ export function registerOrLoginWithPassword({
  * Gmail / Google Profile Sign-In:
  * Creates or signs into a user profile backed by a Gmail address (never elevates to superadmin without password).
  */
-export function loginOrRegisterGmailProfile({ email = '', displayName = '', authProvider = 'google' } = {}) {
+export function loginOrRegisterGmailProfile({
+  email = '',
+  displayName = '',
+  authProvider = 'google',
+  deviceId = '',
+  hwFingerprint = '',
+  ipHash = ''
+} = {}) {
   const cleanEmail = String(email || '').trim().toLowerCase();
   if (!cleanEmail || !cleanEmail.includes('@')) {
     throw new Error('Please provide a valid Gmail / email address.');
@@ -624,13 +731,21 @@ export function loginOrRegisterGmailProfile({ email = '', displayName = '', auth
     const newUserId = `usr_${crypto.randomUUID().slice(0, 12)}`;
     const derivedName = (displayName || '').trim() || cleanEmail.split('@')[0];
     db.prepare(`
-      INSERT INTO users (id, display_name, email, password_hash, role, auth_provider, plan, monthly_limit_inr, created_at, last_seen_at)
-      VALUES (?, ?, ?, '', 'user', ?, 'trial-500', ?, ?, ?)
-    `).run(newUserId, derivedName, cleanEmail, authProvider, DEFAULT_MONTHLY_TRIAL_LIMIT_INR, now, now);
+      INSERT INTO users (id, display_name, email, password_hash, role, auth_provider, plan, monthly_limit_inr, device_id, hw_fingerprint, ip_hash, created_at, last_seen_at)
+      VALUES (?, ?, ?, '', 'user', ?, 'trial-500', ?, ?, ?, ?, ?, ?)
+    `).run(newUserId, derivedName, cleanEmail, authProvider, DEFAULT_MONTHLY_TRIAL_LIMIT_INR, deviceId || '', hwFingerprint || '', ipHash || '', now, now);
     userRow = db.prepare('SELECT * FROM users WHERE id = ?').get(newUserId);
   } else {
     const nextName = (displayName || '').trim() || userRow.display_name;
-    db.prepare('UPDATE users SET display_name = ?, last_seen_at = ? WHERE id = ?').run(nextName, now, userRow.id);
+    db.prepare(`
+      UPDATE users
+      SET display_name = ?,
+          device_id = COALESCE(NULLIF(?, ''), device_id),
+          hw_fingerprint = COALESCE(NULLIF(?, ''), hw_fingerprint),
+          ip_hash = COALESCE(NULLIF(?, ''), ip_hash),
+          last_seen_at = ?
+      WHERE id = ?
+    `).run(nextName, deviceId || '', hwFingerprint || '', ipHash || '', now, userRow.id);
     userRow = db.prepare('SELECT * FROM users WHERE id = ?').get(userRow.id);
   }
 

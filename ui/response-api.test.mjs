@@ -24,12 +24,14 @@ const provider = http.createServer(async (req, res) => {
   if (body.stream) {
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
     res.end(`data: ${JSON.stringify({
-      choices: [{ delta: { content: reply.content }, finish_reason: reply.reason }]
+      choices: [{ delta: { content: reply.content }, finish_reason: reply.reason }],
+      usage: { prompt_tokens: 100, completion_tokens: 50 }
     })}\n\ndata: [DONE]\n\n`);
   } else {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
-      choices: [{ message: { content: reply.content }, finish_reason: reply.reason }]
+      choices: [{ message: { content: reply.content }, finish_reason: reply.reason }],
+      usage: { prompt_tokens: 100, completion_tokens: 50 }
     }));
   }
 });
@@ -339,4 +341,43 @@ test('profile signup/login, Gmail quick login, Rs 500 monthly trial cap, user is
   assert.equal(adminInspectRes.status, 200);
   const inspected = await adminInspectRes.json();
   assert.equal(inspected.session.turns[0].userFeedbackNote, 'Need clearer brand escalation email');
+
+  // 4. Anti-bypass check: if a user on hardware fingerprint + CF-Connecting-IP runs a turn on Account 1,
+  // and then opens Incognito and registers a brand-new email on the SAME hardware fingerprint + CF-Connecting-IP,
+  // the new account shares the device/IP monthly spend!
+  const sharedHeaders = {
+    'Content-Type': 'application/json',
+    'x-nyaya-hw-fp': 'hw_apple_m1_max_2560x1440',
+    'cf-connecting-ip': '203.0.113.42'
+  };
+  await fetch(`${baseUrl}/api/analyze`, {
+    method: 'POST',
+    headers: {
+      ...sharedHeaders,
+      'Authorization': `Bearer ${signupA.token}`
+    },
+    body: JSON.stringify({
+      door: 'start',
+      mode: 'messy-dump-intake',
+      model: 'claude-opus-4.6',
+      caseState: { role: 'complainant' },
+      rawInput: 'Spend test on first account with device fingerprint and Cloudflare IP.'
+    })
+  });
+
+  // Register a brand-new account in "Incognito" (no cookie, new email, same hwFingerprint + CF-Connecting-IP)
+  const hopperSignup = await (await fetch(`${baseUrl}/api/auth/signup`, {
+    method: 'POST',
+    headers: sharedHeaders,
+    body: JSON.stringify({
+      email: 'incognito-hopper@gmail.com',
+      password: 'password123',
+      displayName: 'Hopper'
+    })
+  })).json();
+  assert.equal(hopperSignup.authenticated, true);
+  assert.equal(hopperSignup.userQuota.userOwnSpendInr, 0);
+  assert.ok(hopperSignup.userQuota.fpIpSpendInr > 0);
+  assert.equal(hopperSignup.userQuota.sharedFromDeviceOrIp, true);
+  assert.equal(hopperSignup.userQuota.monthlySpendInr, hopperSignup.userQuota.fpIpSpendInr);
 });

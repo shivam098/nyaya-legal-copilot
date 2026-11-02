@@ -1,4 +1,5 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -203,18 +204,76 @@ function extractAuthTokenFromRequest(req) {
   return '';
 }
 
+function extractClientDeviceSignals(req, body = null) {
+  const cookieHeader = String(req.headers.cookie || '');
+  const didMatch = cookieHeader.match(/(?:^|;\s*)nyaya_did=([^;]+)/);
+  const fromCookieDid = didMatch ? decodeURIComponent(didMatch[1]) : '';
+  const fromHeaderDid = String(req.headers['x-nyaya-device-id'] || body?.deviceId || '').trim();
+  const rawHwFp = String(req.headers['x-nyaya-hw-fp'] || body?.hwFingerprint || '').trim();
+  const cfIp = String(req.headers['cf-connecting-ip'] || '').trim();
+  const forwardedIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  const socketIp = String(req.socket?.remoteAddress || '').trim();
+
+  const hwFingerprint = rawHwFp
+    ? crypto.createHash('sha256').update(rawHwFp).digest('hex').slice(0, 32)
+    : '';
+
+  // Hash CF-Connecting-IP (or client IP whenever hardware fingerprint / proxy header is present)
+  const effectiveRawIp = cfIp || forwardedIp || (hwFingerprint ? socketIp : '');
+  const ipHash = effectiveRawIp
+    ? crypto.createHash('sha256').update(`nyaya-ip:${effectiveRawIp}`).digest('hex').slice(0, 32)
+    : '';
+
+  const deviceId = fromCookieDid || fromHeaderDid || (hwFingerprint ? `did_${hwFingerprint.slice(0, 20)}` : '');
+
+  return {
+    deviceId,
+    hwFingerprint,
+    ipHash,
+    hasCookieDid: Boolean(fromCookieDid)
+  };
+}
+
+function appendSetCookieHeader(res, cookieValue) {
+  if (!res || res.headersSent) return;
+  const existing = res.getHeader('Set-Cookie');
+  if (!existing) {
+    res.setHeader('Set-Cookie', [cookieValue]);
+  } else if (Array.isArray(existing)) {
+    res.setHeader('Set-Cookie', [...existing, cookieValue]);
+  } else {
+    res.setHeader('Set-Cookie', [String(existing), cookieValue]);
+  }
+}
+
 function resolveRequestAuth(req, url, body = null, res = null) {
+  const signals = extractClientDeviceSignals(req, body);
+  if (res && !res.headersSent && signals.deviceId && !signals.hasCookieDid) {
+    appendSetCookieHeader(
+      res,
+      `nyaya_did=${encodeURIComponent(signals.deviceId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`
+    );
+  }
+
   const rawToken = extractAuthTokenFromRequest(req);
   if (rawToken) {
     const authUser = getUserFromAuthToken(rawToken);
     if (authUser) {
+      const quota = getUserMonthlyUsageQuota(authUser.id, signals);
       return {
         authenticated: true,
         token: rawToken,
         userId: authUser.id,
-        user: authUser,
+        user: {
+          ...authUser,
+          monthlyLimitInr: quota.monthlyLimitInr,
+          monthlySpendInr: quota.monthlySpendInr,
+          monthlyRemainingInr: quota.monthlyRemainingInr,
+          quotaExceeded: quota.quotaExceeded
+        },
         isSuperAdmin: authUser.role === 'superadmin',
-        quota: getUserMonthlyUsageQuota(authUser.id)
+        quota,
+        signals
       };
     }
   }
@@ -236,9 +295,12 @@ function resolveRequestAuth(req, url, body = null, res = null) {
   const displayName = String(req.headers['x-nyaya-user-name'] || body?.userName || '').trim();
   const row = ensureUserRecord(safeUserId, displayName);
   if (res && !res.headersSent && safeUserId) {
-    res.setHeader('Set-Cookie', `nyaya_uid=${encodeURIComponent(safeUserId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`);
+    appendSetCookieHeader(
+      res,
+      `nyaya_uid=${encodeURIComponent(safeUserId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`
+    );
   }
-  const quota = getUserMonthlyUsageQuota(safeUserId);
+  const quota = getUserMonthlyUsageQuota(safeUserId, signals);
   return {
     authenticated: false,
     token: '',
@@ -255,7 +317,8 @@ function resolveRequestAuth(req, url, body = null, res = null) {
       quotaExceeded: quota.quotaExceeded
     },
     isSuperAdmin: false,
-    quota
+    quota,
+    signals
   };
 }
 
@@ -558,24 +621,32 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const body = await readJsonBody(req);
+      const signals = extractClientDeviceSignals(req, body);
       const mode = url.pathname.endsWith('/signup') ? 'signup' : (body.mode || 'auto');
       try {
         const result = registerOrLoginWithPassword({
           emailOrId: body.email || body.username || body.emailOrId || '',
           password: body.password || '',
           displayName: body.displayName || body.name || '',
-          mode
+          mode,
+          ...signals
         });
-        res.setHeader(
-          'Set-Cookie',
+        appendSetCookieHeader(
+          res,
           `nyaya_token=${encodeURIComponent(result.token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`
         );
-        const quota = getUserMonthlyUsageQuota(result.user.id);
+        if (signals.deviceId) {
+          appendSetCookieHeader(
+            res,
+            `nyaya_did=${encodeURIComponent(signals.deviceId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`
+          );
+        }
+        const quota = getUserMonthlyUsageQuota(result.user.id, signals);
         sendJson(res, 200, {
           authenticated: true,
           created: result.created,
           token: result.token,
-          user: result.user,
+          user: { ...result.user, ...quota },
           userId: result.user.id,
           userQuota: quota,
           billing: result.user.role === 'superadmin' ? readBillingLedger() : scopeBillingForUser(readBillingLedger(), result.user.id),
@@ -594,6 +665,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const body = await readJsonBody(req);
+      const signals = extractClientDeviceSignals(req, body);
       try {
         let email = String(body.email || '').trim().toLowerCase();
         let displayName = String(body.displayName || body.name || '').trim();
@@ -615,17 +687,24 @@ const server = http.createServer(async (req, res) => {
         const result = loginOrRegisterGmailProfile({
           email,
           displayName,
-          authProvider: body.idToken ? 'google-oauth' : 'gmail-quick'
+          authProvider: body.idToken ? 'google-oauth' : 'gmail-quick',
+          ...signals
         });
-        res.setHeader(
-          'Set-Cookie',
+        appendSetCookieHeader(
+          res,
           `nyaya_token=${encodeURIComponent(result.token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`
         );
-        const quota = getUserMonthlyUsageQuota(result.user.id);
+        if (signals.deviceId) {
+          appendSetCookieHeader(
+            res,
+            `nyaya_did=${encodeURIComponent(signals.deviceId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`
+          );
+        }
+        const quota = getUserMonthlyUsageQuota(result.user.id, signals);
         sendJson(res, 200, {
           authenticated: true,
           token: result.token,
-          user: result.user,
+          user: { ...result.user, ...quota },
           userId: result.user.id,
           userQuota: quota,
           billing: scopeBillingForUser(readBillingLedger(), result.user.id),
@@ -1159,12 +1238,13 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
           model: llmRes.model,
           tokens: llmRes.billingEntry?.totalTokens || 0,
           costInr: llmRes.billingEntry?.estimatedInr || 0,
-          latencyMs: llmRes.billingEntry?.latencyMs || 0
+          latencyMs: llmRes.billingEntry?.latencyMs || 0,
+          ...auth.signals
         });
 
         sendEvent('complete', {
           userId,
-          userQuota: getUserMonthlyUsageQuota(userId),
+          userQuota: getUserMonthlyUsageQuota(userId, auth.signals),
           session: updatedSession,
           sessions: listSessionsForUser(userId, 50),
           engineResult,
@@ -1277,12 +1357,13 @@ ${effectiveRawInput || '(See attached images and Case State above)'}${imageSumma
         model: llmRes.model,
         tokens: llmRes.billingEntry?.totalTokens || 0,
         costInr: llmRes.billingEntry?.estimatedInr || 0,
-        latencyMs: llmRes.billingEntry?.latencyMs || 0
+        latencyMs: llmRes.billingEntry?.latencyMs || 0,
+        ...auth.signals
       });
 
       sendJson(res, 200, {
         userId,
-        userQuota: getUserMonthlyUsageQuota(userId),
+        userQuota: getUserMonthlyUsageQuota(userId, auth.signals),
         session: updatedSession,
         sessions: listSessionsForUser(userId, 50),
         engineResult,
