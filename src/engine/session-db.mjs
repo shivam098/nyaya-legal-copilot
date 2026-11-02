@@ -258,7 +258,11 @@ migrateLegacyJsonCases();
 
 export function deriveSessionTitle({ title, door, caseState, rawInput }) {
   if (title && title.trim()) return title.trim();
-  const cleanText = String(rawInput || '').replace(/=== FILE:.*?===/g, '').trim();
+  const cleanText = String(rawInput || '')
+    .split('ATTACHED FOLDER / TEXT DOCUMENTS:')[0]
+    .replace(/=== FILE:.*?===/g, '')
+    .replace(/^(?:User Role|Raw Story \/ WhatsApp Chat|Case Sub-Track|User Side|Key Date|Need Type|Details|Advocate Research Mode|Proceeding Stage|Query \/ Citation \/ Issue):.*$/gim, '')
+    .trim();
   const firstLine = cleanText.split(/[\r\n]+/).find(l => l.trim().length > 4) || '';
   const snippet = firstLine.slice(0, 52).trim();
   if (door === 'midcase') {
@@ -270,6 +274,10 @@ export function deriveSessionTitle({ title, door, caseState, rawInput }) {
   }
   if (door === 'lawyer-workbench' || caseState?.researchTask) {
     return snippet ? `[Advocate Bench] ${snippet}` : `Advocate Judgment & Bare Act Dossier`;
+  }
+  if (door === 'civil-criminal' || caseState?.subTrack) {
+    const sub = caseState?.subTrack || 'Civil/Criminal';
+    return snippet ? `[${sub}] ${snippet}` : `Case — ${sub}`;
   }
   const roleLabel = caseState?.role === 'defender' ? 'Defend Claim' : 'Dispute';
   return snippet ? `[${roleLabel}] ${snippet}` : `${roleLabel} Session`;
@@ -298,7 +306,7 @@ export function listSessionsForUser(userId, limit = 50) {
     LEFT JOIN turns t ON t.session_id = s.id
     WHERE s.user_id = ?
     GROUP BY s.id
-    ORDER BY s.updated_at DESC
+    ORDER BY datetime(s.updated_at) DESC, s.rowid DESC
     LIMIT ?
   `).all(cleanUserId, limit);
 
