@@ -234,12 +234,25 @@
       );
     }
 
+    function sanitizeHtml(rawHtml = '') {
+      return String(rawHtml || '')
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
+        .replace(/<object[\s\S]*?<\/object>/gi, '')
+        .replace(/<embed[\s\S]*?>/gi, '')
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<link[\s\S]*?>/gi, '')
+        .replace(/<meta[\s\S]*?>/gi, '')
+        .replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+        .replace(/(href|src|xlink:href)\s*=\s*(?:"\s*(?:javascript|vbscript|data:text\/html)[^"]*"|'\s*(?:javascript|vbscript|data:text\/html)[^']*')/gi, '$1="#"');
+    }
+
     function renderFormattedMarkdown(mdText) {
       if (!mdText) return { __html: '' };
       if (window.marked && typeof window.marked.parse === 'function') {
-        return { __html: window.marked.parse(mdText, { breaks: true, gfm: true }) };
+        return { __html: sanitizeHtml(window.marked.parse(mdText, { breaks: true, gfm: true })) };
       }
-      return { __html: mdText.replace(/\n/g, '<br/>') };
+      return { __html: sanitizeHtml(mdText).replace(/\n/g, '<br/>') };
     }
 
     /**
@@ -357,6 +370,19 @@ Selling AI software or services does **not** automatically mean you must registe
 ### 2 Questions That Decide Your Best Fit
 1. Are you raising outside investment or adding a co-founder in the next 6–12 months?
 2. Do your initial business clients require a registered company (OPC/Pvt Ltd) to sign contracts, or can you invoice as a proprietorship first?`
+      },
+      'civil-criminal': {
+        label: '4. Property, Family & Criminal',
+        badge: 'RERA, Matrimony/DV, Partition & BNS/BNSS/s.138',
+        whenToUse: 'Builder flat delay (RERA), family property partition, matrimonial/domestic violence or CAW Cell/498A notice, police FIR/bail, or bounced cheque (s.138).',
+        sampleInput: 'My buyer gave me a cheque for Rs 6,40,000 that bounced with memo "Funds Insufficient" 27 days ago. He says wait another week for RTGS and do not send a legal notice. What is my exact deadline?',
+        sampleOutput: `### What Your Situation Means (Urgent 3-Day Clock)
+Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch a formal written demand notice within **30 days** of receiving the bank's dishonour memo. Because 27 days have already passed, **you have only 3 days left**. Waiting "another week" will permanently bar your criminal cheque-bounce remedy on this presentation.
+
+### Immediate Steps (Next 48 Hours)
+1. **Dispatch the Section 138 Demand Notice within 3 days:** Send it by **Speed Post / Registered Post AD** (plus email/WhatsApp) giving the buyer **15 days from receipt** to pay ₹6,40,000.
+2. **Preserve the Bank Return Memo & Original Cheque:** Keep the original cheque, bank return memo, and invoice safely.
+3. **Check Your Bank Branch Jurisdiction (Section 142(2)(a) NI Act):** If the buyer does not pay within 15 days of receiving your notice, you have **30 days** to file a complaint in the Magistrate Court having jurisdiction over the **bank branch where you (the payee) maintain your account**.`
       }
     };
 
@@ -432,21 +458,29 @@ Selling AI software or services does **not** automatically mean you must registe
       const [storyText, setStoryText] = useState('');
 
       // Door 2: Mid-Case state
+      const [forum, setForum] = useState('consumer-commission');
       const [stage, setStage] = useState('op-evidence');
-      const [serviceDate, setServiceDate] = useState('2026-04-01');
-      const [nextHearingDate, setNextHearingDate] = useState('2026-11-18');
-      const [writtenVersionFiled, setWrittenVersionFiled] = useState(true);
-      const [complainantEvidenceFiled, setComplainantEvidenceFiled] = useState(true);
+      const [serviceDate, setServiceDate] = useState('');
+      const [nextHearingDate, setNextHearingDate] = useState('');
+      const [writtenVersionFiled, setWrittenVersionFiled] = useState(false);
+      const [writtenVersionFiledDate, setWrittenVersionFiledDate] = useState('');
+      const [complainantEvidenceFiled, setComplainantEvidenceFiled] = useState(false);
       const [opEvidenceFiled, setOpEvidenceFiled] = useState(false);
-      const [opAdjournments, setOpAdjournments] = useState(2);
+      const [opAdjournments, setOpAdjournments] = useState(0);
+      const [finalOrderDate, setFinalOrderDate] = useState('');
+      const [lawyerReportedStatus, setLawyerReportedStatus] = useState('');
       const [multiOpSummary, setMultiOpSummary] = useState('');
-      const [midcaseNotes, setMidcaseNotes] = useState(DEMO_MIDCASE_NOTES);
+      const [midcaseNotes, setMidcaseNotes] = useState('');
 
       // Door 3: Company / Startup state
       const [companyNeed, setCompanyNeed] = useState('choose-entity');
-      const [companyNotes, setCompanyNotes] = useState(
-        'Two co-founders launching a software + consulting business in Bengaluru. Bootstrapped initially (₹10L capital), might raise angel/VC funding in 12–18 months if the SaaS product takes off. Unsure between LLP and Private Limited.'
-      );
+      const [companyNotes, setCompanyNotes] = useState('');
+
+      // Door 4: Dedicated Civil, Property, Family & Criminal state
+      const [civilCriminalSubTrack, setCivilCriminalSubTrack] = useState('property-rera');
+      const [civilCriminalRole, setCivilCriminalRole] = useState('complainant');
+      const [civilCriminalKeyDate, setCivilCriminalKeyDate] = useState('');
+      const [civilCriminalNotes, setCivilCriminalNotes] = useState('');
 
       // Live output state
       const [loading, setLoading] = useState(false);
@@ -515,11 +549,23 @@ Selling AI software or services does **not** automatically mean you must registe
           setRole('complainant');
           setStoryText(sample.sampleInput);
         } else if (targetDoor === 'midcase') {
+          setForum('consumer-commission');
           setStage('op-evidence');
+          setServiceDate('2026-04-01');
+          setNextHearingDate('2026-11-18');
+          setWrittenVersionFiled(true);
+          setComplainantEvidenceFiled(true);
+          setOpEvidenceFiled(false);
+          setOpAdjournments(2);
           setMidcaseNotes(sample.sampleInput);
         } else if (targetDoor === 'company') {
           setCompanyNeed('choose-entity');
           setCompanyNotes(sample.sampleInput);
+        } else if (targetDoor === 'civil-criminal') {
+          setCivilCriminalSubTrack('cheque-bounce-138');
+          setCivilCriminalRole('complainant');
+          setCivilCriminalKeyDate('2026-10-06');
+          setCivilCriminalNotes(sample.sampleInput);
         }
         setResult({
           model: 'sample-preview',
@@ -527,6 +573,14 @@ Selling AI software or services does **not** automatically mean you must registe
           billingEntry: { totalTokens: 0, estimatedInr: 0, latencyMs: 0 },
           engineResult: {}
         });
+      };
+
+      const stripPromptWrapper = (rawText = '') => {
+        return String(rawText || '')
+          .replace(/^User Role:.*?\r?\n\r?\nRaw Story \/ WhatsApp Chat:\r?\n/i, '')
+          .replace(/^Need Type:.*?\r?\nDetails:\r?\n/i, '')
+          .replace(/^Case Sub-Track:.*?\r?\nUser Side:.*?\r?\n(?:Key Date:.*?\r?\n)?Details:\r?\n/i, '')
+          .trim();
       };
 
       const goHome = () => {
@@ -565,30 +619,46 @@ Selling AI software or services does **not** automatically mean you must registe
           setStreamingMarkdown('');
 
           const cs = s.caseState || {};
+          const firstTurn = s.turns?.[0] || null;
           const lastTurn = s.turns?.[s.turns.length - 1] || null;
+
+          // Always restore the main form textarea from Turn #1 (not a short follow-up turn!) and strip wrappers
+          const baseTurnInput = String((firstTurn || lastTurn)?.userInput || '');
+          const marker = 'ATTACHED FOLDER / TEXT DOCUMENTS:';
+          const baseMarkerIdx = baseTurnInput.indexOf(marker);
+          const cleanFirstTurnNotes = stripPromptWrapper(
+            baseMarkerIdx !== -1 ? baseTurnInput.slice(0, baseMarkerIdx).trim() : baseTurnInput
+          );
 
           if (s.door === 'start') {
             if (cs.role) setRole(cs.role);
-            if (lastTurn?.userInput) setStoryText(lastTurn.userInput.slice(0, 4000));
+            setStoryText(cleanFirstTurnNotes.slice(0, 4000));
           } else if (s.door === 'midcase') {
+            if (cs.forum) setForum(cs.forum);
             if (cs.stage) setStage(cs.stage);
-            if (cs.serviceDate) setServiceDate(cs.serviceDate);
-            if (cs.nextHearingDate) setNextHearingDate(cs.nextHearingDate);
+            if (cs.serviceDate !== undefined) setServiceDate(cs.serviceDate || '');
+            if (cs.nextHearingDate !== undefined) setNextHearingDate(cs.nextHearingDate || '');
             if (typeof cs.writtenVersionFiled === 'boolean') setWrittenVersionFiled(cs.writtenVersionFiled);
+            if (cs.writtenVersionFiledDate !== undefined) setWrittenVersionFiledDate(cs.writtenVersionFiledDate || '');
             if (typeof cs.complainantEvidenceFiled === 'boolean') setComplainantEvidenceFiled(cs.complainantEvidenceFiled);
             if (typeof cs.opEvidenceFiled === 'boolean') setOpEvidenceFiled(cs.opEvidenceFiled);
             if (cs.opEvidenceAdjournmentsGranted !== undefined) setOpAdjournments(cs.opEvidenceAdjournmentsGranted);
-            if (lastTurn?.userInput) setMidcaseNotes(lastTurn.userInput.slice(0, 4000));
+            if (cs.finalOrderDate !== undefined) setFinalOrderDate(cs.finalOrderDate || '');
+            if (cs.lawyerReportedStatus !== undefined) setLawyerReportedStatus(cs.lawyerReportedStatus || '');
+            setMidcaseNotes(cleanFirstTurnNotes.slice(0, 4000));
           } else if (s.door === 'company') {
             if (cs.companyNeed) setCompanyNeed(cs.companyNeed);
-            if (lastTurn?.userInput) setCompanyNotes(lastTurn.userInput.slice(0, 4000));
+            setCompanyNotes(cleanFirstTurnNotes.slice(0, 4000));
+          } else if (s.door === 'civil-criminal') {
+            if (cs.subTrack) setCivilCriminalSubTrack(cs.subTrack);
+            if (cs.role) setCivilCriminalRole(cs.role);
+            if (cs.keyDate !== undefined) setCivilCriminalKeyDate(cs.keyDate || '');
+            setCivilCriminalNotes(cleanFirstTurnNotes.slice(0, 4000));
           }
 
           if (lastTurn) {
-            const rawTurnInput = String(lastTurn.userInput || '');
-            const marker = 'ATTACHED FOLDER / TEXT DOCUMENTS:';
+            const rawTurnInput = String((firstTurn || lastTurn).userInput || '');
             const markerIdx = rawTurnInput.indexOf(marker);
-            const cleanNotesOnly = markerIdx !== -1 ? rawTurnInput.slice(0, markerIdx).trim() : rawTurnInput;
 
             // Restore the attachedTextDocs pills when resuming a saved session!
             if (markerIdx !== -1) {
@@ -605,14 +675,6 @@ Selling AI software or services does **not** automatically mean you must registe
             } else {
               setAttachedTextDocs([]);
               setSyncedDocNames([]);
-            }
-
-            if (s.door === 'start') {
-              setStoryText(cleanNotesOnly.slice(0, 4000));
-            } else if (s.door === 'midcase') {
-              setMidcaseNotes(cleanNotesOnly.slice(0, 4000));
-            } else if (s.door === 'company') {
-              setCompanyNotes(cleanNotesOnly.slice(0, 4000));
             }
 
             setResult({
@@ -651,10 +713,12 @@ Selling AI software or services does **not** automatically mean you must registe
 
       const applyInferredStateToForm = (inferred) => {
         if (!inferred) return;
+        if (inferred.forum) setForum(inferred.forum);
         if (inferred.stage) setStage(inferred.stage);
         if (inferred.serviceDate) setServiceDate(inferred.serviceDate);
         if (inferred.nextHearingDate) setNextHearingDate(inferred.nextHearingDate);
         if (typeof inferred.writtenVersionFiled === 'boolean') setWrittenVersionFiled(inferred.writtenVersionFiled);
+        if (inferred.writtenVersionFiledDate) setWrittenVersionFiledDate(inferred.writtenVersionFiledDate);
         if (typeof inferred.complainantEvidenceFiled === 'boolean') setComplainantEvidenceFiled(inferred.complainantEvidenceFiled);
         if (typeof inferred.opEvidenceFiled === 'boolean') setOpEvidenceFiled(inferred.opEvidenceFiled);
         if (inferred.opEvidenceAdjournmentsGranted !== undefined) setOpAdjournments(inferred.opEvidenceAdjournmentsGranted);
@@ -666,20 +730,27 @@ Selling AI software or services does **not** automatically mean you must registe
         const nextState = {};
         const reasons = [];
 
-        if (/files\s+vakalath\s+(?:and|along\s+with)\s+W\.?V\.?|OP-?2\s+files\s+Written\s+Version|Order\s+Sheet\s*-\s*OP\d*\s+files\s+vakalath\s+and\s+WV|OP\d*-WRITTEN-VERSION-verbatim/i.test(corpus)) {
+        const isCivilRecord = /\b(o\.?\s*s\.?\s*no\.?|principal\s+senior\s+civil\s+judge|partition\s+suit|order\s+39\s+rules?\s+1|order\s+14\s+cpc)\b/i.test(corpus);
+        if (isCivilRecord) {
+          nextState.forum = 'civil-court';
+        }
+
+        const wvMatch = corpus.match(/([^\r\n]*?(?:files\s+vakalath\s+(?:and|along\s+with)\s+W\.?V\.?|files\s+Written\s+(?:Version|Statement)|Order\s+Sheet\s*-\s*OP\d*\s+files\s+vakalath\s+and\s+WV|OP\d*-WRITTEN-VERSION-verbatim|vakalath\s+along\s+with\s+W\.V\.\s+of\s+OP)[^\r\n]*)/i);
+        if (wvMatch) {
           nextState.writtenVersionFiled = true;
-          reasons.push('OP Written Version filed (06.07.2026)');
+          const dateInLine = wvMatch[1].match(/(\d{2}[./-]\d{2}[./-]\d{4}|\d{4}-\d{2}-\d{2})/)?.[1];
+          reasons.push(`Formal reply / Written Version filed${dateInLine ? ` (${dateInLine})` : ''}`);
         }
         if (/Order\s+Sheet\s*-\s*Rejoinder,\s*evidence,\s*Ex\.P\.1|files\s+affidavit\s+evidence\s+along\s+with\s+certificate|Complainant\s+submits\s+that\s+the\s+evidence\s+from\s+his\s+side\s+closed|AFFIDAVIT\s+OF\s+EVIDENCE\s*-\s*notarised\s+copy/i.test(corpus)) {
           nextState.complainantEvidenceFiled = true;
-          reasons.push('Complainant Evidence & Rejoinder filed & closed (05.08.2026, Ex.P.1–P.12)');
+          reasons.push('Complainant Evidence & Rejoinder filed & closed on record');
         }
         if (nextState.complainantEvidenceFiled && /prays\s+time\s+to\s+lead\s+evidence|For\s+affidavit\s+evidence\s+of\s+opposite\s+party|OP\d*\s+evidence\s+finally/i.test(corpus)) {
           nextState.stage = 'op-evidence';
           nextState.opEvidenceFiled = false;
           reasons.push('Stage: OP Evidence');
         }
-        const srv = corpus.match(/Notice\s+to\s+OP\.?No\.?1\s+was\s+served\s+on\s+(\d{2})[./-](\d{2})[./-](\d{4})/i);
+        const srv = corpus.match(/Notice\s+to\s+(?:OP\.?No\.?\d+|Defendant\s*No\.?\s*\d+|Opposite\s+Party)\s+was\s+served\s+on\s+(\d{2})[./-](\d{2})[./-](\d{4})/i);
         if (srv) {
           nextState.serviceDate = `${srv[3]}-${srv[2].padStart(2, '0')}-${srv[1].padStart(2, '0')}`;
           reasons.push(`Notice Served: ${nextState.serviceDate}`);
@@ -690,7 +761,7 @@ Selling AI software or services does **not** automatically mean you must registe
           nextState.nextHearingDate = sortedDates[sortedDates.length - 1];
           reasons.push(`Next Hearing: ${nextState.nextHearingDate}`);
         }
-        if (/finally\s+08[./-]10[./-]2026/i.test(corpus) && /call\s+on\s+03[./-]11[./-]2026/i.test(corpus)) {
+        if (/finally\s+\d{2}[./-]\d{2}[./-]\d{4}/i.test(corpus) && /prays\s+time\s+to\s+lead\s+evidence/i.test(corpus)) {
           nextState.opEvidenceAdjournmentsGranted = 2;
         }
         applyInferredStateToForm(nextState);
@@ -950,30 +1021,52 @@ Selling AI software or services does **not** automatically mean you must registe
         try {
           let mode = modeOverride;
           let caseState = {};
-          let baseNotes = '';
+          let initialNotes = '';
 
           if (door === 'start') {
             mode = 'messy-dump-intake';
             caseState = { role };
-            baseNotes = customFollowUp || `User Role: ${role === 'complainant' ? 'Complainant (seeking refund/relief)' : 'Respondent (responding to a refund demand or claim; merits not yet assessed)'}\n\nRaw Story / WhatsApp Chat:\n${storyText}`;
+            initialNotes = `User Role: ${role === 'complainant' ? 'Complainant (seeking relief/action)' : 'Respondent (responding to a notice, claim, or demand; merits not yet assessed)'}\n\nRaw Story / WhatsApp Chat:\n${storyText}`;
           } else if (door === 'midcase') {
             mode = 'midcase-battle-card';
             caseState = {
+              forum,
               stage,
               serviceDate,
               nextHearingDate,
               writtenVersionFiled,
+              writtenVersionFiledDate: writtenVersionFiledDate || null,
               complainantEvidenceFiled,
               opEvidenceFiled,
               opEvidenceAdjournmentsGranted: Number(opAdjournments),
+              opponentAdjournments: Number(opAdjournments),
+              finalOrderDate: finalOrderDate || null,
+              lawyerReportedStatus: lawyerReportedStatus || '',
               proposedGapDays: 45
             };
-            baseNotes = customFollowUp || midcaseNotes;
+            initialNotes = midcaseNotes;
           } else if (door === 'company') {
             mode = 'company-advisor';
             caseState = { companyNeed };
-            baseNotes = customFollowUp || `Need Type: ${companyNeed}\nDetails:\n${companyNotes}`;
+            initialNotes = `Need Type: ${companyNeed}\nDetails:\n${companyNotes}`;
+          } else if (door === 'civil-criminal') {
+            mode = 'civil-criminal-advisor';
+            caseState = {
+              subTrack: civilCriminalSubTrack,
+              role: civilCriminalRole,
+              keyDate: civilCriminalKeyDate || null,
+              dishonourDate: civilCriminalSubTrack === 'cheque-bounce-138' ? (civilCriminalKeyDate || null) : null,
+              incidentDate: civilCriminalSubTrack === 'criminal' ? (civilCriminalKeyDate || null) : null,
+              causeOfActionDate: civilCriminalKeyDate || null
+            };
+            initialNotes = `Case Sub-Track: ${civilCriminalSubTrack}\nUser Side: ${civilCriminalRole}\n${civilCriminalKeyDate ? `Key Date: ${civilCriminalKeyDate}\n` : ''}Details:\n${civilCriminalNotes}`;
           }
+
+          // If user clicks "Review in more depth" or asks a follow-up before a backend session exists (e.g. after "Load Sample"),
+          // preserve the initial case story alongside the follow-up instruction so case facts are never dropped!
+          const baseNotes = customFollowUp
+            ? (activeSession?.id ? customFollowUp : `${initialNotes}\n\nFollow-Up / Review Request:\n${customFollowUp}`)
+            : initialNotes;
 
           // Zero Re-Upload Optimization:
           // If this session already exists in SQLite (`activeSession.id`), only upload NEW documents or NEW images
@@ -1156,6 +1249,29 @@ Selling AI software or services does **not** automatically mean you must registe
         ? billing.totals.estimatedInr / billing.totals.calls
         : 0.42;
 
+      const saveSessionTitlePatch = async (newTitle) => {
+        if (!activeSession?.id) return;
+        const cleanTitle = String(newTitle || '').trim();
+        if (!cleanTitle || cleanTitle === activeSession.title) return;
+        try {
+          const res = await fetch(`/api/sessions/${encodeURIComponent(activeSession.id)}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-nyaya-user-id': userId
+            },
+            body: JSON.stringify({ userId, title: cleanTitle })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.session) setActiveSession(prev => ({ ...(prev || {}), title: data.session.title }));
+            if (Array.isArray(data.sessions)) setSessions(data.sessions);
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      };
+
       const renderCaseTitleBar = () => (
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white border border-zinc-200/90 rounded-xl px-3.5 py-2.5 shadow-sm">
           <div class="min-w-0 flex flex-col sm:flex-row sm:items-center gap-2 flex-1">
@@ -1167,6 +1283,13 @@ Selling AI software or services does **not** automatically mean you must registe
               aria-label="Case name"
               value={caseTitle}
               onChange={(e) => setCaseTitle(e.target.value)}
+              onBlur={(e) => saveSessionTitlePatch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  saveSessionTitlePatch(e.target.value);
+                }
+              }}
               placeholder="Optional name to help you find this conversation later"
               class="w-full min-w-0 flex-1 text-sm py-2 font-medium text-zinc-900 placeholder-zinc-400 focus:outline-none bg-transparent"
             />
@@ -1813,7 +1936,23 @@ Selling AI software or services does **not** automatically mean you must registe
                         An ongoing case
                       </div>
                       <div class="text-sm text-zinc-500">
-                        A case already in court, consumer commission, family court, or RERA.
+                        Prepare for your next hearing or understand a court order (Consumer, Civil, Family, or RERA).
+                      </div>
+                    </div>
+                    <span class="text-zinc-300 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
+                  </button>
+
+                  <button
+                    data-door="civil-criminal"
+                    onClick={() => startNewBlankSession('civil-criminal')}
+                    class="w-full text-left p-4 sm:p-5 rounded-2xl bg-white border border-zinc-200/90 hover:border-zinc-900 hover:shadow-sm transition-all flex items-center justify-between gap-3 group"
+                  >
+                    <div class="space-y-1 pr-4">
+                      <div class="font-semibold text-zinc-900 text-base">
+                        Property, Family, Matrimony & Criminal Law
+                      </div>
+                      <div class="text-sm text-zinc-500">
+                        Builder delay (RERA), family property partition, matrimony/DV, police FIR/bail (BNS/BNSS), or bounced cheque (s.138).
                       </div>
                     </div>
                     <span class="text-zinc-300 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
@@ -1953,18 +2092,34 @@ Selling AI software or services does **not** automatically mean you must registe
                 >
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label class="text-xs font-medium text-zinc-500 block mb-1">Current stage in the consumer case</label>
+                      <label class="text-xs font-medium text-zinc-500 block mb-1">Court or Forum</label>
+                      <select
+                        aria-label="Court or Forum"
+                        value={forum}
+                        onChange={(e) => setForum(e.target.value)}
+                        class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium text-zinc-900 focus:outline-none"
+                      >
+                        <option value="consumer-commission">Consumer Commission (District / State / National)</option>
+                        <option value="civil-court">Civil / Property Court (CPC — Partition, Injunction, Eviction)</option>
+                        <option value="family-court">Family Court / Magistrate (Matrimony, DV Act, Maintenance)</option>
+                        <option value="rera">RERA Authority / Tribunal</option>
+                        <option value="criminal-magistrate-sessions">Criminal Court (Magistrate / Sessions / NI Act s.138)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="text-xs font-medium text-zinc-500 block mb-1">Current stage in the case</label>
                       <select
                         value={stage}
                         onChange={(e) => setStage(e.target.value)}
                         class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium text-zinc-900 focus:outline-none"
                       >
-                        <option value="notice-and-written-version">Waiting for the other side's formal reply</option>
+                        <option value="written-version-stage">Waiting for the other side's formal reply (Written Version / Statement)</option>
                         <option value="rejoinder-and-complainant-evidence">My response and supporting evidence</option>
                         <option value="op-evidence">The other side's evidence</option>
-                        <option value="written-arguments">Written arguments explaining each side's case</option>
-                        <option value="execution-s71-s72">Enforcing a favourable order that is not being followed</option>
-                        <option value="other-or-unsure">Other court/forum or not sure of stage — explain below</option>
+                        <option value="final-arguments">Written & oral final arguments</option>
+                        <option value="final-order-and-execution">Enforcing a favourable order that is not being followed</option>
+                        <option value="service-of-notice">Serving notice on the other side (refused / door-locked / dasti)</option>
+                        <option value="other-or-unsure">Other stage / Interim Application (Order 39 / Framing of Issues) — explain below</option>
                       </select>
                     </div>
                     <div>
@@ -1982,6 +2137,20 @@ Selling AI software or services does **not** automatically mean you must registe
                       <input type="number" min="0" max="10" value={opAdjournments} onChange={e => setOpAdjournments(e.target.value)}
                         class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium" />
                     </div>
+                    {writtenVersionFiled && (
+                      <div>
+                        <label class="text-xs font-medium text-zinc-500 block mb-1">Date the other side filed its reply (optional — checks 45-day cap)</label>
+                        <input type="date" value={writtenVersionFiledDate} onChange={e => setWrittenVersionFiledDate(e.target.value)}
+                          class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium" />
+                      </div>
+                    )}
+                    {stage === 'final-order-and-execution' && (
+                      <div>
+                        <label class="text-xs font-medium text-zinc-500 block mb-1">Date of final order (for execution timeline)</label>
+                        <input type="date" value={finalOrderDate} onChange={e => setFinalOrderDate(e.target.value)}
+                          class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium" />
+                      </div>
+                    )}
                   </div>
 
                   <div class="flex flex-wrap gap-4 pt-1 text-xs text-zinc-700">
@@ -2013,9 +2182,22 @@ Selling AI software or services does **not** automatically mean you must registe
                       value={midcaseNotes}
                       onChange={e => setMidcaseNotes(e.target.value)}
                       onPaste={handlePasteEvent}
+                      placeholder="Describe the current stage, upload your order sheet, or click 'Load Sample' below to test..."
                       class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-800 focus:outline-none"
                     />
                   </div>
+
+                  <details class="text-xs">
+                    <summary class="cursor-pointer font-medium text-zinc-500 py-1">Optional: Compare what your lawyer told you against the daily order sheet (Lawyer Audit)</summary>
+                    <input
+                      type="text"
+                      aria-label="What your lawyer told you happened"
+                      value={lawyerReportedStatus}
+                      onChange={e => setLawyerReportedStatus(e.target.value)}
+                      placeholder="e.g., Lawyer said the judge was on leave and adjourned the hearing..."
+                      class="mt-1.5 w-full text-xs px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-800 focus:outline-none"
+                    />
+                  </details>
 
                   <VoiceInput inputId="midcase-notes" setText={setMidcaseNotes} voice={voice} disabled={loading || Boolean(ingestProgress)} />
                   {renderAttachmentsAndProgress()}
@@ -2146,6 +2328,123 @@ Selling AI software or services does **not** automatically mean you must registe
               </div>
             )}
 
+            {/* ==================== DOOR 4: DEDICATED CIVIL, PROPERTY, FAMILY & CRIMINAL ==================== */}
+            {door === 'civil-criminal' && (
+              <div class="space-y-5">
+                <div class="space-y-2">
+                  <div class="text-xs font-medium uppercase tracking-wider text-amber-800">Dedicated Civil, Family & Criminal Module</div>
+                  <h2 class="serif-heading text-3xl text-zinc-900">Property, Family, Matrimony & Criminal Law</h2>
+                  <p class="text-xs text-zinc-500">
+                    Uses domain-specific statutory calculators (RERA vs Consumer slabs, PWDVA s.12 / BNSS s.144, HSA Partition + Order 39 CPC, BNS/BNSS 01.07.2024 cutoff + Arnesh Kumar shield, and NI Act s.138 30-day clock).
+                  </p>
+                </div>
+
+                {renderCaseTitleBar()}
+
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleDrop}
+                  class="bg-white rounded-2xl border border-zinc-200 p-4 sm:p-5 space-y-4 shadow-sm"
+                >
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="civil-criminal-subtrack" class="text-xs font-medium text-zinc-500 block mb-1">What type of issue is this?</label>
+                      <select
+                        id="civil-criminal-subtrack"
+                        aria-label="Civil or criminal issue type"
+                        value={civilCriminalSubTrack}
+                        onChange={(e) => setCivilCriminalSubTrack(e.target.value)}
+                        class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium text-zinc-900 focus:outline-none"
+                      >
+                        <option value="property-rera">🏠 Property, Builder Delay (RERA) or Tenancy</option>
+                        <option value="matrimonial-family">👨‍👩‍👧 Matrimony, Domestic Violence (PWDVA) or Maintenance</option>
+                        <option value="inheritance-partition">📜 Family Property Partition, Will or Inheritance (HSA)</option>
+                        <option value="criminal">🛡️ Police Station, CAW Cell, FIR, Bail (BNS/BNSS) or Cybercrime</option>
+                        <option value="cheque-bounce-138">🏦 Cheque Bounce — NI Act Section 138 (30-Day Clock)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="civil-criminal-key-date" class="text-xs font-medium text-zinc-500 block mb-1">
+                        {civilCriminalSubTrack === 'cheque-bounce-138'
+                          ? 'Bank Return Memo Date (calculates 30-day notice deadline)'
+                          : civilCriminalSubTrack === 'criminal'
+                          ? 'Date of alleged incident / notice (checks 01.07.2024 BNS cutoff)'
+                          : 'Key date (optional — notice, agreement, or hearing date)'}
+                      </label>
+                      <input
+                        id="civil-criminal-key-date"
+                        type="date"
+                        value={civilCriminalKeyDate}
+                        onChange={(e) => setCivilCriminalKeyDate(e.target.value)}
+                        class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 sm:grid-cols-2 p-1 rounded-xl bg-zinc-200/70 text-xs font-medium">
+                    <button
+                      type="button"
+                      onClick={() => setCivilCriminalRole('complainant')}
+                      class={`px-3.5 py-2 rounded-lg transition ${civilCriminalRole === 'complainant' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-600'}`}
+                    >
+                      I am seeking protection, relief, or filing a complaint
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCivilCriminalRole('defender')}
+                      class={`px-3.5 py-2 rounded-lg transition ${civilCriminalRole === 'defender' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-600'}`}
+                    >
+                      I received a police call, CAW Cell notice, FIR, or legal claim
+                    </button>
+                  </div>
+
+                  <textarea
+                    id="civil-criminal-notes"
+                    aria-label="Your civil, family, or criminal situation"
+                    rows="4"
+                    value={civilCriminalNotes}
+                    onChange={(e) => setCivilCriminalNotes(e.target.value)}
+                    onPaste={handlePasteEvent}
+                    placeholder="Explain what happened, any dates or amounts involved, and what help you need right now..."
+                    class="w-full text-sm text-zinc-800 placeholder-zinc-400 focus:outline-none resize-y leading-relaxed"
+                  />
+
+                  <VoiceInput inputId="civil-criminal-notes" setText={setCivilCriminalNotes} voice={voice} disabled={loading || Boolean(ingestProgress)} />
+                  {renderAttachmentsAndProgress()}
+                  {renderFolderScannerBar()}
+
+                  <div class="pt-3 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <label class="file-upload text-xs px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 cursor-pointer font-medium transition">
+                        🖼️ Upload Notice / FIR / Order / File
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*,.pdf,.docx,.zip,.txt,.md,.csv,.json"
+                          class="hidden"
+                          onChange={handleFileUpload}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleClipboardButtonClick(setCivilCriminalNotes)}
+                        class="text-xs px-3 py-1.5 rounded-lg border border-zinc-200 hover:border-zinc-400 text-zinc-700 font-medium transition"
+                      >
+                        📋 Paste from Clipboard
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => runAnalysis('civil-criminal-advisor')}
+                      disabled={loading || Boolean(ingestProgress) || voice.busy}
+                      class="w-full sm:w-auto min-h-[44px] px-4 py-2 rounded-xl bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 transition disabled:opacity-50"
+                    >
+                      {loading ? 'Preparing your legal roadmap...' : 'Get Verified Legal Roadmap & Save →'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ==================== LIVE THINKING & PROGRESS STEPPER ==================== */}
             {renderLiveThinkingCard()}
 
@@ -2179,12 +2478,45 @@ Selling AI software or services does **not** automatically mean you must registe
             {/* Live Streaming Output OR Completed Result */}
             {(streamingMarkdown || result) && (
               <div class="min-w-0 mt-6 bg-white rounded-2xl border border-zinc-200 p-4 sm:p-6 space-y-5 shadow-sm">
-                {result?.engineResult?.disposalPace && Number.isFinite(result.engineResult.disposalPace.daysSinceNotice ?? result.engineResult.disposalPace.daysElapsed ?? result.engineResult.disposalPace.elapsedDays) && (
+                {(result?.engineResult?.domainInfo || result?.engineResult?.disposalPace || result?.engineResult?.niAct138 || result?.engineResult?.criminalRules || result?.engineResult?.verification) && (
                   <div class="flex flex-wrap gap-2 pb-4 border-b border-zinc-100">
-                    <span class="text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200 font-medium">
-                      Elapsed: {result.engineResult.disposalPace.daysSinceNotice ?? result.engineResult.disposalPace.daysElapsed ?? result.engineResult.disposalPace.elapsedDays}d / {result.engineResult.disposalPace.targetDays ?? result.engineResult.disposalPace.statutoryTargetDays}d statutory target
-                    </span>
-                    {result.engineResult.verification && (
+                    {result?.engineResult?.domainInfo?.label && (
+                      <span class="text-xs px-2.5 py-1 rounded-full bg-zinc-100 text-zinc-800 border border-zinc-200 font-medium">
+                        ⚖️ {result.engineResult.domainInfo.label}
+                      </span>
+                    )}
+                    {result?.engineResult?.domainInfo?.isConsumerForum !== false && result?.engineResult?.disposalPace && Number.isFinite(result.engineResult.disposalPace.daysSinceNotice ?? result.engineResult.disposalPace.daysElapsed ?? result.engineResult.disposalPace.elapsedDays) && (
+                      <span class="text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200 font-medium">
+                        Elapsed: {result.engineResult.disposalPace.daysSinceNotice ?? result.engineResult.disposalPace.daysElapsed ?? result.engineResult.disposalPace.elapsedDays}d / {result.engineResult.disposalPace.targetDays ?? result.engineResult.disposalPace.statutoryTargetDays}d statutory target
+                      </span>
+                    )}
+                    {result?.engineResult?.consumerPecuniary && (
+                      <span class="text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-900 border border-blue-200 font-medium">
+                        🏛️ {result.engineResult.consumerPecuniary.competentForum.split('(')[0].trim()} · Official Fee: ₹{result.engineResult.consumerPecuniary.filingFeeInr}
+                      </span>
+                    )}
+                    {result?.engineResult?.niAct138 && (
+                      <span class={`text-xs px-2.5 py-1 rounded-full border font-medium ${
+                        result.engineResult.niAct138.noticeWindowExpired
+                          ? 'bg-red-50 text-red-900 border-red-200'
+                          : 'bg-amber-50 text-amber-900 border-amber-200'
+                      }`}>
+                        ⏱️ NI Act s.138 Notice: {result.engineResult.niAct138.noticeWindowExpired
+                          ? `30-day window expired (${result.engineResult.niAct138.noticeDeadlineDate})`
+                          : `${result.engineResult.niAct138.daysRemainingForNotice}d left (Deadline: ${result.engineResult.niAct138.noticeDeadlineDate})`}
+                      </span>
+                    )}
+                    {result?.engineResult?.criminalRules?.matchedOffences?.map(off => (
+                      <span key={off.id} class="text-xs px-2.5 py-1 rounded-full bg-purple-50 text-purple-900 border border-purple-200 font-medium">
+                        🛡️ {off.bnsSection} ({off.ipcSection}): {off.bailable ? 'Bailable' : 'NON-BAILABLE'}{off.arneshKumarNoticeApplies ? ' · BNSS s.35(3) Notice Shield' : ''}
+                      </span>
+                    ))}
+                    {result?.engineResult?.lawyerAudit?.discrepancyDetected && (
+                      <span class="text-xs px-2.5 py-1 rounded-full bg-red-50 text-red-900 border border-red-200 font-medium">
+                        ⚠️ Lawyer Audit Flag: {result.engineResult.lawyerAudit.flags.join(', ')}
+                      </span>
+                    )}
+                    {result?.engineResult?.verification && (
                       <span class={`text-xs px-2.5 py-1 rounded-full border font-medium ${
                         result.engineResult.verification.verified
                           ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
@@ -2193,7 +2525,7 @@ Selling AI software or services does **not** automatically mean you must registe
                         {result.engineResult.verification.verified ? 'Limited record checks: no conflicts found' : 'Record details need review'}
                       </span>
                     )}
-                    {result.engineResult.matchedTactics?.map(t => (
+                    {result?.engineResult?.matchedTactics?.map(t => (
                       <span key={t.id} class="text-xs px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-medium">
                         ✓ Tactic Matched: {t.title}
                       </span>

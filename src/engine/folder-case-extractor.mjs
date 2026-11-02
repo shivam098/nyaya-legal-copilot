@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import mammoth from 'mammoth';
 import AdmZip from 'adm-zip';
+import { verifyDomainLegalAccuracy } from './civil-criminal-rules.mjs';
 
 const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
@@ -63,8 +64,8 @@ export function extractZipBufferTexts(buffer, zipName = 'archive.zip') {
 }
 
 /**
- * Automatically infers procedural case state AND per-OP status Matrix (OP-1 vs OP-2)
- * from a folder file-manifest + extracted text documents (PDFs, DOCX, Markdown).
+ * Automatically infers procedural case state AND per-party status Matrix
+ * dynamically from a folder file-manifest + extracted text documents (PDFs, DOCX, Markdown).
  */
 export function inferCaseStateFromFolder({ fileNames = [], combinedText = '', currentCaseState = {} }) {
   const allNames = fileNames.join('\n');
@@ -76,26 +77,42 @@ export function inferCaseStateFromFolder({ fileNames = [], combinedText = '', cu
   const reasons = [];
   const opStatusSummary = [];
 
-  // 1. Detect OP-1 Ex-Parte status (e.g., "OP.No.1 is placed exparte" / "OP1 placed EX-PARTE")
-  if (/OP\.?\s*No\.?\s*1\s+is\s+placed\s+ex-?parte|OP-?1\s+placed\s+EX-?PARTE/i.test(corpus)) {
-    inferred.op1Status = 'Ex-Parte (Notice served; failed to file WV/appear)';
-    opStatusSummary.push('OP-1: Placed EX-PARTE on record');
-    reasons.push('OP-1 detected as placed EX-PARTE on court record.');
+  const isCivilSuitRecord = /\b(o\.?\s*s\.?\s*no\.?|principal\s+senior\s+civil\s+judge|partition\s+suit|order\s+39\s+rules?\s+1|order\s+14\s+cpc)\b/i.test(corpus);
+  if (isCivilSuitRecord && !inferred.forum) {
+    inferred.forum = 'civil-court';
   }
 
-  // 2. Detect OP-2 / OP Written Version filed
-  const wvPatterns = [
-    /files\s+vakalath\s+(?:and|along\s+with)\s+W\.?V\.?/i,
-    /OP-?2\s+files\s+Written\s+Version/i,
-    /Order\s+Sheet\s*-\s*OP\d*\s+files\s+vakalath\s+and\s+WV/i,
-    /OP\d*-WRITTEN-VERSION-verbatim/i,
-    /vakalath\s+along\s+with\s+W\.V\.\s+of\s+OP/i
-  ];
-  if (wvPatterns.some(rx => rx.test(corpus))) {
+  // 1. Detect Ex-Parte status dynamically (e.g., "OP.No.1 is placed exparte", "OP1 placed EX-PARTE", "Defendant No. 2 placed EX-PARTE")
+  const exParteMatch = corpus.match(/\b(OP\.?\s*No\.?\s*\d+|OP-?\d+|Defendant\s+No\.?\s*\d+|D-?\d+)\s+(?:is\s+)?placed\s+ex-?parte/i);
+  if (exParteMatch) {
+    const rawParty = exParteMatch[1].replace(/\s+/g, ' ').trim();
+    const partyLabel = /^op/i.test(rawParty)
+      ? `OP-${rawParty.match(/\d+/)?.[0] || '1'}`
+      : rawParty;
+    if (partyLabel === 'OP-1') {
+      inferred.op1Status = 'Ex-Parte (Notice served; failed to file reply/appear)';
+    }
+    opStatusSummary.push(`${partyLabel}: Placed EX-PARTE on record`);
+    reasons.push(`${partyLabel} detected as placed EX-PARTE on court record.`);
+  }
+
+  // 2. Detect Written Version / Written Statement filed dynamically with actual party & date
+  const wvLineMatch = corpus.match(/([^\r\n]*?(?:files\s+vakalath\s+(?:and|along\s+with)\s+W\.?V\.?|files\s+Written\s+(?:Version|Statement)|Order\s+Sheet\s*-\s*OP\d*\s+files\s+vakalath\s+and\s+WV|OP\d*-WRITTEN-VERSION-verbatim|vakalath\s+along\s+with\s+W\.V\.\s+of\s+OP)[^\r\n]*)/i);
+  if (wvLineMatch) {
     inferred.writtenVersionFiled = true;
-    inferred.op2Status = 'Contesting — Written Version filed; currently at OP-2 Evidence stage';
-    opStatusSummary.push('OP-2: Written Version filed (06.07.2026); OP-2 Evidence pending');
-    reasons.push('Written Version detected as FILED in court record (OP-2 filed WV on 06.07.2026).');
+    const line = wvLineMatch[1];
+    const partyInLine = line.match(/\b(OP-?\d+|OP\.?\s*No\.?\s*\d+|Defendant\s+No\.?\s*\d+|D-?\d+)\b/i);
+    const normalizedParty = partyInLine
+      ? (/^op/i.test(partyInLine[1]) ? `OP-${partyInLine[1].match(/\d+/)?.[0] || '2'}` : partyInLine[1].replace(/\s+/g, ' ').trim())
+      : (isCivilSuitRecord ? 'Defendant' : 'Opposite Party');
+    const dateInLine = line.match(/(\d{2}[./-]\d{2}[./-]\d{4}|\d{4}-\d{2}-\d{2})/)?.[1] || '';
+    const dateSuffix = dateInLine ? ` (${dateInLine})` : '';
+
+    if (normalizedParty === 'OP-2') {
+      inferred.op2Status = `Contesting — Written Version filed${dateSuffix}`;
+    }
+    opStatusSummary.push(`${normalizedParty}: Written Version / Reply filed${dateSuffix}`);
+    reasons.push(`Written Version / Reply detected as FILED in court record (${normalizedParty} filed${dateSuffix}).`);
   }
 
   // 3. Detect Complainant Rejoinder + Evidence Affidavit filed & marked
@@ -103,12 +120,13 @@ export function inferCaseStateFromFolder({ fileNames = [], combinedText = '', cu
     /Order\s+Sheet\s*-\s*Rejoinder,\s*evidence,\s*Ex\.P\.1/i,
     /files\s+affidavit\s+evidence\s+along\s+with\s+certificate/i,
     /Complainant\s+submits\s+that\s+the\s+evidence\s+from\s+his\s+side\s+closed/i,
-    /marked\s+as\s+Ex\.P\.1\s+to\s+Ex\.P\.12/i,
+    /marked\s+as\s+Ex\.P\.1\s+to\s+Ex\.P\.\d+/i,
     /AFFIDAVIT\s+OF\s+EVIDENCE\s*-\s*notarised\s+copy/i
   ];
   if (compEvPatterns.some(rx => rx.test(corpus))) {
     inferred.complainantEvidenceFiled = true;
-    reasons.push('Complainant Affidavit of Evidence & Rejoinder detected as FILED and CLOSED on record (Ex.P.1–Ex.P.12 marked on 05.08.2026).');
+    const exMatch = corpus.match(/Ex\.P\.1(?:\s*(?:to|-)\s*Ex\.?P?\.\d+|-\s*P\.\d+)/i)?.[0] || 'Ex.P series';
+    reasons.push(`Complainant Affidavit of Evidence & Rejoinder detected as FILED and CLOSED on record (${exMatch}).`);
   }
 
   // 4. Detect Stage: if Complainant Evidence is filed & closed and OP is seeking time to lead evidence -> op-evidence
@@ -120,14 +138,17 @@ export function inferCaseStateFromFolder({ fileNames = [], combinedText = '', cu
   if (inferred.complainantEvidenceFiled && opPendingPatterns.some(rx => rx.test(corpus))) {
     inferred.stage = 'op-evidence';
     inferred.opEvidenceFiled = false;
-    reasons.push('Stage inferred as OP Evidence (Complainant evidence closed; OP-2 praying time for evidence).');
+    reasons.push('Stage inferred as OP Evidence (Complainant evidence closed; Opposite Party praying time for evidence).');
+  } else if (isCivilSuitRecord && /framing\s+of\s+issues|order\s+39/i.test(corpus)) {
+    inferred.stage = 'other-or-unsure';
+    reasons.push('Civil suit interim application / framing of issues stage detected from order sheet.');
   }
 
   // 5. Detect Service Date on OP ("Notice to OP.No.1 was served on 14.03.2026")
-  const serviceMatch = corpus.match(/Notice\s+to\s+OP\.?No\.?1\s+was\s+served\s+on\s+(\d{2})[./-](\d{2})[./-](\d{4})/i);
+  const serviceMatch = corpus.match(/Notice\s+to\s+(?:OP\.?No\.?\d+|Defendant\s*No\.?\s*\d+|Opposite\s+Party)\s+was\s+served\s+on\s+(\d{2})[./-](\d{2})[./-](\d{4})/i);
   if (serviceMatch) {
     inferred.serviceDate = parseDdMmYyyyToIso(serviceMatch[1], serviceMatch[2], serviceMatch[3]);
-    reasons.push(`Earliest OP notice service date inferred from order sheet: ${inferred.serviceDate}`);
+    reasons.push(`Earliest notice service date inferred from order sheet: ${inferred.serviceDate}`);
   }
 
   // 6. Detect Next Hearing Date ("call on 03-11-2026" or "Call on 03.11.2026")
@@ -145,11 +166,14 @@ export function inferCaseStateFromFolder({ fileNames = [], combinedText = '', cu
 
   // 7. Count OP evidence adjournments if in op-evidence stage
   if (inferred.stage === 'op-evidence') {
-    let adjCount = Number(inferred.opEvidenceAdjournmentsGranted || 0);
-    if (/finally\s+08[./-]10[./-]2026/i.test(corpus) && /call\s+on\s+03[./-]11[./-]2026/i.test(corpus)) {
+    let adjCount = Number(inferred.opEvidenceAdjournmentsGranted ?? inferred.opponentAdjournments ?? 0);
+    if (/finally\s+\d{2}[./-]\d{2}[./-]\d{4}/i.test(corpus) && /prays\s+time\s+to\s+lead\s+evidence/i.test(corpus)) {
       adjCount = Math.max(adjCount, 2);
-      inferred.opEvidenceAdjournmentsGranted = adjCount;
-      reasons.push('Counted 2 prior OP-2 evidence adjournments (08.09.2026 "finally" + 08.10.2026 time granted to 03.11.2026).');
+    }
+    inferred.opEvidenceAdjournmentsGranted = adjCount;
+    inferred.opponentAdjournments = adjCount;
+    if (adjCount >= 2) {
+      reasons.push(`Counted ${adjCount} prior Opposite Party evidence adjournments on record.`);
     }
   }
 
@@ -383,10 +407,10 @@ export function classifyTurnIntent(userQuestion = '', isFollowUp = false) {
 
 /**
  * Deterministic Post-Generation Fact & Record Verifier (Zero LLM Cost Guardrail).
- * Audits the generated Markdown against the verified case state to catch any contradiction
- * (e.g., claiming Complainant Evidence or Written Version was not filed when it is on record).
+ * Audits the generated Markdown against the verified case state AND domain statutory rules
+ * without hardcoding dates from any single case.
  */
-export function verifyDraftAgainstRecord(markdown = '', inferredCaseState = {}) {
+export function verifyDraftAgainstRecord(markdown = '', inferredCaseState = {}, domainOptions = {}) {
   const checks = [];
   let passed = true;
 
@@ -394,9 +418,9 @@ export function verifyDraftAgainstRecord(markdown = '', inferredCaseState = {}) 
     const falseClaim = /complainant(?:'s)?\s+evidence\s+(?:is\s+|stands\s+)?not\s+(?:yet\s+)?filed|your\s+own\s+evidence\s+is\s+not\s+filed/i.test(markdown);
     if (falseClaim) {
       passed = false;
-      checks.push('⚠️ Warning: Draft claimed Complainant Evidence is not filed, contradicting 05.08.2026 Order Sheet.');
+      checks.push('⚠️ Warning: Draft claimed Complainant Evidence is not filed, contradicting the case record.');
     } else {
-      checks.push('✓ Verified: Complainant Evidence & Ex.P.1–Ex.P.12 status matches 05.08.2026 Order Sheet.');
+      checks.push('✓ Verified: Complainant Evidence status matches the supplied case record.');
     }
   }
 
@@ -404,18 +428,26 @@ export function verifyDraftAgainstRecord(markdown = '', inferredCaseState = {}) 
     const falseWv = /written\s+version\s+by\s+op-?2?\s*:\s*not\s+filed/i.test(markdown);
     if (falseWv) {
       passed = false;
-      checks.push('⚠️ Warning: Draft claimed OP-2 Written Version is not filed, contradicting 06.07.2026 Order Sheet.');
+      checks.push('⚠️ Warning: Draft claimed Written Version is not filed, contradicting the case record.');
     } else {
-      checks.push('✓ Verified: OP-2 Written Version status matches 06.07.2026 Order Sheet.');
+      checks.push('✓ Verified: Written Version / Reply status matches the supplied case record.');
     }
   }
 
-  if (inferredCaseState.op1Status && /ex-?parte/i.test(inferredCaseState.op1Status)) {
-    checks.push('✓ Verified: OP-1 Ex-Parte status (23.04.2026) tracked separately from OP-2.');
+  if (inferredCaseState.multiOpSummary && /ex-?parte/i.test(inferredCaseState.multiOpSummary)) {
+    checks.push(`✓ Verified: Party status (${inferredCaseState.multiOpSummary}) tracked on record.`);
   }
 
   if (inferredCaseState.nextHearingDate) {
     checks.push(`✓ Verified: Next hearing date anchored to ${inferredCaseState.nextHearingDate}.`);
+  }
+
+  const domainCheck = verifyDomainLegalAccuracy(markdown, domainOptions);
+  if (!domainCheck.verified) {
+    passed = false;
+    checks.push(...domainCheck.warnings);
+  } else if (domainCheck.checks.length > 0) {
+    checks.push(...domainCheck.checks);
   }
 
   return {

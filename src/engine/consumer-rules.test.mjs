@@ -74,3 +74,42 @@ test('Tactic matcher selects OP-evidence closure, date-compression, and advance-
   assert.ok(ids.includes('tactic-advance-copy-preempt-adjournment'));
   assert.ok(ids.includes('tactic-close-op-evidence-on-default'));
 });
+
+test('Tactic matcher normalizes UI stage aliases, maps opEvidenceAdjournmentsGranted, and flags belated Day-49 Written Version', () => {
+  const belatedWv = evaluateWrittenVersionWindow('2026-03-10', '2026-11-02', true, '2026-04-28');
+  assert.equal(belatedWv.filedAfterDays, 49);
+  assert.equal(belatedWv.filedBeyond45DayCap, true);
+  assert.equal(belatedWv.canForfeitRightToReply, true);
+  assert.match(belatedWv.status, /Belatedly filed on day 49/);
+
+  const matchedUiAliases = matchApplicableTactics(
+    {
+      stage: 'op-evidence',
+      serviceDate: '2026-03-10',
+      evaluationDate: '2026-11-02',
+      nextHearingDate: '2026-11-09',
+      writtenVersionFiled: true,
+      writtenVersionFiledDate: '2026-04-28',
+      complainantEvidenceFiled: true,
+      opEvidenceFiled: false,
+      opEvidenceAdjournmentsGranted: 3
+    },
+    tactics
+  ).map(t => t.id);
+
+  assert.ok(matchedUiAliases.includes('tactic-forfeit-written-version-45-days'));
+  assert.ok(matchedUiAliases.includes('tactic-close-op-evidence-on-default'));
+  assert.ok(matchedUiAliases.includes('tactic-advance-copy-preempt-adjournment'));
+
+  const matchedExecAlias = matchApplicableTactics(
+    {
+      stage: 'execution-s71-s72',
+      serviceDate: '2026-01-01',
+      evaluationDate: '2026-11-02',
+      finalOrderDate: '2026-08-01',
+      orderComplied: false
+    },
+    tactics
+  ).map(t => t.id);
+  assert.ok(matchedExecAlias.includes('tactic-dual-execution-s71-s72'));
+});

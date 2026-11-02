@@ -10,6 +10,14 @@ import {
   matchApplicableTactics
 } from '../src/engine/consumer-rules.mjs';
 import {
+  detectLegalDomain,
+  extractPaidAmountInr,
+  evaluateConsumerPecuniaryAndFee,
+  evaluateNiAct138Deadlines,
+  evaluateCriminalCodeAndBail,
+  evaluateCivilWrittenStatementWindow
+} from '../src/engine/civil-criminal-rules.mjs';
+import {
   CURATED_MODELS,
   readBillingLedger,
   resolveJuniorClerkModel,
@@ -85,9 +93,21 @@ function readJsonBody(req, maxBytes = 20 * 1024 * 1024) {
 // Per-IP Sliding-Window Rate Limiter (protects public cloud deployments from bot abuse)
 const ipRateBuckets = new Map();
 function checkIpRateLimit(req, maxPerMinute = 20) {
+  const remote = String(req.socket?.remoteAddress || '127.0.0.1');
+  const isLoopbackSocket = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
+  const cfIp = String(req.headers['cf-connecting-ip'] || '').trim();
   const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  const ip = forwarded || req.socket?.remoteAddress || '127.0.0.1';
-  if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return { allowed: true, ip };
+
+  // Only exempt direct local loopback requests that have no proxy forwarding headers
+  if (isLoopbackSocket && !cfIp && !forwarded && process.env.PUBLIC_CLOUD_MODE !== 'true') {
+    return { allowed: true, ip: '127.0.0.1' };
+  }
+
+  // Never allow a client to bypass rate limiting by spoofing X-Forwarded-For: 127.0.0.1
+  const candidateIp = cfIp || forwarded || remote;
+  const ip = (candidateIp === '127.0.0.1' || candidateIp === '::1' || candidateIp === '::ffff:127.0.0.1')
+    ? `proxied-client-${req.headers['user-agent']?.slice(0, 24) || 'unknown'}`
+    : candidateIp;
 
   const now = Date.now();
   const windowMs = 60 * 1000;
@@ -103,11 +123,54 @@ function checkIpRateLimit(req, maxPerMinute = 20) {
 function isLocalhostRequest(req) {
   const hostHeader = String(req.headers.host || '');
   const remote = String(req.socket?.remoteAddress || '');
+  const hasProxyHeaders = Boolean(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for']);
   return (
+    !hasProxyHeaders &&
     (hostHeader.startsWith('127.0.0.1') || hostHeader.startsWith('localhost')) &&
     (remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1') &&
     process.env.PUBLIC_CLOUD_MODE !== 'true'
   );
+}
+
+function scopeBillingForUser(ledger, userId) {
+  if (!ledger) return ledger;
+  const cleanUser = String(userId || 'founder-local').trim();
+  const userStats = ledger.byUsers?.[cleanUser] || { plan: 'case-pass-499', calls: 0, totalTokens: 0, spendInr: 0 };
+  const userRecentCalls = (ledger.recentCalls || []).filter(c => c.userId === cleanUser);
+  const estimatedUsd = Number(((userStats.spendInr || 0) / (ledger.currencyRateUsdToInr || 84)).toFixed(6));
+  return {
+    currencyRateUsdToInr: ledger.currencyRateUsdToInr,
+    activeProvider: ledger.activeProvider,
+    totals: {
+      calls: userStats.calls || 0,
+      cacheHits: userRecentCalls.filter(c => c.cached).length,
+      promptTokens: userRecentCalls.reduce((s, c) => s + (c.promptTokens || 0), 0),
+      completionTokens: userRecentCalls.reduce((s, c) => s + (c.completionTokens || 0), 0),
+      totalTokens: userStats.totalTokens || 0,
+      totalNanoAiu: userRecentCalls.reduce((s, c) => s + (c.nanoAiu || 0), 0),
+      estimatedUsd,
+      estimatedInr: Number((userStats.spendInr || 0).toFixed(4))
+    },
+    byUserTier: ledger.byUserTier,
+    byUsers: { [cleanUser]: userStats },
+    byModel: ledger.byModel,
+    byOperation: ledger.byOperation,
+    recentCalls: userRecentCalls
+  };
+}
+
+function buildPriorTurnsContext(turns = [], maxUserChars = 1200, maxAssistantChars = 1500) {
+  if (!Array.isArray(turns) || turns.length === 0) return '';
+  // Always pin Turn #1 (foundational case facts) plus the latest 3 turns so Turn 5+ never forgets the case story!
+  const selected = turns.length <= 3
+    ? turns
+    : [turns[0], ...turns.slice(-3).filter(t => t.turnIndex !== turns[0].turnIndex)];
+
+  return `\n\nPRIOR SESSION CONVERSATION (${turns.length} turn(s) in this case):\n` +
+    selected.map(t => {
+      const cleanUser = String(t.userInput || '').split('ATTACHED FOLDER / TEXT DOCUMENTS:')[0].trim();
+      return `--- Turn #${t.turnIndex} (${String(t.createdAt || '').slice(0, 10)}) ---\nUser: ${cleanUser.slice(0, maxUserChars)}\nNyaya Summary: ${String(t.assistantMarkdown || '').slice(0, maxAssistantChars)}`;
+    }).join('\n\n');
 }
 
 function sendJson(res, status, payload) {
@@ -133,15 +196,21 @@ function resolveRequestUserId(req, url, body = null, res = null) {
 }
 
 /**
- * Redacts sensitive PII (Aadhaar 12-digit numbers, PAN numbers, bank account numbers)
+ * Redacts sensitive PII (Aadhaar 12-digit numbers, PAN numbers, bank account numbers, mobile numbers, emails)
  * before sending prompts to external cloud LLM APIs (DPDP Act 2023 safeguard).
  */
-function redactPiiForCloud(text = '') {
+export function redactPiiForCloud(text = '') {
   return String(text || '')
-    // Redact 12-digit Aadhaar-formatted numbers (XXXX XXXX XXXX)
-    .replace(/\b(\d{4})\s+(\d{4})\s+(\d{4})\b/g, '[AADHAAR-REDACTED-$3]')
+    // Redact 12-digit Aadhaar-formatted numbers (XXXX XXXX XXXX or XXXX-XXXX-XXXX)
+    .replace(/\b(\d{4})[\s-](\d{4})[\s-](\d{4})\b/g, '[AADHAAR-REDACTED-$3]')
+    // Redact contiguous 12-digit Aadhaar numbers when preceded by Aadhaar/UIDAI label
+    .replace(/\b(aadhaar|aadhar|uidai)[\s:#-]*\d{8}(\d{4})\b/gi, '$1 [AADHAAR-REDACTED-$2]')
     // Redact Indian PAN card numbers (5 letters, 4 digits, 1 letter)
-    .replace(/\b[A-Z]{5}[0-9]{4}[A-Z]\b/g, '[PAN-REDACTED]');
+    .replace(/\b[A-Z]{5}[0-9]{4}[A-Z]\b/g, '[PAN-REDACTED]')
+    // Redact labeled bank account numbers (9 to 18 digits)
+    .replace(/\b(a\/c(?:\s*no\.?)?|account\s*(?:no\.?|number)?)[\s:#-]*\d{5,14}(\d{4})\b/gi, '$1 [BANK-AC-REDACTED-$2]')
+    // Redact email addresses
+    .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '[EMAIL-REDACTED]');
 }
 
 const TEXT_EXTENSIONS = new Set(['.txt', '.md', '.csv', '.json', '.log', '.eml', '.html', '.htm', '.xml']);
@@ -291,25 +360,83 @@ async function scanLocalFolder(folderInput) {
   };
 }
 
-function computeCaseEngine(caseState) {
+function computeCaseEngine(caseState = {}, { door = '', mode = '', rawInput = '' } = {}) {
   const today = caseState.evaluationDate || new Date().toISOString().slice(0, 10);
-  const limitation = caseState.causeOfActionDate
+  const domainInfo = detectLegalDomain({ door, mode, caseState, rawInput });
+  const paidAmountInr = extractPaidAmountInr(rawInput, caseState.paidAmountInr);
+
+  // Only run Consumer Protection Act 2019 calculators when the matter is actually in the Consumer Forum!
+  const isConsumer = domainInfo.isConsumerForum;
+
+  const limitation = (isConsumer && caseState.causeOfActionDate)
     ? evaluateLimitation(caseState.causeOfActionDate, today)
     : null;
-  const writtenVersion = caseState.serviceDate
-    ? evaluateWrittenVersionWindow(caseState.serviceDate, today, Boolean(caseState.writtenVersionFiled))
+  const writtenVersion = (isConsumer && caseState.serviceDate)
+    ? evaluateWrittenVersionWindow(
+        caseState.serviceDate,
+        today,
+        Boolean(caseState.writtenVersionFiled),
+        caseState.writtenVersionFiledDate || null
+      )
     : null;
-  const disposalPace = caseState.serviceDate
+  const disposalPace = (isConsumer && caseState.serviceDate)
     ? evaluateDisposalPace(caseState.serviceDate, today, caseState.nextHearingDate, false)
     : null;
-  const matchedTactics = matchApplicableTactics({ ...caseState, evaluationDate: today }, tactics);
+  const matchedTactics = isConsumer
+    ? matchApplicableTactics({ ...caseState, evaluationDate: today }, tactics)
+    : [];
+
+  const consumerPecuniary = (isConsumer || domainInfo.domain === 'property-rera') && paidAmountInr
+    ? evaluateConsumerPecuniaryAndFee(paidAmountInr)
+    : null;
+
+  const lawyerAudit = (isConsumer && (caseState.lawyerReportedStatus || caseState.orderSheetText))
+    ? auditLawyerUpdate({
+        lawyerReportedStatus: caseState.lawyerReportedStatus || '',
+        orderSheetText: caseState.orderSheetText || rawInput || '',
+        writtenVersionForfeitable: Boolean(writtenVersion?.canForfeitRightToReply)
+      })
+    : null;
+
+  const niAct138 = domainInfo.domain === 'cheque-bounce-138'
+    ? evaluateNiAct138Deadlines({
+        dishonourDate: caseState.dishonourDate || caseState.causeOfActionDate || caseState.serviceDate,
+        noticeSentDate: caseState.noticeSentDate || null,
+        noticeReceivedDate: caseState.noticeReceivedDate || null,
+        evaluationDate: today
+      })
+    : null;
+
+  const criminalRules = (domainInfo.domain === 'criminal-bns-bnss' || domainInfo.domain === 'matrimonial-family')
+    ? evaluateCriminalCodeAndBail({
+        incidentDate: caseState.incidentDate || caseState.causeOfActionDate || null,
+        rawInput,
+        custodyDays: caseState.custodyDays || null
+      })
+    : null;
+
+  const civilRules = (domainInfo.domain === 'tenancy-civil' || domainInfo.domain === 'inheritance-partition')
+    ? evaluateCivilWrittenStatementWindow({
+        serviceDate: caseState.serviceDate || null,
+        evaluationDate: today,
+        isCommercialSuit: Boolean(caseState.isCommercialSuit),
+        writtenStatementFiled: Boolean(caseState.writtenVersionFiled)
+      })
+    : null;
 
   return {
     evaluationDate: today,
+    domainInfo,
+    paidAmountInr,
+    consumerPecuniary,
     limitation,
     writtenVersion,
     disposalPace,
-    matchedTactics
+    matchedTactics,
+    lawyerAudit,
+    niAct138,
+    criminalRules,
+    civilRules
   };
 }
 
@@ -344,7 +471,7 @@ const server = http.createServer(async (req, res) => {
         models: CURATED_MODELS,
         stages: procedure.stages,
         tacticsCount: tactics.length,
-        billing: readBillingLedger(),
+        billing: scopeBillingForUser(readBillingLedger(), userId),
         sessions: listSessionsForUser(userId, 50)
       });
       return;
@@ -406,6 +533,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && url.pathname === '/api/extract-file') {
+      const rateCheck = checkIpRateLimit(req, 40);
+      if (!rateCheck.allowed) {
+        sendJson(res, 429, { error: 'Rate limit exceeded for file extraction. Please wait a moment.' });
+        return;
+      }
       const body = await readJsonBody(req);
       const name = String(body.name || 'document');
       const ext = path.extname(name).toLowerCase();
@@ -513,13 +645,7 @@ const server = http.createServer(async (req, res) => {
           ? 'claude-sonnet-4.6'
           : resolveRoutedModel(model, mode, hasImages, isComplexCase);
 
-        const priorTurnsContext = existingSession?.turns?.length
-          ? `\n\nPRIOR SESSION CONVERSATION (${existingSession.turns.length} turn(s) in this case):\n` +
-            existingSession.turns.slice(-3).map(t => {
-              const cleanUser = t.userInput.split('ATTACHED FOLDER / TEXT DOCUMENTS:')[0].trim();
-              return `--- Turn #${t.turnIndex} (${t.createdAt.slice(0, 10)}) ---\nUser: ${cleanUser.slice(0, 1200)}\nNyaya Summary: ${t.assistantMarkdown.slice(0, 1500)}`;
-            }).join('\n\n')
-          : '';
+        const priorTurnsContext = buildPriorTurnsContext(existingSession?.turns || [], 1200, 1500);
 
         sendEvent('step', {
           stepId: 'session',
@@ -543,8 +669,8 @@ const server = http.createServer(async (req, res) => {
           status: 'running',
           detail: mode === 'company-advisor'
             ? 'Company dates and fees need current-rule verification; consumer-case rules do not determine company compliance.'
-            : 'Checking supplied dates and consumer-case rules where applicable...',
-          logs: ['Scanning folder manifest and order sheets for statutory dates, WV filings, and exhibit markings...']
+            : 'Checking supplied dates and applicable statutory rules...',
+          logs: ['Scanning record for domain forum, statutory dates, filings, and procedural rules...']
         });
 
         // Calculate actual gapDays between today and inferred nextHearingDate if not explicitly provided
@@ -554,7 +680,7 @@ const server = http.createServer(async (req, res) => {
           inferredCaseState.proposedGapDays = Math.max(1, Math.round(gapMs / (1000 * 60 * 60 * 24)));
         }
 
-        const engineResult = computeCaseEngine(inferredCaseState);
+        const engineResult = computeCaseEngine(inferredCaseState, { door, mode, rawInput: effectiveRawInput });
         engineResult.inferredCaseState = inferredCaseState;
         engineResult.inferredReasons = inferredReasons;
         engineResult.isComplexCase = isComplexCase;
@@ -563,15 +689,30 @@ const server = http.createServer(async (req, res) => {
         const matchedNames = (engineResult.matchedTactics || []).map(t => t.title).join(', ') || 'Standard stage review';
 
         const ruleLogs = [
+          `✓ Detected Legal Domain & Forum: ${engineResult.domainInfo?.label || mode}`,
           ...(inferredReasons.length ? inferredReasons.map(r => `✓ Auto-Inferred from Record: ${r}`) : ['No overrides inferred from folder; using form inputs.']),
-          inferredCaseState.multiOpSummary ? `✓ Multi-OP Matrix: ${inferredCaseState.multiOpSummary}` : null,
+          inferredCaseState.multiOpSummary ? `✓ Party Status Matrix: ${inferredCaseState.multiOpSummary}` : null,
+          engineResult.consumerPecuniary
+            ? `✓ Consumer Pecuniary & Fee Rule: ${engineResult.consumerPecuniary.competentForum} · Official Rule 7 Fee: ₹${engineResult.consumerPecuniary.filingFeeInr}`
+            : null,
+          engineResult.niAct138
+            ? `✓ NI Act s.138 Clock: ${engineResult.niAct138.daysRemainingForNotice} day(s) remaining for 30-day demand notice (Deadline: ${engineResult.niAct138.noticeDeadlineDate})`
+            : null,
+          engineResult.criminalRules?.matchedOffences?.length
+            ? `✓ Criminal Code & Bail Check: ${engineResult.criminalRules.matchedOffences.map(o => `${o.bnsSection} (${o.ipcSection}) — ${o.bailable ? 'Bailable' : 'NON-BAILABLE'}, Arnesh Kumar / BNSS s.35(3) notice: ${o.arneshKumarNoticeApplies ? 'APPLIES' : 'No'}`).join('; ')}`
+            : null,
           engineResult.disposalPace
             ? `✓ CPA s.38(7) Disposal Pace: ${engineResult.disposalPace.daysSinceNotice} days elapsed vs ${engineResult.disposalPace.targetDays}-day statutory target (${engineResult.disposalPace.exceededStatutoryTarget ? 'BREACHED' : 'Within target'})`
             : null,
           engineResult.writtenVersion
             ? `✓ CPA s.38(2)(a) Written Version Status: ${engineResult.writtenVersion.status} (${engineResult.writtenVersion.daysSinceService}d since earliest notice)`
             : null,
-          `✓ Matched Practitioner Tactics (${(engineResult.matchedTactics || []).length}): ${matchedNames}`
+          engineResult.lawyerAudit?.discrepancyDetected
+            ? `⚠️ Lawyer Audit Flag(s): ${engineResult.lawyerAudit.flags.join(', ')}`
+            : null,
+          engineResult.domainInfo?.isConsumerForum
+            ? `✓ Matched Practitioner Tactics (${(engineResult.matchedTactics || []).length}): ${matchedNames}`
+            : null
         ].filter(Boolean);
 
         sendEvent('step', {
@@ -579,16 +720,18 @@ const server = http.createServer(async (req, res) => {
           status: 'done',
           detail: mode === 'company-advisor'
             ? 'No company compliance calculator is available. Exact dates and fees need verification.'
-            : `Found ${(engineResult.matchedTactics || []).length} possible procedural step(s). These depend on the forum and the accuracy of the supplied facts.`,
+            : engineResult.domainInfo?.isConsumerForum
+            ? `Found ${(engineResult.matchedTactics || []).length} possible procedural step(s). These depend on the forum and the accuracy of the supplied facts.`
+            : `Checked statutory rules for ${engineResult.domainInfo?.label || 'this domain'}.`,
           logs: ruleLogs,
           engineResult
         });
 
-        // STAGE A: Junior Clerk Digest + One-Time Vision OCR (Compresses raw 80-file folder + images into a permanent Verified Case Digest)
+        // STAGE A: Junior Clerk Digest + Vision OCR (Runs on initial OR follow-up uploads when new images/folders arrive!)
         let activeFolderDigest = existingSession?.folderDigest || '';
         const rankedImages = rankCaseImagesByPriority(images || []);
 
-        if (hasNewFolderUpload || (!activeFolderDigest && (effectiveRawInput.length > 10000 || hasImages))) {
+        if (hasNewFolderUpload || hasImages || (!activeFolderDigest && effectiveRawInput.length > 10000)) {
           const clerkModel = hasImages ? 'claude-sonnet-4.6' : resolveJuniorClerkModel();
           const detectedFileHeaders = (effectiveRawInput.match(/=== (?:FILE:\s*)?(.*?) ===/g) || [])
             .map(h => h.replace(/^===\s*(?:FILE:\s*)?|\s*===$/g, ''))
@@ -600,7 +743,7 @@ const server = http.createServer(async (req, res) => {
             status: 'running',
             detail: `Reading the supplied documents${hasImages ? ` and ${rankedImages.length} image(s)` : ''} to prepare a factual summary...`,
             logs: [
-              `Junior Clerk Model: ${clerkModel}${hasImages ? ' (Vision OCR enabled to transcribe attached screenshots once into SQLite)' : ''}`,
+              `Junior Clerk Model: ${clerkModel}${hasImages ? ' (Vision OCR enabled to transcribe attached screenshots into SQLite)' : ''}`,
               `Top Prioritized Files Being Read First:`,
               ...detectedFileHeaders.map((f, idx) => `  ${idx + 1}. ${f}`),
               `Preparing an AI-extracted document summary, not independent fact verification.`
@@ -631,7 +774,9 @@ const server = http.createServer(async (req, res) => {
           if (clerkRes.completion.incomplete) {
             throw new Error('The document summary was cut short. It has not been saved as a complete record. Try fewer documents or a smaller selection before continuing.');
           }
-          activeFolderDigest = clerkRes.content;
+          activeFolderDigest = activeFolderDigest
+            ? `${activeFolderDigest}\n\n--- NEWLY ATTACHED RECORD SUMMARY ---\n${clerkRes.content}`
+            : clerkRes.content;
           sendEvent('step', {
             stepId: 'clerk',
             status: 'done',
@@ -656,22 +801,23 @@ const server = http.createServer(async (req, res) => {
           detail: 'Checking verified Indian statutory references, official .gov.in portals & your documents...'
         });
 
-        const retrievalQuery = userQuestionOnly || `${mode} ${inferredCaseState.stage || ''} ${inferredCaseState.multiOpSummary || ''} order sheet rejoinder written version c-13`;
+        const retrievalQuery = userQuestionOnly || `${mode} ${inferredCaseState.stage || ''} ${inferredCaseState.multiOpSummary || ''} order sheet rejoinder written version`;
         const { selectedText: retrievedChunksText, matchedSources } = folderCorpusOnly
           ? retrieveRelevantFolderChunks(folderCorpusOnly, retrievalQuery, 26000)
           : { selectedText: '(No external case folder uploaded — use the user question and the Verified Reference Pack / Live Web Lookup below)', matchedSources: [] };
 
-        const groundedLegal = await buildGroundedLegalContext(userQuestionOnly || effectiveRawInput, mode);
+        const groundedLegal = await buildGroundedLegalContext(
+          `${userQuestionOnly || effectiveRawInput} ${inferredCaseState.subTrack || ''} ${engineResult.domainInfo?.domain || ''} ${priorTurnsContext.slice(0, 600)}`,
+          mode
+        );
         engineResult.retrievedSources = matchedSources;
         engineResult.verifiedReferences = groundedLegal.verifiedRefs.map(r => r.title);
         engineResult.liveWebResults = groundedLegal.webResults;
 
         const systemPrompt = buildAnalysisSystemPrompt({ mode, isFollowUpTurn });
 
-        // Note: Static Case State + Rule Engine + Cached Case Digest are placed at the VERY TOP of userPrompt
-        // so Anthropic / OpenAI / Gemini KV Prompt Caching gets maximum cache-prefix hits across turns!
-        // And if Stage A already transcribed the images into `activeFolderDigest`, we don't need to re-send base64 images on follow-up turns!
-        const sendImagesToSenior = hasImages && !isFollowUpTurn ? rankedImages.slice(0, 6) : [];
+        // Pass any newly uploaded images (`images` is already filtered to unsyncedImages by the client) on both initial and follow-up turns!
+        const sendImagesToSenior = hasImages ? rankedImages.slice(0, 6) : [];
         const imageSummary = sendImagesToSenior.length > 0
           ? `\n\nATTACHED SCREENSHOTS (${sendImagesToSenior.length} top-priority court/annexure images attached; full OCR also in Digest above): ${sendImagesToSenior.map((img, i) => `[Image ${i + 1}: ${img.name || 'screenshot'}]`).join(', ')}.`
           : '';
@@ -743,7 +889,10 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
         });
 
         // Deterministic Post-Generation Fact & Record Verifier (Zero LLM Cost Guardrail)
-        const verification = verifyDraftAgainstRecord(llmRes.content, inferredCaseState);
+        const verification = verifyDraftAgainstRecord(llmRes.content, inferredCaseState, {
+          domain: engineResult.domainInfo?.domain || 'consumer',
+          paidAmountInr: engineResult.paidAmountInr
+        });
         engineResult.verification = verification;
         engineResult.responseCompletion = llmRes.completion;
 
@@ -785,7 +934,7 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
           adviceMarkdown: llmRes.content,
           model: llmRes.model,
           billingEntry: llmRes.billingEntry,
-          billingTotals: readBillingLedger().totals
+          billingTotals: scopeBillingForUser(readBillingLedger(), userId).totals
         });
         res.end();
       } catch (streamErr) {
@@ -796,6 +945,11 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
     }
 
     if (req.method === 'POST' && url.pathname === '/api/analyze') {
+      const rateCheck = checkIpRateLimit(req, 20);
+      if (!rateCheck.allowed) {
+        sendJson(res, 429, { error: 'Rate limit exceeded (max 20 analyses/minute per IP). Please wait a moment.' });
+        return;
+      }
       const body = await readJsonBody(req);
       const userId = resolveRequestUserId(req, url, body);
       const {
@@ -811,15 +965,17 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
       } = body;
 
       const existingSession = sessionId ? getSessionWithTurnsForUser(userId, sessionId) : null;
-      const priorTurnsContext = existingSession?.turns?.length
-        ? `\n\nPRIOR SESSION HISTORY (${existingSession.turns.length} turn(s) in this case):\n` +
-          existingSession.turns.slice(-3).map(t =>
-            `--- Turn #${t.turnIndex} (${t.createdAt.slice(0, 10)}) ---\nUser: ${t.userInput.slice(0, 600)}\nNyaya Summary: ${t.assistantMarkdown.slice(0, 900)}`
-          ).join('\n\n')
-        : '';
+      const priorTurnsContext = buildPriorTurnsContext(existingSession?.turns || [], 600, 900);
+      const effectiveRawInput = redactPiiForCloud(rawInput);
 
-      const engineResult = computeCaseEngine(caseState);
-      const groundedLegal = await buildGroundedLegalContext(rawInput, mode);
+      const { inferredCaseState } = inferCaseStateFromFolder({
+        fileNames: [],
+        combinedText: effectiveRawInput,
+        currentCaseState: caseState
+      });
+
+      const engineResult = computeCaseEngine(inferredCaseState, { door, mode, rawInput: effectiveRawInput });
+      const groundedLegal = await buildGroundedLegalContext(effectiveRawInput, mode);
       engineResult.verifiedReferences = groundedLegal.verifiedRefs.map(r => r.title);
       engineResult.liveWebResults = groundedLegal.webResults;
       const systemPrompt = buildAnalysisSystemPrompt({
@@ -833,7 +989,7 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
 
       const userPrompt = `MODE: ${mode}
 CASE STATE (JSON):
-${JSON.stringify(caseState, null, 2)}
+${JSON.stringify(inferredCaseState, null, 2)}
 
 DETERMINISTIC RULE ENGINE OUTPUT:
 ${JSON.stringify(engineResult, null, 2)}
@@ -842,7 +998,7 @@ ${JSON.stringify(engineResult, null, 2)}
 ${groundedLegal.contextBlock}${priorTurnsContext}
 
 CURRENT USER UPDATE / QUESTION / RAW WHATSAPP CHAT / DOCUMENTS:
-${rawInput || '(See attached images and Case State above)'}${imageSummary}`;
+${effectiveRawInput || '(See attached images and Case State above)'}${imageSummary}`;
 
       const llmRes = await callCopilotModel({
         userId,
@@ -854,6 +1010,11 @@ ${rawInput || '(See attached images and Case State above)'}${imageSummary}`;
         images,
         maxTokens: ADVICE_MAX_TOKENS
       });
+      const verification = verifyDraftAgainstRecord(llmRes.content, inferredCaseState, {
+        domain: engineResult.domainInfo?.domain || 'consumer',
+        paidAmountInr: engineResult.paidAmountInr
+      });
+      engineResult.verification = verification;
       engineResult.responseCompletion = llmRes.completion;
 
       const updatedSession = saveOrAppendSessionTurn({
@@ -862,7 +1023,7 @@ ${rawInput || '(See attached images and Case State above)'}${imageSummary}`;
         title: saveCaseTitle || existingSession?.title,
         door,
         mode,
-        caseState,
+        caseState: inferredCaseState,
         userInput: rawInput,
         imagesCount: Array.isArray(images) ? images.length : 0,
         folderPath,
@@ -882,7 +1043,7 @@ ${rawInput || '(See attached images and Case State above)'}${imageSummary}`;
         adviceMarkdown: llmRes.content,
         model: llmRes.model,
         billingEntry: llmRes.billingEntry,
-        billingTotals: readBillingLedger().totals
+        billingTotals: scopeBillingForUser(readBillingLedger(), userId).totals
       });
       return;
     }

@@ -36,20 +36,48 @@ export function evaluateLimitation(causeOfActionDate, evaluationDate) {
 /**
  * CPA 2019 s.38(2)(a) + Hilli Multipurpose (2020) 5 SCC 757 —
  * 30 days base + 15 days max discretionary extension = 45-day hard cap from service of notice + complaint.
+ * Also detects belatedly filed Written Versions (filed after Day 45), which remain subject to forfeiture.
  */
-export function evaluateWrittenVersionWindow(serviceDate, evaluationDate, writtenVersionFiled = false) {
+export function evaluateWrittenVersionWindow(
+  serviceDate,
+  evaluationDate,
+  writtenVersionFiled = false,
+  writtenVersionFiledDate = null
+) {
   const daysSinceService = daysBetween(serviceDate, evaluationDate);
   const baseDeadline = addDays(serviceDate, 30);
   const hardCapDeadline = addDays(serviceDate, 45);
-  const canForfeitRightToReply = !writtenVersionFiled && daysSinceService > 45;
+  const filedAfterDays = writtenVersionFiledDate ? daysBetween(serviceDate, writtenVersionFiledDate) : null;
+  const filedBeyond45DayCap = Boolean(
+    writtenVersionFiled && Number.isFinite(filedAfterDays) && filedAfterDays > 45
+  );
+  const canForfeitRightToReply = (!writtenVersionFiled && daysSinceService > 45) || filedBeyond45DayCap;
+  const inDiscretionaryExtensionWindow = !writtenVersionFiled && daysSinceService > 30 && daysSinceService <= 45;
+
+  let status = 'Within initial 30-day statutory reply window';
+  if (filedBeyond45DayCap) {
+    status = `Belatedly filed on day ${filedAfterDays} (exceeds 45-day Hilli Multipurpose hard cap — subject to striking off / forfeiture)`;
+  } else if (writtenVersionFiled) {
+    status = Number.isFinite(filedAfterDays)
+      ? `Filed on day ${filedAfterDays} (within 45-day statutory ceiling)`
+      : 'Written Version marked as filed on record';
+  } else if (daysSinceService > 45) {
+    status = '45-day hard cap EXPIRED without Written Version — right to file reply is forfeitable (Hilli Multipurpose)';
+  } else if (inDiscretionaryExtensionWindow) {
+    status = 'In 30–45 day discretionary extension window (15-day final extension period)';
+  }
 
   return {
     daysSinceService,
     baseDeadline,
     hardCapDeadline,
     writtenVersionFiled,
-    inDiscretionaryExtensionWindow: !writtenVersionFiled && daysSinceService > 30 && daysSinceService <= 45,
-    canForfeitRightToReply
+    writtenVersionFiledDate,
+    filedAfterDays,
+    filedBeyond45DayCap,
+    inDiscretionaryExtensionWindow,
+    canForfeitRightToReply,
+    status
   };
 }
 
@@ -104,6 +132,19 @@ export function auditLawyerUpdate({ lawyerReportedStatus, orderSheetText, writte
   };
 }
 
+const STAGE_ALIASES = {
+  'notice-and-written-version': 'written-version-stage',
+  'written-version': 'written-version-stage',
+  'rejoinder-and-evidence': 'rejoinder-and-complainant-evidence',
+  'written-arguments': 'final-arguments',
+  'execution-s71-s72': 'final-order-and-execution'
+};
+
+export function normalizeConsumerStage(stage = '') {
+  const clean = String(stage || '').trim();
+  return STAGE_ALIASES[clean] || clean;
+}
+
 /**
  * Match applicable tactics from packs/consumer/tactics.json against deterministic case metrics.
  */
@@ -114,7 +155,9 @@ export function matchApplicableTactics(caseState, tactics) {
     evaluationDate,
     nextHearingDate,
     writtenVersionFiled = false,
-    opponentAdjournments = 0,
+    writtenVersionFiledDate = null,
+    opponentAdjournments,
+    opEvidenceAdjournmentsGranted,
     postalRemark = null,
     finalOrderDate = null,
     orderComplied = false,
@@ -123,18 +166,30 @@ export function matchApplicableTactics(caseState, tactics) {
     hasDeficiencyOrDefectGround = true
   } = caseState;
 
+  const canonicalStage = normalizeConsumerStage(stage);
+  const effectiveAdjournments = Number(opponentAdjournments ?? opEvidenceAdjournmentsGranted ?? 0);
   const daysSinceNotice = serviceDate ? daysBetween(serviceDate, evaluationDate) : 0;
   const gapDaysToNextHearing = nextHearingDate ? daysBetween(evaluationDate, nextHearingDate) : 0;
-  const daysSinceFinalOrder = finalOrderDate ? daysBetween(finalOrderDate, evaluationDate) : 0;
+  const daysSinceFinalOrder = finalOrderDate
+    ? daysBetween(finalOrderDate, evaluationDate)
+    : (canonicalStage === 'final-order-and-execution' && daysSinceNotice >= 45 ? daysSinceNotice : 0);
+
+  const wvFiledAfterDays = (serviceDate && writtenVersionFiledDate)
+    ? daysBetween(serviceDate, writtenVersionFiledDate)
+    : null;
+  const isBelatedWv = Boolean(writtenVersionFiled && Number.isFinite(wvFiledAfterDays) && wvFiledAfterDays > 45);
+  const effectiveWvValidlyFiled = isBelatedWv ? false : Boolean(writtenVersionFiled);
 
   return tactics.filter(t => {
-    if (!t.triggerStages.includes(stage)) return false;
+    const stageMatched = t.triggerStages.includes(canonicalStage) ||
+      (t.id === 'tactic-forfeit-written-version-45-days' && isBelatedWv);
+    if (!stageMatched) return false;
     const c = t.triggerConditions || {};
     if (c.minDaysSinceNotice !== undefined && daysSinceNotice < c.minDaysSinceNotice) return false;
     if (c.minGapDaysToNextHearing !== undefined && gapDaysToNextHearing < c.minGapDaysToNextHearing) return false;
     if (c.minDaysSinceService !== undefined && daysSinceNotice < c.minDaysSinceService) return false;
-    if (c.writtenVersionFiled !== undefined && writtenVersionFiled !== c.writtenVersionFiled) return false;
-    if (c.minOpponentAdjournments !== undefined && opponentAdjournments < c.minOpponentAdjournments) return false;
+    if (c.writtenVersionFiled !== undefined && effectiveWvValidlyFiled !== c.writtenVersionFiled) return false;
+    if (c.minOpponentAdjournments !== undefined && effectiveAdjournments < c.minOpponentAdjournments) return false;
     if (c.postalRemarkIn !== undefined && !c.postalRemarkIn.includes(postalRemark)) return false;
     if (c.daysSinceFinalOrder !== undefined && daysSinceFinalOrder < c.daysSinceFinalOrder) return false;
     if (c.orderComplied !== undefined && orderComplied !== c.orderComplied) return false;

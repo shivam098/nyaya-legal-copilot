@@ -186,4 +186,55 @@ test('browser copy explains next steps and keeps technical diagnostics collapsed
   assert.match(html, /id="hamburger-menu"/);
   assert.match(html, /How Nyaya works & Demos/);
   assert.match(html, /DOOR_DEMO_CATALOG/);
+  assert.match(html, /function sanitizeHtml/);
+  assert.match(html, /data-door="civil-criminal"/);
+  assert.match(html, /Property, Family, Matrimony & Criminal Law/);
+});
+
+test('civil-criminal door, Turn 5+ context pinning, follow-up image forwarding, and user-scoped /api/config billing work end-to-end', async () => {
+  const userId = 'synthetic-civil-criminal-user';
+  const { result: chqRes } = await analyze('analyze-stream', {
+    userId,
+    door: 'civil-criminal',
+    mode: 'civil-criminal-advisor',
+    caseState: {
+      subTrack: 'cheque-bounce-138',
+      role: 'complainant',
+      dishonourDate: '2026-10-06',
+      evaluationDate: '2026-11-02'
+    },
+    rawInput: 'Foundational Turn 1 Story: Buyer cheque for Rs 6,40,000 bounced on 2026-10-06.'
+  });
+  assert.ok(chqRes.engineResult.niAct138);
+  assert.equal(chqRes.engineResult.niAct138.daysRemainingForNotice, 3);
+  assert.equal(chqRes.engineResult.disposalPace, null);
+
+  const sessionId = chqRes.session.id;
+  // Run Turns 2, 3, 4, and 5 and verify Turn 1 foundational story is still pinned in Turn 5 prompt!
+  for (let turn = 2; turn <= 5; turn++) {
+    await analyze('analyze-stream', {
+      userId,
+      sessionId,
+      door: 'civil-criminal',
+      mode: 'civil-criminal-advisor',
+      caseState: { subTrack: 'cheque-bounce-138' },
+      rawInput: `Follow-up question #${turn}`,
+      images: turn === 5 ? [{ name: 'bank-return-memo.png', dataUrl: 'data:image/png;base64,c3ludGhldGlj' }] : []
+    });
+  }
+  const turn5Sent = requests.at(-1);
+  const turn5Content = turn5Sent.messages[1].content;
+  const turn5Text = Array.isArray(turn5Content) ? turn5Content[0].text : turn5Content;
+  assert.match(turn5Text, /Foundational Turn 1 Story/);
+  assert.match(turn5Text, /bank-return-memo\.png/);
+  assert.ok(Array.isArray(turn5Content) && turn5Content.some(part => part.type === 'image_url'));
+
+  // Verify another guest user calling /api/config does NOT see synthetic-civil-criminal-user's billing calls
+  const otherCfg = await (await fetch(`${baseUrl}/api/config`, {
+    headers: { 'x-nyaya-user-id': 'isolated-guest-user-2' }
+  })).json();
+  assert.equal(otherCfg.userId, 'isolated-guest-user-2');
+  assert.equal(otherCfg.billing.totals.calls, 0);
+  assert.deepEqual(otherCfg.billing.recentCalls, []);
+  assert.ok(!('synthetic-civil-criminal-user' in otherCfg.billing.byUsers));
 });

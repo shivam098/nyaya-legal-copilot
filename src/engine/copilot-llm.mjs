@@ -117,7 +117,8 @@ export function resolveRoutedModel(requestedModel, operation, hasImages = false,
     return 'claude-opus-4.6';
   }
   if (hasImages) return 'claude-sonnet-4.6';
-  if (operation === 'messy-dump-intake' || operation === 'timeline-extract') {
+  // Keep Haiku strictly for Stage A document/timeline extraction; all Stage B legal advice & strategy uses Sonnet 4.6!
+  if (operation === 'timeline-extract') {
     return 'claude-haiku-4.5';
   }
   return 'claude-sonnet-4.6';
