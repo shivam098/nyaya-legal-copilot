@@ -1278,8 +1278,8 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                 newImages.push({ name: label, size: file.size, dataUrl: compressedDataUrl });
               }
             }
-          } else if (/\.(pdf|docx|zip)$/i.test(file.name)) {
-            // Send PDF / DOCX / WhatsApp ZIP to backend extractor (/api/extract-file)
+          } else if (/\.(pdf|docx|zip|mp3|wav|m4a|ogg|opus|webm|aac|flac|mp4|mpeg|mpga)$/i.test(file.name) || file.type.startsWith('audio/')) {
+            // Send PDF / DOCX / WhatsApp ZIP / Voice Recording (.mp3, .wav, .m4a, .ogg, .opus) to backend extractor (/api/extract-file)
             if (file.size <= 15 * 1024 * 1024) {
               try {
                 const base64 = await readFileAsBase64Async(file);
@@ -1292,6 +1292,20 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                   const extData = await extRes.json();
                   if (Array.isArray(extData.docs) && extData.docs.length) {
                     rawTextDocs.push(...extData.docs);
+                  }
+                  if (extData.transcript) {
+                    const activeSetter = !door
+                      ? setUnifiedNotes
+                      : door === 'start'
+                      ? setStoryText
+                      : door === 'midcase'
+                      ? setMidcaseNotes
+                      : door === 'company'
+                      ? setCompanyNotes
+                      : door === 'civil-criminal'
+                      ? setCivilCriminalNotes
+                      : setLawyerNotes;
+                    activeSetter(prev => (prev ? `${prev}\n\n[Voice Recording — ${label}]: ${extData.transcript}` : extData.transcript));
                   }
                 }
               } catch {
@@ -2847,11 +2861,11 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                   <div class="pt-3 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-2">
                     <div class="flex flex-wrap items-center gap-2">
                       <label class="file-upload text-xs px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 cursor-pointer font-medium transition">
-                        🖼️ Attach Files (.pdf, .docx, .zip, images, .txt)
+                        🖼️🎙️ Attach Files or Voice Recording (.pdf, .docx, .mp3, .wav, .ogg, .opus, images)
                         <input
                           type="file"
                           multiple
-                          accept="image/*,.pdf,.docx,.zip,.txt,.md,.csv,.json,.log,.eml"
+                          accept="image/*,audio/*,.pdf,.docx,.zip,.mp3,.wav,.m4a,.ogg,.opus,.webm,.aac,.flac,.txt,.md,.csv,.json,.log,.eml"
                           class="hidden"
                           onChange={handleFileUpload}
                         />
