@@ -1446,24 +1446,13 @@ Selling AI software or services does **not** automatically mean you must registe
               </button>
 
               <button
-                onClick={() => { setShowSettings(!showSettings); setShowHistory(false); setShowBilling(false); setShowGuide(false); setShowMenu(false); }}
-                aria-expanded={showSettings}
-                aria-controls="app-settings"
-                class={`text-xs font-medium px-3 py-1.5 rounded-lg border transition ${
-                  showSettings ? 'bg-zinc-900 text-white border-zinc-900' : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400'
-                }`}
-              >
-                Settings
-              </button>
-
-              <button
                 type="button"
                 aria-label="Open menu"
                 aria-expanded={showMenu}
                 aria-controls="hamburger-menu"
                 onClick={() => setShowMenu(!showMenu)}
                 class={`text-xs font-medium px-3 py-1.5 rounded-lg border transition flex items-center gap-1.5 ${
-                  showMenu || showGuide ? 'bg-zinc-900 text-white border-zinc-900' : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400'
+                  showMenu || showGuide || showSettings ? 'bg-zinc-900 text-white border-zinc-900' : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400'
                 }`}
               >
                 <span aria-hidden="true">☰</span>
@@ -1491,7 +1480,9 @@ Selling AI software or services does **not** automatically mean you must registe
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => { setShowSettings(true); setShowGuide(false); setShowHistory(false); setShowBilling(false); setShowMenu(false); }}
+                    aria-controls="app-settings"
+                    aria-expanded={showSettings}
+                    onClick={() => { setShowSettings(!showSettings); setShowGuide(false); setShowHistory(false); setShowBilling(false); setShowMenu(false); }}
                     class="w-full text-left px-3 py-2.5 rounded-xl hover:bg-zinc-100 flex items-start gap-2.5 transition"
                   >
                     <span class="text-base leading-none mt-0.5">⚙️</span>
@@ -1797,7 +1788,7 @@ Selling AI software or services does **not** automatically mean you must registe
                         New dispute or claim
                       </div>
                       <div class="text-sm text-zinc-500">
-                        Start a complaint or respond to a claim against you.
+                        Consumer, property/rent, matrimony/family, money, or responding to a notice/claim.
                       </div>
                     </div>
                     <span class="text-zinc-300 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
@@ -1813,7 +1804,7 @@ Selling AI software or services does **not** automatically mean you must registe
                         An ongoing case
                       </div>
                       <div class="text-sm text-zinc-500">
-                        Prepare for your next hearing or understand a court order.
+                        A case already in court, consumer commission, family court, or RERA.
                       </div>
                     </div>
                     <span class="text-zinc-300 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
@@ -1855,13 +1846,13 @@ Selling AI software or services does **not** automatically mean you must registe
                     onClick={() => setRole('complainant')}
                     class={`px-3.5 py-2 rounded-lg transition ${role === 'complainant' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-600'}`}
                   >
-                    I want to claim / get a refund
+                    I want to take action / seek relief or refund
                   </button>
                   <button
                     onClick={() => setRole('defender')}
                     class={`px-3.5 py-2 rounded-lg transition ${role === 'defender' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-600'}`}
                   >
-                    I need to respond to a claim or refund request
+                    I need to respond to a notice, claim, or complaint
                   </button>
                 </div>
 
