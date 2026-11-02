@@ -46,6 +46,11 @@ import {
   runPractitionerIntelligence
 } from '../src/engine/practitioner-intelligence.mjs';
 import {
+  listAllPractitionerLessons,
+  addOrUpdatePractitionerLesson,
+  deletePractitionerLesson
+} from '../src/engine/semantic-statutory-index.mjs';
+import {
   listSessionsForUser,
   getSessionWithTurnsForUser,
   saveOrAppendSessionTurn,
@@ -517,7 +522,17 @@ async function scanLocalFolder(folderInput) {
   };
 }
 
-function computeCaseEngine(caseState = {}, { door = '', mode = '', rawInput = '' } = {}) {
+function computeCaseEngine(
+  caseState = {},
+  {
+    door = '',
+    mode = '',
+    rawInput = '',
+    isFollowUpTurn = false,
+    hasAttachments = false,
+    forceFullRoadmap = false
+  } = {}
+) {
   const today = caseState.evaluationDate || new Date().toISOString().slice(0, 10);
   const domainInfo = detectLegalDomain({ door, mode, caseState, rawInput });
   const paidAmountInr = extractPaidAmountInr(rawInput, caseState.paidAmountInr);
@@ -587,7 +602,11 @@ function computeCaseEngine(caseState = {}, { door = '', mode = '', rawInput = ''
     paidAmountInr,
     caseState,
     niAct138,
-    criminalRules
+    criminalRules,
+    isFollowUpTurn,
+    hasAttachments,
+    forceFullRoadmap: Boolean(forceFullRoadmap || caseState.forceFullRoadmap),
+    mode
   });
 
   return {
@@ -799,8 +818,53 @@ const server = http.createServer(async (req, res) => {
       const overview = getSuperAdminOverview(150);
       sendJson(res, 200, {
         ...overview,
+        practitionerLessons: listAllPractitionerLessons(),
         globalBilling: readBillingLedger()
       });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/admin/lessons') {
+      const auth = resolveRequestAuth(req, url);
+      if (!auth.isSuperAdmin) {
+        sendJson(res, 403, { error: 'Forbidden: Super-Admin access is required.' });
+        return;
+      }
+      sendJson(res, 200, { lessons: listAllPractitionerLessons() });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/admin/lessons') {
+      const auth = resolveRequestAuth(req, url);
+      if (!auth.isSuperAdmin) {
+        sendJson(res, 403, { error: 'Forbidden: Super-Admin access is required to teach Nyaya.' });
+        return;
+      }
+      const body = await readJsonBody(req);
+      try {
+        const saved = addOrUpdatePractitionerLesson({
+          id: body.id || '',
+          domain: body.domain || 'general',
+          topic: body.topic || '',
+          lessonText: body.lessonText || '',
+          author: auth.user?.displayName || 'Super-Admin'
+        });
+        sendJson(res, 200, { lesson: saved, lessons: listAllPractitionerLessons() });
+      } catch (lErr) {
+        sendJson(res, 400, { error: lErr.message || 'Could not save practitioner lesson' });
+      }
+      return;
+    }
+
+    if (req.method === 'DELETE' && url.pathname.startsWith('/api/admin/lessons/')) {
+      const auth = resolveRequestAuth(req, url);
+      if (!auth.isSuperAdmin) {
+        sendJson(res, 403, { error: 'Forbidden: Super-Admin access is required.' });
+        return;
+      }
+      const lessonId = decodeURIComponent(url.pathname.replace('/api/admin/lessons/', ''));
+      deletePractitionerLesson(lessonId);
+      sendJson(res, 200, { deleted: true, lessons: listAllPractitionerLessons() });
       return;
     }
 
@@ -1066,7 +1130,14 @@ const server = http.createServer(async (req, res) => {
           inferredCaseState.proposedGapDays = Math.max(1, Math.round(gapMs / (1000 * 60 * 60 * 24)));
         }
 
-        const engineResult = computeCaseEngine(inferredCaseState, { door: effectiveDoor, mode: effectiveMode, rawInput: effectiveRawInput });
+        const engineResult = computeCaseEngine(inferredCaseState, {
+          door: effectiveDoor,
+          mode: effectiveMode,
+          rawInput: effectiveRawInput,
+          isFollowUpTurn,
+          hasAttachments: Boolean(hasNewFolderUpload || hasImages || existingSession?.folderDigest),
+          forceFullRoadmap: Boolean(body.forceFullRoadmap || inferredCaseState.forceFullRoadmap)
+        });
         engineResult.autoDetectedCategoryLabel = autoSensed.autoDetectedCategoryLabel;
         engineResult.effectiveDoor = effectiveDoor;
         engineResult.effectiveMode = effectiveMode;
@@ -1079,6 +1150,15 @@ const server = http.createServer(async (req, res) => {
 
         const ruleLogs = [
           `✓ Detected Legal Domain & Forum: ${engineResult.domainInfo?.label || effectiveMode}`,
+          engineResult.practitionerIntelligence?.factReadiness
+            ? `✓ Two-Speed Intake Gate: ${engineResult.practitionerIntelligence.factReadiness.intakeStage.toUpperCase()} (${engineResult.practitionerIntelligence.factReadiness.factDimensionsConfirmed}/5 fact dimensions present)`
+            : null,
+          engineResult.practitionerIntelligence?.semanticStatutoryCluster?.length
+            ? `✓ SQLite 384-Dim Vector + Cluster Search (${engineResult.practitionerIntelligence.semanticStatutoryCluster.length} sections): ${engineResult.practitionerIntelligence.semanticStatutoryCluster.map(s => `${s.section} [cos=${s.similarityScore}${s.isAdjacentClusterSection ? ', cluster-sibling' : ''}]`).join(' | ')}`
+            : null,
+          engineResult.practitionerIntelligence?.semanticPractitionerLessons?.length
+            ? `✓ SQLite Vector Practitioner Lessons Matched: ${engineResult.practitionerIntelligence.semanticPractitionerLessons.map(l => `${l.topic} [cos=${l.similarityScore}]`).join(' | ')}`
+            : null,
           ...(inferredReasons.length ? inferredReasons.map(r => `✓ Auto-Inferred from Record: ${r}`) : ['No overrides inferred from folder; using form inputs.']),
           inferredCaseState.multiOpSummary ? `✓ Party Status Matrix: ${inferredCaseState.multiOpSummary}` : null,
           engineResult.consumerPecuniary
@@ -1410,7 +1490,14 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
       const effectiveMode = autoSensed.mode;
       const inferredCaseState = autoSensed.caseState;
 
-      const engineResult = computeCaseEngine(inferredCaseState, { door: effectiveDoor, mode: effectiveMode, rawInput: effectiveRawInput });
+      const engineResult = computeCaseEngine(inferredCaseState, {
+        door: effectiveDoor,
+        mode: effectiveMode,
+        rawInput: effectiveRawInput,
+        isFollowUpTurn: Boolean(existingSession?.turns?.length),
+        hasAttachments: Boolean((Array.isArray(images) && images.length > 0) || existingSession?.folderDigest),
+        forceFullRoadmap: Boolean(body.forceFullRoadmap || inferredCaseState.forceFullRoadmap)
+      });
       engineResult.autoDetectedCategoryLabel = autoSensed.autoDetectedCategoryLabel;
       engineResult.effectiveDoor = effectiveDoor;
       engineResult.effectiveMode = effectiveMode;

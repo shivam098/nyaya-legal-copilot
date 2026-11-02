@@ -3,10 +3,19 @@ import assert from 'node:assert/strict';
 import {
   translateLaymanToLegalIngredients,
   evaluateConversationalFactProbing,
+  evaluateCaseFactReadiness,
   evaluateDownstreamTrapsAndAuditPrayer,
   matchPractitionerCaseTrajectories,
   runPractitionerIntelligence
 } from './practitioner-intelligence.mjs';
+import {
+  EMBEDDING_DIM,
+  computeSemanticEmbedding384,
+  searchStatutoryProvisionsSemantic,
+  addOrUpdatePractitionerLesson,
+  searchPractitionerLessonsSemantic,
+  deletePractitionerLesson
+} from './semantic-statutory-index.mjs';
 
 test('Layman-to-Legal Translator distinguishes voluntary handover ("chori") as Criminal Breach of Trust / Misappropriation (BNS s.316/314)', () => {
   const res = translateLaymanToLegalIngredients(
@@ -83,4 +92,79 @@ test('runPractitionerIntelligence produces Instant Triage, Ingredient Translatio
   assert.ok(intel.instantTriage);
   assert.ok(intel.ingredientTranslations.some(t => t.id === 'article-12-state-vs-private'));
   assert.match(intel.instantTriage.keyIngredientTranslation, /Article 12 "State" Instrumentality Test/);
+});
+
+test('Two-Speed Clarify-First Gate triggers on 1-line Ranchi chain snatching prompt and switches to full-roadmap on follow-up or override', () => {
+  const oneLiner = 'I am seeking protection, relief or filing, Suggestions, guidance for a chain snatching case in ranchi';
+  const intel = runPractitionerIntelligence({
+    rawInput: oneLiner,
+    domainInfo: { domain: 'criminal-bns-bnss' },
+    isFollowUpTurn: false,
+    hasAttachments: false,
+    forceFullRoadmap: false
+  });
+
+  assert.equal(intel.factReadiness.intakeStage, 'clarify-first');
+  assert.equal(intel.factReadiness.shouldClarifyFirst, true);
+  assert.ok(
+    intel.factProbing.clarifyingQuestions.some(q => q.id === 'probe-snatching-injury-304-vs-309'),
+    'Should include s.304 Snatching vs s.309 Robbery neck-injury probing question'
+  );
+
+  // Follow-up turn or forceFullRoadmap switches to full-roadmap
+  const followUpCheck = evaluateCaseFactReadiness({
+    rawInput: 'It happened today, there was a neck scratch, and we have nearby CCTV.',
+    isFollowUpTurn: true,
+    domainInfo: { domain: 'criminal-bns-bnss' }
+  });
+  assert.equal(followUpCheck.intakeStage, 'full-roadmap');
+
+  const forcedCheck = evaluateCaseFactReadiness({
+    rawInput: oneLiner,
+    isFollowUpTurn: false,
+    forceFullRoadmap: true,
+    domainInfo: { domain: 'criminal-bns-bnss' }
+  });
+  assert.equal(forcedCheck.intakeStage, 'full-roadmap');
+});
+
+test('SQLite 384-Dim Semantic Vector Search + Adjacent Chapter-Cluster Expansion retrieves s.304 Snatching, s.309 Robbery, s.303 Theft, and s.497/503 BNSS Jimmanama', () => {
+  const vec = computeSemanticEmbedding384('chain snatching in Ranchi');
+  assert.equal(vec.length, EMBEDDING_DIM);
+
+  const cluster = searchStatutoryProvisionsSemantic(
+    'I am seeking protection, relief or filing, Suggestions, guidance for a chain snatching case in ranchi',
+    { topK: 3, expandCluster: true }
+  );
+  const ids = cluster.map(c => c.id);
+  assert.ok(ids.includes('bns-304-snatching'), 'Should retrieve Section 304 BNS Snatching');
+  assert.ok(ids.includes('bns-309-robbery'), 'Should automatically pull adjacent Section 309 BNS Robbery via chapter_cluster');
+  assert.ok(ids.includes('bnss-497-503-jimmanama-tip'), 'Should pull Section 497/503 BNSS Jimmanama & Section 54 TIP');
+
+  // Hindi Devanagari semantic query test
+  const hindiMatches = searchStatutoryProvisionsSemantic(
+    'मैंने अपने दोस्त को अमानत के तौर पर गहने रखने के लिए दिया था, अब वह वापस नहीं कर रहा है',
+    { topK: 2, expandCluster: false }
+  );
+  assert.equal(hindiMatches[0].id, 'bns-314-316-cbt-misappropriation');
+});
+
+test('Super-Admin Teach Nyaya embeds 384-dim practitioner lessons in SQLite and retrieves them semantically', () => {
+  const saved = addOrUpdatePractitionerLesson({
+    id: 'test-lesson-ranchi-sanha',
+    domain: 'criminal-bns-bnss',
+    topic: 'Ranchi Thana Sanha Downgrade Counter-Move',
+    lessonText: 'Never accept a Sanha (station diary lost report) when force or snatching occurred; demand a cognizable FIR under Section 304 or 309 BNS and file online on jhpolice.gov.in if refused.',
+    author: 'Test-Admin'
+  });
+  assert.equal(saved.embeddingDim, 384);
+
+  const matched = searchPractitionerLessonsSemantic(
+    'Ranchi police station asked me to write a Sanha lost report for my snatched gold chain',
+    'criminal-bns-bnss',
+    3
+  );
+  assert.ok(matched.some(m => m.id === 'test-lesson-ranchi-sanha'));
+
+  deletePractitionerLesson('test-lesson-ranchi-sanha');
 });

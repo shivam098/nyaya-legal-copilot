@@ -914,6 +914,59 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
         await refreshConfig('');
       };
 
+      const [adminLoading, setAdminLoading] = useState(false);
+      const [lessonDomain, setLessonDomain] = useState('criminal-bns-bnss');
+      const [lessonTopic, setLessonTopic] = useState('');
+      const [lessonText, setLessonText] = useState('');
+      const [lessonSaving, setLessonSaving] = useState(false);
+
+      const saveAdminPractitionerLesson = async (e) => {
+        e.preventDefault();
+        if (!lessonTopic.trim() || !lessonText.trim()) return;
+        setLessonSaving(true);
+        try {
+          const res = await fetch('/api/admin/lessons', {
+            method: 'POST',
+            headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+              domain: lessonDomain,
+              topic: lessonTopic.trim(),
+              lessonText: lessonText.trim()
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not save practitioner lesson');
+          setAdminOverview(prev => ({
+            ...(prev || {}),
+            practitionerLessons: data.lessons || []
+          }));
+          setLessonTopic('');
+          setLessonText('');
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setLessonSaving(false);
+        }
+      };
+
+      const deleteAdminPractitionerLesson = async (id) => {
+        try {
+          const res = await fetch(`/api/admin/lessons/${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+            headers: buildAuthHeaders()
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setAdminOverview(prev => ({
+              ...(prev || {}),
+              practitionerLessons: data.lessons || []
+            }));
+          }
+        } catch {
+          // ignore
+        }
+      };
+
       const loadAdminOverview = async () => {
         setAdminLoading(true);
         try {
@@ -1475,7 +1528,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
       /**
        * Live SSE Streaming Analysis with Real-Time Thinking & Progress Stepper
        */
-      const runAnalysis = async (modeOverride, customFollowUp = null, overrideModel = null) => {
+      const runAnalysis = async (modeOverride, customFollowUp = null, overrideModel = null, forceFullRoadmap = false) => {
         if (voice.isActive()) {
           setError('Stop voice input and review the transcription before submitting.');
           return;
@@ -1571,6 +1624,10 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
 
           const rawInput = baseNotes + docsBundle;
 
+          if (forceFullRoadmap) {
+            caseState.forceFullRoadmap = true;
+          }
+
           const res = await fetch('/api/analyze-stream', {
             method: 'POST',
             headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
@@ -1581,6 +1638,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
               mode,
               model: overrideModel || selectedModel,
               caseState,
+              forceFullRoadmap: Boolean(forceFullRoadmap),
               rawInput,
               images: unsyncedImages.slice(0, 10),
               folderPath: folderScanSummary?.folderPath || '',
@@ -2386,6 +2444,75 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                             ))}
                           </tbody>
                         </table>
+                      </div>
+                    </details>
+
+                    <details class="bg-amber-50/70 rounded-xl border border-amber-200 p-3 text-xs">
+                      <summary class="cursor-pointer font-semibold text-amber-950">
+                        🧠 Teach Nyaya — Semantic Vector Practitioner Lessons in SQLite ({adminOverview.practitionerLessons?.length || 0} active · 384-dim embeddings)
+                      </summary>
+                      <div class="mt-3 space-y-3">
+                        <p class="text-[11px] text-zinc-600">
+                          Add any lawyer insight or correction here. Nyaya computes a 384-dimensional vector embedding, saves it in SQLite, and automatically injects it on semantically similar future cases—no code deploy needed.
+                        </p>
+                        <form onSubmit={saveAdminPractitionerLesson} class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <select
+                            value={lessonDomain}
+                            onChange={(e) => setLessonDomain(e.target.value)}
+                            class="px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-white text-xs font-medium"
+                          >
+                            <option value="criminal-bns-bnss">Criminal (BNS / BNSS)</option>
+                            <option value="matrimonial-family">Matrimony / DV / Family</option>
+                            <option value="property-rera">Property / Builder / RERA</option>
+                            <option value="inheritance-partition">Partition / Succession</option>
+                            <option value="cheque-bounce-138">Cheque Bounce (s.138)</option>
+                            <option value="consumer">Consumer Dispute</option>
+                            <option value="corporate-roc">Company / RoC</option>
+                          </select>
+                          <input
+                            type="text"
+                            value={lessonTopic}
+                            onChange={(e) => setLessonTopic(e.target.value)}
+                            placeholder="Topic / Trigger (e.g., Chain Snatching s.304 vs s.309)"
+                            class="sm:col-span-2 px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-white text-xs"
+                          />
+                          <textarea
+                            rows="2"
+                            value={lessonText}
+                            onChange={(e) => setLessonText(e.target.value)}
+                            placeholder="Write the practitioner rule (e.g., Ask about neck injury/push + MLC to upgrade s.304 Snatching [3 yrs] to s.309(4)/(6) Robbery [10 yrs], and cite s.497/503 BNSS Jimmanama for release)..."
+                            class="sm:col-span-3 px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-white text-xs"
+                          />
+                          <div class="sm:col-span-3 flex justify-end">
+                            <button
+                              type="submit"
+                              disabled={lessonSaving || !lessonTopic.trim() || !lessonText.trim()}
+                              class="px-3 py-1.5 rounded-lg bg-zinc-900 text-white font-semibold text-xs hover:bg-zinc-800 disabled:opacity-50"
+                            >
+                              {lessonSaving ? 'Embedding & Saving...' : '+ Embed & Save Lesson to SQLite'}
+                            </button>
+                          </div>
+                        </form>
+                        <div class="divide-y divide-amber-200/70 max-h-56 overflow-y-auto bg-white rounded-lg border border-amber-200">
+                          {(adminOverview.practitionerLessons || []).map(ls => (
+                            <div key={ls.id} class="p-2.5 flex items-start justify-between gap-2">
+                              <div class="space-y-0.5">
+                                <div class="font-semibold text-zinc-900">
+                                  [{ls.domain}] {ls.topic} <span class="text-[10px] text-zinc-400">({ls.embeddingDim || 384}-dim vector)</span>
+                                </div>
+                                <div class="text-zinc-600 leading-relaxed">{ls.lessonText}</div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => deleteAdminPractitionerLesson(ls.id)}
+                                class="text-zinc-400 hover:text-red-600 px-1.5 py-0.5"
+                                title="Delete lesson"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </details>
 
@@ -3794,6 +3921,54 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                       </div>
                     )}
 
+                    {result.engineResult.practitionerIntelligence.factReadiness?.intakeStage === 'clarify-first' && (
+                      <div class="p-2.5 rounded-xl bg-amber-50 border border-amber-300 space-y-1.5">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                          <span class="font-bold text-amber-950">
+                            🗣️ Step 1 of 2 — Confirming Your Facts & Available Proof First (Seasoned Lawyer Mode)
+                          </span>
+                          <button
+                            type="button"
+                            disabled={loading || voice.busy}
+                            onClick={() => runAnalysis(
+                              activeSession?.mode || result?.engineResult?.effectiveMode || 'auto',
+                              'Please generate the complete legal roadmap, statutory analysis, and ready-to-use draft based on the facts shared so far, using placeholders for any unconfirmed details.',
+                              null,
+                              true
+                            )}
+                            class="px-2.5 py-1 rounded-lg bg-zinc-900 text-white font-semibold text-[11px] hover:bg-zinc-800 transition disabled:opacity-50"
+                          >
+                            ⚡ Skip questions & build full roadmap now →
+                          </button>
+                        </div>
+                        <div class="text-zinc-700 leading-relaxed">
+                          Like a real advocate, Nyaya checks your exact stage, aggravating facts, and available documents before prescribing a final strategy. Tap a quick answer below or reply in your own words.
+                        </div>
+                      </div>
+                    )}
+
+                    {result.engineResult.practitionerIntelligence.semanticStatutoryCluster?.length > 0 && (
+                      <details class="p-2.5 rounded-xl bg-white border border-zinc-200/90">
+                        <summary class="cursor-pointer font-semibold text-zinc-900 flex flex-wrap items-center justify-between gap-2">
+                          <span>🧬 SQLite Semantic Vector + Adjacent Bare Act Cluster ({result.engineResult.practitionerIntelligence.semanticStatutoryCluster.length} provisions · 384-dim embeddings)</span>
+                          <span class="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600 font-medium">Base vs. Aggravated Check</span>
+                        </summary>
+                        <div class="mt-2.5 space-y-2">
+                          {result.engineResult.practitionerIntelligence.semanticStatutoryCluster.map(sp => (
+                            <div key={sp.id} class="p-2.5 rounded-lg bg-zinc-50 border border-zinc-200/80 space-y-1">
+                              <div class="flex flex-wrap items-center justify-between gap-1.5">
+                                <span class="font-bold text-zinc-900">{sp.section} — {sp.title}</span>
+                                <span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-950 font-medium">
+                                  {sp.cognizable} · {sp.bailable} · Max: {sp.maxPunishment}
+                                </span>
+                              </div>
+                              <div class="text-zinc-600 leading-relaxed">{sp.practitionerEscalationNote}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+
                     {result.engineResult.practitionerIntelligence.ingredientTranslations?.length > 0 && (
                       <div class="space-y-1.5">
                         <div class="text-[11px] font-semibold uppercase tracking-wider text-amber-900">
@@ -3917,7 +4092,21 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                             <option value="gpt-4.1">GPT-4.1</option>
                           </select>
                           <button
-                            onClick={() => runAnalysis(activeSession?.mode, 'Review the advice for this situation in more depth. Re-check assumptions, relevant evidence and legal requirements, explain trade-offs plainly, and improve the requested plan or draft without inventing facts.', escalationModel)}
+                            onClick={() => runAnalysis(
+                              activeSession?.mode || result?.engineResult?.effectiveMode || 'auto',
+                              result?.engineResult?.practitionerIntelligence?.bilingualDraftInstruction ||
+                                'Prepare a complete, ready-to-print Bilingual Formal Complaint / Legal Notice / Application in BOTH formal Hindi (देवनागरी) and English based on our case facts, including a complete Prayer clause and clear [PLACEHOLDERS].',
+                              null,
+                              true
+                            )}
+                            disabled={voice.busy}
+                            class="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-950 font-semibold border border-emerald-300 transition disabled:opacity-50"
+                            title="Generate ready-to-sign Bilingual (Hindi + English) Thana Complaint / Legal Notice / Court Application"
+                          >
+                            🇮🇳 Draft in Hindi + English
+                          </button>
+                          <button
+                            onClick={() => runAnalysis(activeSession?.mode, 'Review the advice for this situation in more depth. Re-check assumptions, relevant evidence and legal requirements, explain trade-offs plainly, and improve the requested plan or draft without inventing facts.', escalationModel, true)}
                             disabled={voice.busy}
                             class="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-950 font-semibold border border-amber-300 transition disabled:opacity-50"
                             title={`Review this situation in more depth with ${escalationModel}`}

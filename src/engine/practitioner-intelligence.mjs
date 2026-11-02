@@ -9,6 +9,11 @@
  * 5. Structured "How a Local Lawyer Thinks" End-to-End Case-Trajectory Repository
  */
 
+import {
+  searchStatutoryProvisionsSemantic,
+  searchPractitionerLessonsSemantic
+} from './semantic-statutory-index.mjs';
+
 /**
  * 1. LAYMAN-TO-LEGAL INGREDIENT TRANSLATOR (#2)
  * Translates everyday words ("chori", "fraud", "assault", "dowry harassment", "fundamental right")
@@ -158,6 +163,40 @@ export function evaluateConversationalFactProbing({
       };
     }
 
+    // Chain snatching / mobile snatching specific probing (s.304 Snatching [3 yrs] vs s.309(4)/(6) Robbery [10 yrs / Life] + Jimmanama)
+    if (/(\bsnatch(?:ed|ing)?\b|\bchain\s+snatch(?:ed|ing)?\b|\bmobile\s+snatch(?:ed|ing)?\b|झपटमारी|चेन\s+स्नैचिंग)/i.test(text)) {
+      clarifyingQuestions.push({
+        id: 'probe-snatching-stage-and-hurt',
+        question: '1. When & where did the snatching happen, and has the Thana registered an FIR yet (or asked you to give a "Sanha / गुमशुदगी lost report")?',
+        whyLawyerAsks: 'Police sometimes downgrade snatching to a "lost item (Sanha)" to avoid an unsolved crime entry. Under Section 304 BNS, Snatching is strictly Cognizable regardless of value.',
+        quickReplies: [
+          'It just happened recently — I am going to the Thana now to file the FIR',
+          'Thana took an application / asked for a Sanha (missing report) instead of FIR',
+          'FIR is already registered — police have not recovered the chain / caught the accused yet'
+        ]
+      });
+      clarifyingQuestions.push({
+        id: 'probe-snatching-injury-304-vs-309',
+        question: '2. Did the snatcher cause ANY neck scratch/bruise, push/drag the victim, or show any weapon/threat?',
+        whyLawyerAsks: 'CRITICAL: Section 304 BNS (Snatching) carries only 3 years (allowing easy Section 35(3) BNSS notice). If there was ANY scratch, push, fall, or threat of hurt, a Government Hospital MLC upgrades the charge to Robbery under Section 309(4) BNS (10 yrs) or Section 309(6) BNS (up to Life / 10 yrs RI)!',
+        quickReplies: [
+          'Yes — there was a neck scratch / bruise / push or threat (we can get/have medical report)',
+          'No physical injury — the chain was yanked suddenly and they sped away on a bike',
+          'Chain is recovered by police — I need to get it released from court (Jimmanama / Supurdari)'
+        ]
+      });
+      clarifyingQuestions.push({
+        id: 'probe-snatching-evidence-available',
+        question: '3. What proof or details do you currently have available with you?',
+        whyLawyerAsks: 'Helps lock CCTV before it overwrites (3–7 days) and prepares ownership proof for Section 497/503 BNSS Jimmanama release.',
+        quickReplies: [
+          'We spotted nearby CCTV cameras / bike details and have the jewellery bill or photos',
+          'No bill available right now, only family photos wearing the chain and spot details',
+          'I am actually asking on behalf of someone accused/arrested in a snatching case'
+        ]
+      });
+    }
+
     // Probing questions a real lawyer asks when FIR refusal is mentioned without full facts
     if (!paidAmountInr && /\b(chori|theft|fraud|cheating|money|पैसा|चोरी|धोखाधड़ी)\b/i.test(text)) {
       clarifyingQuestions.push({
@@ -203,23 +242,130 @@ export function evaluateConversationalFactProbing({
     }
   }
 
-  // Property / Builder / Land Fraud Probing: Check if a bank home loan / EMI is running in parallel (from cr2 3:15-6:45)
-  if (domainInfo.domain === 'property-rera' && !/\b(loan|emi|bank|hdfc|sbi|icici|subvention|tripartite)\b/i.test(lower)) {
-    clarifyingQuestions.push({
-      id: 'probe-property-bank-loan',
-      question: 'Is there an active Bank Home Loan / EMI or Tripartite Subvention Agreement on this property, and do you want to stay in the project (possession + delay interest) or exit with a full refund?',
-      whyLawyerAsks: 'In builder/land disputes where a bank loan is running, the bank will still pursue EMI recovery (SARFAESI / ECS bounce) unless your petition specifically prays for relief covering the lender/tripartite liability.',
-      quickReplies: [
-        'Yes, I have an active bank home loan / EMI running on this property',
-        'No bank loan — I paid from my own savings and want possession + delay interest',
-        'I want a 100% refund with interest because the project/title is stuck'
-      ]
-    });
-  }
+    if (
+      clarifyingQuestions.length === 0 &&
+      (domainInfo.domain === 'property-rera' || /\b(loan|emi|bank|hdfc|sbi|icici|subvention|tripartite)\b/i.test(lower))
+    ) {
+      clarifyingQuestions.push({
+        id: 'probe-property-bank-loan',
+        question: 'Is there an active Bank Home Loan / EMI or Tripartite Subvention Agreement on this property, and do you want to stay in the project (possession + delay interest) or exit with a full refund?',
+        whyLawyerAsks: 'In builder/land disputes where a bank loan is running, the bank will still pursue EMI recovery (SARFAESI / ECS bounce) unless your petition specifically prays for relief covering the lender/tripartite liability.',
+        quickReplies: [
+          'Yes, I have an active bank home loan / EMI running on this property',
+          'No bank loan — I paid from my own savings and want possession + delay interest',
+          'I want a 100% refund with interest because the project/title is stuck'
+        ]
+      });
+    }
+
+    // Ensure EVERY case has domain-appropriate fact & document confirmation questions if fewer than 2 were generated
+    if (clarifyingQuestions.length === 0) {
+      if (domainInfo.domain === 'cheque-bounce-138') {
+        clarifyingQuestions.push({
+          id: 'probe-138-dates-and-docs',
+          question: 'To confirm your exact statutory clock: (1) What is the exact date on the Bank Return Memo, (2) Have you sent the 30-day demand notice yet, and (3) What documents do you have (original cheque, return memo, invoice/chat)?',
+          whyLawyerAsks: 'Section 138 NI Act has an unforgiving 30-day notice window from the Return Memo and jurisdiction lies at the PAYEE\'S bank branch (Section 142(2)(a)).',
+          quickReplies: [
+            'Cheque bounced within the last 30 days — I have the original cheque & bank return memo',
+            'More than 30 days passed since return memo, but the cheque is still within 3-month validity',
+            'I already sent the 15-day notice and the drawer still has not paid'
+          ]
+        });
+      } else if (domainInfo.domain === 'inheritance-partition') {
+        clarifyingQuestions.push({
+          id: 'probe-partition-facts',
+          question: 'Before we draft your strategy: (1) Did the owner pass away without a Will (intestate), (2) Who currently holds possession/papers, and (3) Is any co-heir trying to sell or transfer the property right now?',
+          whyLawyerAsks: 'Determines whether we need an immediate written bank/Sub-Registrar objection + Civil Partition Suit with an Order 39 Rules 1 & 2 CPC Temporary Injunction.',
+          quickReplies: [
+            'Died without a Will — another family member is trying to sell/transfer without giving my share',
+            'We want a peaceful family partition / mutation and want to know each heir\'s exact share',
+            'The other side claims there is a Will or gift deed that looks suspicious'
+          ]
+        });
+      } else if (domainInfo.isConsumerForum) {
+        clarifyingQuestions.push({
+          id: 'probe-consumer-facts-and-proof',
+          question: 'Before prescribing your next move: (1) How much did you pay and when, (2) Did the company/service centre give a written refusal or job sheet, and (3) What proof do you have (invoice, warranty card, WhatsApp/email, photos)?',
+          whyLawyerAsks: 'A seasoned practitioner checks if we can resolve this fast via a written job-sheet demand + Brand Grievance Officer + NCH 1915 / RBI / Insurance Ombudsman before spending time in Consumer Court.',
+          quickReplies: [
+            'I have the invoice & chats — company refused orally without giving a written job sheet',
+            'I already complained to customer care / NCH 1915 and they rejected my claim in writing',
+            'I am the business/service provider and a customer is demanding an unfair refund'
+          ]
+        });
+      } else {
+        clarifyingQuestions.push({
+          id: 'probe-general-facts-and-docs',
+          question: 'Before I give you a final legal roadmap, please confirm: (1) When did this happen and what stage is it at today, (2) What documents or proof do you have in hand, and (3) What exact outcome do you want?',
+          whyLawyerAsks: 'A seasoned lawyer never guesses facts—confirming your stage and available proof first ensures we pick the right section and forum.',
+          quickReplies: [
+            'This is a new issue — no police complaint, notice, or court case has been filed yet',
+            'I have already given a complaint / received a notice and need the exact next move',
+            'A case is already running in court and I need strategy for the next hearing'
+          ]
+        });
+      }
+    }
 
   return {
     firCognizabilityAnalysis,
     clarifyingQuestions: clarifyingQuestions.slice(0, 3)
+  };
+}
+
+/**
+ * TWO-SPEED "CLARIFY & CONFIRM FACTS FIRST" GATE (#1)
+ * Evaluates whether the user has supplied sufficient facts & evidence details, or whether
+ * Nyaya should first ask & confirm the facts like a seasoned lawyer before rushing into a long answer.
+ */
+export function evaluateCaseFactReadiness({
+  rawInput = '',
+  isFollowUpTurn = false,
+  hasAttachments = false,
+  forceFullRoadmap = false,
+  mode = '',
+  domainInfo = {},
+  caseState = {}
+} = {}) {
+  const userTextOnly = String(rawInput || '').split('ATTACHED FOLDER / TEXT DOCUMENTS:')[0].trim();
+  const wordCount = userTextOnly.split(/\s+/).filter(Boolean).length;
+
+  const hasDateOrTimeline = /\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2}|today|yesterday|last\s+week|last\s+month|\d+\s+days?\s+ago|\d+\s+months?\s+ago|आज|कल|महीने|दिन\s+पहले)\b/i.test(userTextOnly)
+    || Boolean(caseState.serviceDate || caseState.dishonourDate || caseState.nextHearingDate);
+  const hasAmountOrInjuryDetail = /\b(rs\.?|inr|₹|\d+\s*(?:lakh|crore|thousand|hazar|हजार|लाख)|hurt|injured|scratch|bleeding|fracture|weapon|चोट|खरोंच)\b/i.test(userTextOnly);
+  const hasStageOrAuthorityStatus = /\b(fir\s+no|registered|refused|rejected|notice\s+served|return\s+memo|written\s+version|adjournment|hearing|order\s+sheet|caw\s+cell|thana\s+said|police\s+said|थाना|मना\s+कर\s+दिया)\b/i.test(userTextOnly);
+  const hasEvidenceMention = hasAttachments || /\b(invoice|bill|receipt|whatsapp|email|cctv|photo|video|medical|mlc|agreement|allotment|cheque|memo|बिल|रसीद|चैट|सीसीटीवी)\b/i.test(userTextOnly);
+
+  const factDimensionsConfirmed = [
+    wordCount >= 28,
+    hasDateOrTimeline,
+    hasAmountOrInjuryDetail,
+    hasStageOrAuthorityStatus,
+    hasEvidenceMention
+  ].filter(Boolean).length;
+
+  const isAdvocateLookup = mode === 'lawyer-research-bench';
+
+  // Trigger 'clarify-first' when on Turn 1 without attachments/override and fewer than 3 fact dimensions are present
+  const shouldClarifyFirst = Boolean(
+    !isFollowUpTurn &&
+    !hasAttachments &&
+    !forceFullRoadmap &&
+    !isAdvocateLookup &&
+    (wordCount < 45 || factDimensionsConfirmed < 3)
+  );
+
+  return {
+    intakeStage: shouldClarifyFirst ? 'clarify-first' : 'full-roadmap',
+    shouldClarifyFirst,
+    wordCount,
+    factDimensionsConfirmed,
+    missingDimensions: [
+      !hasDateOrTimeline ? 'Exact date / timeline of the incident' : null,
+      !hasStageOrAuthorityStatus ? 'Current stage (whether FIR/complaint/notice is already filed & what the authority/other side said)' : null,
+      !hasAmountOrInjuryDetail ? 'Specific aggravating facts (e.g., any physical hurt/push/threat, or exact rupee value involved)' : null,
+      !hasEvidenceMention ? 'Available proof in hand (bills, CCTV, photos, chats, medical report, written receiving)' : null
+    ].filter(Boolean)
   };
 }
 
@@ -472,6 +618,16 @@ export function buildInstantTriageCard({
   };
 }
 
+export function buildBilingualDraftInstruction(domainInfo = {}) {
+  if (domainInfo.domain === 'criminal-bns-bnss') {
+    return 'Prepare a complete, ready-to-print Bilingual Police Complaint / Application (both in formal Hindi देवनागरी: "सेवा में, थाना प्रभारी महोदय / वरीय पुलिस अधीक्षक" AND in formal English) citing the exact BNS/BNSS 2023 sections, chronological facts, and a request for a stamped DD/FIR receiving copy under Section 173(2) BNSS (or Jimmanama release under Section 497/503 BNSS if for property release), with clear [PLACEHOLDERS] for any missing details.';
+  }
+  if (domainInfo.domain === 'matrimonial-family') {
+    return 'Prepare a complete, ready-to-print Bilingual Application / Representation (both in formal Hindi देवनागरी AND in English) tailored to the confirmed facts (either for Family Counselling / Mediation or under Section 12 PWDVA, 2005 / Section 144 BNSS), including a complete Prayer clause with clear [PLACEHOLDERS].';
+  }
+  return 'Prepare a complete, ready-to-print Bilingual Formal Notice / Complaint / Application (both in formal Hindi देवनागरी AND in English) for this matter, including a complete Prayer / Relief Sought section with clear [PLACEHOLDERS] for dates, amounts, and party details.';
+}
+
 /**
  * Master entry point called by computeCaseEngine in ui/server.mjs
  */
@@ -482,8 +638,21 @@ export function runPractitionerIntelligence({
   caseState = {},
   autoDetectedCategoryLabel = '',
   niAct138 = null,
-  criminalRules = null
+  criminalRules = null,
+  isFollowUpTurn = false,
+  hasAttachments = false,
+  forceFullRoadmap = false,
+  mode = ''
 } = {}) {
+  const factReadiness = evaluateCaseFactReadiness({
+    rawInput,
+    isFollowUpTurn,
+    hasAttachments,
+    forceFullRoadmap: Boolean(forceFullRoadmap || caseState.forceFullRoadmap),
+    mode,
+    domainInfo,
+    caseState
+  });
   const ingredientTranslations = translateLaymanToLegalIngredients(rawInput, paidAmountInr);
   const factProbing = evaluateConversationalFactProbing({
     rawInput,
@@ -497,11 +666,27 @@ export function runPractitionerIntelligence({
   });
   const matchedTrajectories = matchPractitionerCaseTrajectories(rawInput, domainInfo);
 
+  // SQLite 384-Dim Semantic Vector Search + Adjacent Chapter-Cluster Expansion + Admin Practitioner Lessons
+  const semanticStatutoryCluster = searchStatutoryProvisionsSemantic(
+    `${rawInput} ${domainInfo.domain || ''} ${domainInfo.label || ''}`,
+    { topK: 3, expandCluster: true }
+  );
+  const semanticPractitionerLessons = searchPractitionerLessonsSemantic(
+    rawInput,
+    domainInfo.domain || '',
+    3
+  );
+  const bilingualDraftInstruction = buildBilingualDraftInstruction(domainInfo);
+
   const partial = {
+    factReadiness,
     ingredientTranslations,
     factProbing,
     foresightAndPrayer,
-    matchedTrajectories
+    matchedTrajectories,
+    semanticStatutoryCluster,
+    semanticPractitionerLessons,
+    bilingualDraftInstruction
   };
 
   const instantTriage = buildInstantTriageCard({

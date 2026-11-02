@@ -128,7 +128,7 @@ export function detectLegalDomain({ door = '', mode = '', caseState = {}, rawInp
 
   // Check Matrimonial / DV vs Criminal Police/Bail/FIR
   const hasMatrimonySignals = /\b(matrimon|marriage|married|husband|wife|in-laws|mother-in-law|streedhan|stridhan|divorce|alimony|domestic\s+violence|dv\s+act|pwdva|protection\s+officer|shared\s+household|caw\s+cell|mahila\s+thana|498\s*-?\s*a|restitution\s+of\s+conjugal)\b/i.test(text);
-  const hasCriminalArrestOrFirSignals = /\b(fir\b|zero\s+fir|arrest|anticipatory\s+bail|regular\s+bail|498\s*-?\s*a|bns\s*85|caw\s+cell|mahila\s+thana|police\s+station|41a\s+crpc|35\(3\)\s+bnss|quash|chargesheet|remand|extortion|cognizable|non-bailable)\b/i.test(text);
+  const hasCriminalArrestOrFirSignals = /\b(fir\b|zero\s+fir|arrest|anticipatory\s+bail|regular\s+bail|498\s*-?\s*a|bns\s*\d*|bnss\s*\d*|caw\s+cell|mahila\s+thana|police\s+station|thana\b|41a\s+crpc|35\(3\)\s+bnss|quash|chargesheet|remand|extortion|snatch|snatched|snatching|robbery|theft|chori|stolen|assault|beaten|cognizable|non-bailable)\b/i.test(text);
 
   if (caseState.subTrack === 'criminal' || mode === 'criminal-advisor' || (hasCriminalArrestOrFirSignals && !/\b(locked\s+the\s+door|pushed\s+me\s+out|need\s+a\s+roof|monthly\s+money\s+for\s+my\s+child)\b/i.test(text))) {
     return {
