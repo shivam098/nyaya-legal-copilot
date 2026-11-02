@@ -38,7 +38,16 @@ import {
   saveOrAppendSessionTurn,
   renameSessionForUser,
   deleteSessionForUser,
-  ensureUserRecord
+  ensureUserRecord,
+  registerOrLoginWithPassword,
+  loginOrRegisterGmailProfile,
+  getUserFromAuthToken,
+  revokeAuthToken,
+  getUserMonthlyUsageQuota,
+  saveTurnFeedbackForUser,
+  getSuperAdminOverview,
+  getAnySessionWithTurnsForAdmin,
+  DEFAULT_MONTHLY_TRIAL_LIMIT_INR
 } from '../src/engine/session-db.mjs';
 import {
   inferCaseStateFromFolder,
@@ -178,21 +187,80 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function resolveRequestUserId(req, url, body = null, res = null) {
-  // Read HttpOnly cookie if present
+function extractAuthTokenFromRequest(req) {
+  const authHeader = String(req.headers.authorization || '').trim();
+  if (authHeader.toLowerCase().startsWith('bearer ')) {
+    return authHeader.slice(7).trim();
+  }
+  if (req.headers['x-nyaya-auth-token']) {
+    return String(req.headers['x-nyaya-auth-token']).trim();
+  }
+  const cookieHeader = String(req.headers.cookie || '');
+  const tokenMatch = cookieHeader.match(/(?:^|;\s*)nyaya_token=([^;]+)/);
+  if (tokenMatch) {
+    return decodeURIComponent(tokenMatch[1]);
+  }
+  return '';
+}
+
+function resolveRequestAuth(req, url, body = null, res = null) {
+  const rawToken = extractAuthTokenFromRequest(req);
+  if (rawToken) {
+    const authUser = getUserFromAuthToken(rawToken);
+    if (authUser) {
+      return {
+        authenticated: true,
+        token: rawToken,
+        userId: authUser.id,
+        user: authUser,
+        isSuperAdmin: authUser.role === 'superadmin',
+        quota: getUserMonthlyUsageQuota(authUser.id)
+      };
+    }
+  }
+
+  // Fallback for automated test harnesses or explicit non-admin user IDs
   const cookieHeader = String(req.headers.cookie || '');
   const cookieMatch = cookieHeader.match(/(?:^|;\s*)nyaya_uid=([^;]+)/);
   const fromCookie = cookieMatch ? decodeURIComponent(cookieMatch[1]) : '';
   const fromHeader = req.headers['x-nyaya-user-id'];
   const fromQuery = url?.searchParams?.get('userId');
   const fromBody = body?.userId;
-  const raw = String(fromHeader || fromBody || fromQuery || fromCookie || 'founder-local').trim();
+  const candidate = String(fromHeader || fromBody || fromQuery || fromCookie || '').trim();
+
+  // Never allow an unauthenticated visitor without a token to claim 'founder-local' or a superadmin account!
+  const safeUserId = (!candidate || candidate === 'founder-local')
+    ? `guest_${Math.random().toString(36).slice(2, 10)}`
+    : candidate;
+
   const displayName = String(req.headers['x-nyaya-user-name'] || body?.userName || '').trim();
-  ensureUserRecord(raw, displayName);
-  if (res && !res.headersSent && raw) {
-    res.setHeader('Set-Cookie', `nyaya_uid=${encodeURIComponent(raw)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`);
+  const row = ensureUserRecord(safeUserId, displayName);
+  if (res && !res.headersSent && safeUserId) {
+    res.setHeader('Set-Cookie', `nyaya_uid=${encodeURIComponent(safeUserId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`);
   }
-  return raw;
+  const quota = getUserMonthlyUsageQuota(safeUserId);
+  return {
+    authenticated: false,
+    token: '',
+    userId: safeUserId,
+    user: {
+      id: safeUserId,
+      email: row?.email || '',
+      displayName: row?.display_name || safeUserId,
+      role: 'user',
+      plan: quota.plan,
+      monthlyLimitInr: quota.monthlyLimitInr,
+      monthlySpendInr: quota.monthlySpendInr,
+      monthlyRemainingInr: quota.monthlyRemainingInr,
+      quotaExceeded: quota.quotaExceeded
+    },
+    isSuperAdmin: false,
+    quota
+  };
+}
+
+function resolveRequestUserId(req, url, body = null, res = null) {
+  return resolveRequestAuth(req, url, body, res).userId;
 }
 
 /**
@@ -465,15 +533,175 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && url.pathname === '/api/config') {
-      const userId = resolveRequestUserId(req, url);
+      const auth = resolveRequestAuth(req, url, null, res);
+      const userId = auth.userId;
       sendJson(res, 200, {
+        authenticated: auth.authenticated,
+        user: auth.authenticated ? auth.user : null,
         userId,
+        userQuota: auth.quota,
+        monthlyTrialCapInr: DEFAULT_MONTHLY_TRIAL_LIMIT_INR,
+        googleClientId: process.env.GOOGLE_CLIENT_ID || '',
         models: CURATED_MODELS,
         stages: procedure.stages,
         tacticsCount: tactics.length,
-        billing: scopeBillingForUser(readBillingLedger(), userId),
+        billing: auth.isSuperAdmin ? readBillingLedger() : scopeBillingForUser(readBillingLedger(), userId),
         sessions: listSessionsForUser(userId, 50)
       });
+      return;
+    }
+
+    if (req.method === 'POST' && (url.pathname === '/api/auth/signup' || url.pathname === '/api/auth/login')) {
+      const rateCheck = checkIpRateLimit(req, 25);
+      if (!rateCheck.allowed) {
+        sendJson(res, 429, { error: 'Too many sign-in attempts. Please wait a minute.' });
+        return;
+      }
+      const body = await readJsonBody(req);
+      const mode = url.pathname.endsWith('/signup') ? 'signup' : (body.mode || 'auto');
+      try {
+        const result = registerOrLoginWithPassword({
+          emailOrId: body.email || body.username || body.emailOrId || '',
+          password: body.password || '',
+          displayName: body.displayName || body.name || '',
+          mode
+        });
+        res.setHeader(
+          'Set-Cookie',
+          `nyaya_token=${encodeURIComponent(result.token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`
+        );
+        const quota = getUserMonthlyUsageQuota(result.user.id);
+        sendJson(res, 200, {
+          authenticated: true,
+          created: result.created,
+          token: result.token,
+          user: result.user,
+          userId: result.user.id,
+          userQuota: quota,
+          billing: result.user.role === 'superadmin' ? readBillingLedger() : scopeBillingForUser(readBillingLedger(), result.user.id),
+          sessions: listSessionsForUser(result.user.id, 50)
+        });
+      } catch (authErr) {
+        sendJson(res, 400, { error: authErr.message || 'Authentication failed' });
+      }
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/auth/google') {
+      const rateCheck = checkIpRateLimit(req, 25);
+      if (!rateCheck.allowed) {
+        sendJson(res, 429, { error: 'Too many sign-in attempts. Please wait a minute.' });
+        return;
+      }
+      const body = await readJsonBody(req);
+      try {
+        let email = String(body.email || '').trim().toLowerCase();
+        let displayName = String(body.displayName || body.name || '').trim();
+
+        // If an official Google Identity Services ID token is supplied, verify it via Google's tokeninfo endpoint
+        if (body.idToken) {
+          const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(body.idToken)}`);
+          if (!verifyRes.ok) {
+            throw new Error('Could not verify Google ID token.');
+          }
+          const payload = await verifyRes.json();
+          if (process.env.GOOGLE_CLIENT_ID && payload.aud !== process.env.GOOGLE_CLIENT_ID) {
+            throw new Error('Google ID token audience mismatch.');
+          }
+          email = String(payload.email || '').trim().toLowerCase();
+          displayName = String(payload.name || payload.given_name || email.split('@')[0] || '').trim();
+        }
+
+        const result = loginOrRegisterGmailProfile({
+          email,
+          displayName,
+          authProvider: body.idToken ? 'google-oauth' : 'gmail-quick'
+        });
+        res.setHeader(
+          'Set-Cookie',
+          `nyaya_token=${encodeURIComponent(result.token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`
+        );
+        const quota = getUserMonthlyUsageQuota(result.user.id);
+        sendJson(res, 200, {
+          authenticated: true,
+          token: result.token,
+          user: result.user,
+          userId: result.user.id,
+          userQuota: quota,
+          billing: scopeBillingForUser(readBillingLedger(), result.user.id),
+          sessions: listSessionsForUser(result.user.id, 50)
+        });
+      } catch (gErr) {
+        sendJson(res, 400, { error: gErr.message || 'Google sign-in failed' });
+      }
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/auth/logout') {
+      const rawToken = extractAuthTokenFromRequest(req);
+      if (rawToken) revokeAuthToken(rawToken);
+      res.setHeader('Set-Cookie', 'nyaya_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+      sendJson(res, 200, { authenticated: false });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/auth/me') {
+      const auth = resolveRequestAuth(req, url);
+      sendJson(res, 200, {
+        authenticated: auth.authenticated,
+        user: auth.authenticated ? auth.user : null,
+        userId: auth.userId,
+        userQuota: auth.quota
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && /^\/api\/turns\/\d+\/feedback$/.test(url.pathname)) {
+      const auth = resolveRequestAuth(req, url);
+      const turnId = Number(url.pathname.split('/')[3]);
+      const body = await readJsonBody(req);
+      try {
+        const saved = saveTurnFeedbackForUser({
+          userId: auth.userId,
+          isSuperAdmin: auth.isSuperAdmin,
+          turnId,
+          rating: body.rating,
+          note: body.note
+        });
+        sendJson(res, 200, saved);
+      } catch (fbErr) {
+        sendJson(res, 403, { error: fbErr.message || 'Could not save feedback' });
+      }
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/admin/overview') {
+      const auth = resolveRequestAuth(req, url);
+      if (!auth.isSuperAdmin) {
+        sendJson(res, 403, { error: 'Forbidden: Super-Admin access is required to view cross-user analytics.' });
+        return;
+      }
+      const overview = getSuperAdminOverview(150);
+      sendJson(res, 200, {
+        ...overview,
+        globalBilling: readBillingLedger()
+      });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname.startsWith('/api/admin/sessions/')) {
+      const auth = resolveRequestAuth(req, url);
+      if (!auth.isSuperAdmin) {
+        sendJson(res, 403, { error: 'Forbidden: Super-Admin access is required to inspect other users\' sessions.' });
+        return;
+      }
+      const sessionId = decodeURIComponent(url.pathname.replace('/api/admin/sessions/', ''));
+      const session = getAnySessionWithTurnsForAdmin(sessionId);
+      if (!session) {
+        sendJson(res, 404, { error: `Session not found: ${sessionId}` });
+        return;
+      }
+      sendJson(res, 200, { session });
       return;
     }
 
@@ -568,7 +796,15 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const body = await readJsonBody(req);
-      const userId = resolveRequestUserId(req, url, body, res);
+      const auth = resolveRequestAuth(req, url, body, res);
+      const userId = auth.userId;
+      if (auth.quota.quotaExceeded) {
+        sendJson(res, 402, {
+          error: `Monthly Free Trial limit of ₹${auth.quota.monthlyLimitInr.toFixed(0)} reached (₹${auth.quota.monthlySpendInr.toFixed(2)} used this month). Contact the Nyaya team to extend your trial.`,
+          userQuota: auth.quota
+        });
+        return;
+      }
       const {
         sessionId = null,
         door = 'midcase',
@@ -928,6 +1164,7 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
 
         sendEvent('complete', {
           userId,
+          userQuota: getUserMonthlyUsageQuota(userId),
           session: updatedSession,
           sessions: listSessionsForUser(userId, 50),
           engineResult,
@@ -951,7 +1188,15 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
         return;
       }
       const body = await readJsonBody(req);
-      const userId = resolveRequestUserId(req, url, body);
+      const auth = resolveRequestAuth(req, url, body);
+      const userId = auth.userId;
+      if (auth.quota.quotaExceeded) {
+        sendJson(res, 402, {
+          error: `Monthly Free Trial limit of ₹${auth.quota.monthlyLimitInr.toFixed(0)} reached (₹${auth.quota.monthlySpendInr.toFixed(2)} used this month). Contact the Nyaya team to extend your trial.`,
+          userQuota: auth.quota
+        });
+        return;
+      }
       const {
         sessionId = null,
         door = 'midcase',
@@ -1037,6 +1282,7 @@ ${effectiveRawInput || '(See attached images and Case State above)'}${imageSumma
 
       sendJson(res, 200, {
         userId,
+        userQuota: getUserMonthlyUsageQuota(userId),
         session: updatedSession,
         sessions: listSessionsForUser(userId, 50),
         engineResult,
