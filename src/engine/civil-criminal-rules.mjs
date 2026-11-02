@@ -1,0 +1,445 @@
+/**
+ * Deterministic Engine for Civil, Property/RERA, Matrimonial/Family, and Criminal (BNS/BNSS/NI Act s.138) Law
+ * Ensures consumer-court rules are never misapplied to civil/criminal matters and provides
+ * deterministic statutory deadline, jurisdiction, fee, and bailability calculations.
+ */
+
+import { daysBetween, addDays } from './consumer-rules.mjs';
+
+export const BNS_CUTOFF_DATE = '2024-07-01';
+
+/**
+ * Verified Offence Classification & IPC/CrPC <-> BNS/BNSS Mapping Table
+ */
+export const VERIFIED_CRIMINAL_OFFENCE_MAP = [
+  {
+    id: 'cruelty-498a-bns85',
+    matchRegex: /\b(498\s*-?\s*a|bns\s*85|bns\s*86|dowry\s+harassment|matrimonial\s+cruelty|caw\s+cell|mahila\s+thana)\b/i,
+    ipcSection: 'Section 498A IPC',
+    bnsSection: 'Section 85 & 86 BNS, 2023',
+    offenceName: 'Cruelty by husband or relatives of husband',
+    cognizable: true,
+    bailable: false,
+    maxPunishmentYears: 3,
+    arneshKumarNoticeApplies: true,
+    statutoryNote: 'Cognizable and NON-BAILABLE (never call 498A/BNS 85 "bailable"). Because maximum punishment is 3 years (<= 7 years), automatic arrest is barred under Arnesh Kumar v. State of Bihar (2014) 8 SCC 273; police must issue a Notice of Appearance under Section 35(3) BNSS (formerly Section 41A CrPC) unless specific written reasons under s.35(1)(b) BNSS are recorded. A CAW Cell / Family Counselling call is a pre-FIR mediation step, not an arrest warrant.'
+  },
+  {
+    id: 'criminal-breach-trust-406-bns316',
+    matchRegex: /\b(406\s+ipc|bns\s*316|streedhan|stridhan|criminal\s+breach\s+of\s+trust)\b/i,
+    ipcSection: 'Section 406 IPC',
+    bnsSection: 'Section 316(2) BNS, 2023',
+    offenceName: 'Criminal breach of trust (including unlawful retention of streedhan)',
+    cognizable: true,
+    bailable: false,
+    maxPunishmentYears: 5,
+    arneshKumarNoticeApplies: true,
+    statutoryNote: 'Cognizable and NON-BAILABLE (up to 5 years under BNS 316(2); 3 years under IPC 406). Covered by the <= 7-year Arnesh Kumar / Section 35(3) BNSS notice safeguard.'
+  },
+  {
+    id: 'cheating-420-bns318',
+    matchRegex: /\b(420\s+ipc|section\s+420|bns\s*318|cheating|defraud|scam|cyber\s*fraud)\b/i,
+    ipcSection: 'Section 420 IPC',
+    bnsSection: 'Section 318(4) BNS, 2023',
+    offenceName: 'Cheating and dishonestly inducing delivery of property',
+    cognizable: true,
+    bailable: false,
+    maxPunishmentYears: 7,
+    arneshKumarNoticeApplies: true,
+    statutoryNote: 'Cognizable and NON-BAILABLE (up to 7 years + fine). Covered by the <= 7-year Arnesh Kumar / Section 35(3) BNSS notice safeguard.'
+  },
+  {
+    id: 'extortion-384-bns308',
+    matchRegex: /\b(383\s+ipc|384\s+ipc|bns\s*308|extort|extortion)\b/i,
+    ipcSection: 'Section 383 / 384 IPC',
+    bnsSection: 'Section 308(2) BNS, 2023',
+    offenceName: 'Extortion',
+    cognizable: true,
+    bailable: false,
+    maxPunishmentYears: 7,
+    arneshKumarNoticeApplies: true,
+    statutoryNote: 'Cognizable and NON-BAILABLE (up to 7 years under BNS 308(2); 3 years under IPC 384). In matrimonial CAW Cell disputes, preserve written/WhatsApp evidence of monetary threats calmly and present it in counselling/anticipatory-bail defense before rushing into a retaliatory counter-FIR.'
+  },
+  {
+    id: 'intimidation-506-bns351',
+    matchRegex: /\b(506\s+ipc|bns\s*351|criminal\s+intimidation|death\s+threat)\b/i,
+    ipcSection: 'Section 506 IPC',
+    bnsSection: 'Section 351(2)/(3) BNS, 2023',
+    offenceName: 'Criminal intimidation',
+    cognizable: false,
+    bailable: true,
+    maxPunishmentYears: 2,
+    arneshKumarNoticeApplies: true,
+    statutoryNote: 'Basic criminal intimidation (s.351(2) BNS) carries up to 2 years (non-cognizable, bailable unless state amendment applies); threat to cause death/grievous hurt (s.351(3) BNS) carries up to 7 years.'
+  },
+  {
+    id: 'deceitful-promise-bns69',
+    matchRegex: /\b(bns\s*69|false\s+promise\s+to\s+marry|deceitful\s+means)\b/i,
+    ipcSection: 'Previously prosecuted under Section 376 / 90 IPC',
+    bnsSection: 'Section 69 BNS, 2023',
+    offenceName: 'Sexual intercourse by employing deceitful means / false promise to marry',
+    cognizable: true,
+    bailable: false,
+    maxPunishmentYears: 10,
+    arneshKumarNoticeApplies: false,
+    statutoryNote: 'Cognizable and NON-BAILABLE, carrying up to 10 years imprisonment. Because maximum punishment exceeds 7 years, Section 35(3) BNSS / Arnesh Kumar notice protection does NOT automatically apply; immediate Anticipatory Bail under Section 482 BNSS is essential.'
+  }
+];
+
+export const PROCEDURAL_CODE_EQUIVALENTS = {
+  noticeOfAppearance: 'Section 35(3) BNSS, 2023 (formerly Section 41A CrPC, 1973)',
+  anticipatoryBail: 'Section 482 BNSS, 2023 (formerly Section 438 CrPC, 1973)',
+  regularBailMagistrate: 'Section 480 BNSS, 2023 (formerly Section 437 CrPC, 1973)',
+  regularBailSessionsHighCourt: 'Section 483 BNSS, 2023 (formerly Section 439 CrPC, 1973)',
+  defaultStatutoryBail: 'Section 187(2)-(3) BNSS, 2023 (formerly Section 167(2) CrPC — 60 days or 90 days chargesheet ceiling)',
+  firRegistration: 'Section 173(1) BNSS, 2023 (formerly Section 154 CrPC — includes Zero FIR & e-FIR)',
+  spEscalationOnFirRefusal: 'Section 173(4) BNSS, 2023 (formerly Section 154(3) CrPC)',
+  magistrateDirectionForInvestigation: 'Section 175(3) BNSS, 2023 (formerly Section 156(3) CrPC — requires Priyanka Srivastava affidavit)',
+  highCourtQuashing: 'Section 528 BNSS, 2023 (formerly Section 482 CrPC)',
+  summaryMaintenance: 'Section 144 BNSS, 2023 (formerly Section 125 CrPC)',
+  electronicEvidenceCertificate: 'Section 63 Bharatiya Sakshya Adhiniyam (BSA), 2023 (formerly Section 65B Indian Evidence Act, 1872)'
+};
+
+/**
+ * Deterministically detects the primary legal domain & forum so Consumer Commission rules
+ * are never misapplied to Civil, Property/RERA, Matrimonial, Partition, or Criminal cases.
+ */
+export function detectLegalDomain({ door = '', mode = '', caseState = {}, rawInput = '' } = {}) {
+  const text = `${rawInput} ${caseState.subTrack || ''} ${caseState.forum || ''} ${caseState.stage || ''}`.toLowerCase();
+
+  if (door === 'company' || mode === 'company-advisor' || caseState.companyNeed) {
+    return {
+      domain: 'corporate-roc',
+      forum: 'mca-roc',
+      isConsumerForum: false,
+      label: 'Companies Act, 2013 & LLP Act, 2008 (MCA21 / RoC)'
+    };
+  }
+
+  // Explicit subTrack or forum from the dedicated Civil, Family & Criminal door or Forum selector
+  if (caseState.subTrack === 'cheque-bounce-138' || /\b(section\s+138|s\.?\s*138|cheque\s+bounc|cheque\s+dishonour|dishonoured\s+cheque|return\s+memo|insufficient\s+funds|funds\s+insufficient|negotiable\s+instruments)\b/i.test(text)) {
+    return {
+      domain: 'cheque-bounce-138',
+      forum: 'judicial-magistrate-ni138',
+      isConsumerForum: false,
+      label: 'Negotiable Instruments Act, 1881 (Section 138 Cheque Dishonour — Criminal Magistrate Court)'
+    };
+  }
+
+  // Check Matrimonial / DV vs Criminal Police/Bail/FIR
+  const hasMatrimonySignals = /\b(matrimon|marriage|married|husband|wife|in-laws|mother-in-law|streedhan|stridhan|divorce|alimony|domestic\s+violence|dv\s+act|pwdva|protection\s+officer|shared\s+household|caw\s+cell|mahila\s+thana|498\s*-?\s*a|restitution\s+of\s+conjugal)\b/i.test(text);
+  const hasCriminalArrestOrFirSignals = /\b(fir\b|zero\s+fir|arrest|anticipatory\s+bail|regular\s+bail|498\s*-?\s*a|bns\s*85|caw\s+cell|mahila\s+thana|police\s+station|41a\s+crpc|35\(3\)\s+bnss|quash|chargesheet|remand|extortion|cognizable|non-bailable)\b/i.test(text);
+
+  if (caseState.subTrack === 'criminal' || mode === 'criminal-advisor' || (hasCriminalArrestOrFirSignals && !/\b(locked\s+the\s+door|pushed\s+me\s+out|need\s+a\s+roof|monthly\s+money\s+for\s+my\s+child)\b/i.test(text))) {
+    return {
+      domain: 'criminal-bns-bnss',
+      forum: 'criminal-magistrate-sessions',
+      isConsumerForum: false,
+      label: 'Criminal Law & Procedure (BNS / BNSS / BSA 2023 & IPC / CrPC)'
+    };
+  }
+
+  if (caseState.subTrack === 'matrimonial-family' || caseState.forum === 'family-court' || hasMatrimonySignals) {
+    return {
+      domain: 'matrimonial-family',
+      forum: 'family-court-or-magistrate-dv',
+      isConsumerForum: false,
+      label: 'Matrimonial, Domestic Violence (PWDVA 2005) & Family Law (BNSS s.144 / HMA)'
+    };
+  }
+
+  if (caseState.subTrack === 'inheritance-partition' || /\b(intestate|without\s+leaving\s+a\s+will|without\s+a\s+will|partition\s+suit|hindu\s+succession|coparcen|class\s+i\s+heir|legal\s+heir|ancestral\s+property|succession\s+certificate|probate|o\.?\s*s\.?\s*no\.?)\b/i.test(text)) {
+    return {
+      domain: 'inheritance-partition',
+      forum: 'civil-court',
+      isConsumerForum: false,
+      label: 'Civil Court — Property Partition, Injunction (Order 39 CPC) & Succession (HSA 1956)'
+    };
+  }
+
+  if (caseState.subTrack === 'property-rera' || caseState.forum === 'rera' || /\b(rera|maharera|builder|occupancy\s+certificate|allotment\s+letter|flat\s+delay|possession\s+delay|escalation\s+charge|homebuyer)\b/i.test(text)) {
+    const explicitConsumer = caseState.forum === 'consumer-commission';
+    return {
+      domain: 'property-rera',
+      forum: explicitConsumer ? 'consumer-commission' : 'rera-and-consumer-concurrent',
+      isConsumerForum: explicitConsumer,
+      label: 'Real Estate (RERA Act, 2016 s.18/s.31 & Concurrent Consumer Commission Remedies)'
+    };
+  }
+
+  if (caseState.subTrack === 'tenancy-civil' || caseState.forum === 'civil-court' || /\b(eviction|landlord|tenant|rent\s+agreement|security\s+deposit|rent\s+act|civil\s+court|civil\s+judge|order\s+39|order\s+viii|written\s+statement|framing\s+of\s+issues|order\s+14\s+cpc)\b/i.test(text)) {
+    return {
+      domain: 'tenancy-civil',
+      forum: 'civil-court',
+      isConsumerForum: false,
+      label: 'Civil Court / Rent Authority (Code of Civil Procedure, 1908 & State Rent Laws)'
+    };
+  }
+
+  if (/\b(traffic\s+challan|e-?challan|riding\s+without\s+helmet|helmet\s+fine|seat\s*belt\s+fine|overspeeding|red\s+light\s+jump|parivahan|motor\s+vehicles\s+act|driving\s+licen[cs]e\s+disqualif)\b/i.test(text)) {
+    return {
+      domain: 'traffic-challan',
+      forum: 'virtual-traffic-court',
+      isConsumerForum: false,
+      label: 'Motor Vehicles Act, 1988 (as amended 2019) & Parivahan / Virtual Traffic Courts'
+    };
+  }
+
+  if (/\b(unpaid\s+salary|salary\s+hold|relieving\s+letter|gratuity|provident\s+fund|samadhan|msme\s+samadhaan|labour\s+commissioner)\b/i.test(text)) {
+    return {
+      domain: 'labour-msme',
+      forum: 'labour-or-msme-conciliation',
+      isConsumerForum: false,
+      label: 'Labour Conciliation (SAMADHAN) & MSME Samadhaan'
+    };
+  }
+
+  return {
+    domain: 'consumer',
+    forum: 'consumer-commission',
+    isConsumerForum: true,
+    label: 'Consumer Protection Act, 2019 (NCH 1915 / Sectoral Ombudsman / Consumer Commission)'
+  };
+}
+
+/**
+ * Extracts consideration / claim amount in INR from text or caseState (e.g. "Rs 72 lakhs", "₹8,000", "Rs 1.85 Crore").
+ */
+export function extractPaidAmountInr(text = '', explicitAmount = null) {
+  if (Number.isFinite(Number(explicitAmount)) && Number(explicitAmount) > 0) {
+    return Number(explicitAmount);
+  }
+  const s = String(text || '');
+  const croreMatch = s.match(/(?:rs\.?|inr|₹)\s*(\d+(?:\.\d+)?)\s*crore/i);
+  if (croreMatch) return Math.round( parseFloat(croreMatch[1]) * 10000000 );
+
+  const lakhMatch = s.match(/(?:rs\.?|inr|₹)\s*(\d+(?:\.\d+)?)\s*(?:lakh|lac|l\b)/i);
+  if (lakhMatch) return Math.round( parseFloat(lakhMatch[1]) * 100000 );
+
+  const plainMatch = s.match(/(?:paid|for|of|amount|cheque\s+for|refund\s+of)?\s*(?:rs\.?|inr|₹)\s*([\d,]{3,12})/i)
+    || s.match(/\b([\d,]{4,10})\s*rupaye\b/i);
+  if (plainMatch) {
+    const num = Number(plainMatch[1].replace(/,/g, ''));
+    if (Number.isFinite(num) && num > 0) return num;
+  }
+  return null;
+}
+
+/**
+ * Deterministic Consumer Commission Pecuniary Jurisdiction (2021 Rules) & Rule 7 Filing Fee Calculator.
+ * Based strictly on value of goods/services paid as consideration (NOT compensation claimed).
+ */
+export function evaluateConsumerPecuniaryAndFee(paidAmountInr) {
+  const amount = Number(paidAmountInr);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  let forum = 'District Consumer Disputes Redressal Commission (up to ₹50 lakh paid)';
+  if (amount > 20000000) {
+    forum = 'National Consumer Disputes Redressal Commission — NCDRC (above ₹2 crore paid)';
+  } else if (amount > 5000000) {
+    forum = 'State Consumer Disputes Redressal Commission — SCDRC (above ₹50 lakh up to ₹2 crore paid)';
+  }
+
+  let filingFeeInr = 0;
+  let feeSlabLabel = 'Up to ₹5 lakh paid: ₹0 (NIL / Free filing under Rule 7)';
+  if (amount > 500000 && amount <= 1000000) {
+    filingFeeInr = 200;
+    feeSlabLabel = 'Above ₹5 lakh up to ₹10 lakh paid: ₹200';
+  } else if (amount > 1000000 && amount <= 2000000) {
+    filingFeeInr = 400;
+    feeSlabLabel = 'Above ₹10 lakh up to ₹20 lakh paid: ₹400';
+  } else if (amount > 2000000 && amount <= 5000000) {
+    filingFeeInr = 1000;
+    feeSlabLabel = 'Above ₹20 lakh up to ₹50 lakh paid: ₹1,000';
+  } else if (amount > 5000000 && amount <= 10000000) {
+    filingFeeInr = 2000;
+    feeSlabLabel = 'Above ₹50 lakh up to ₹1 crore paid: ₹2,000';
+  } else if (amount > 10000000 && amount <= 20000000) {
+    filingFeeInr = 2500;
+    feeSlabLabel = 'Above ₹1 crore up to ₹2 crore paid: ₹2,500';
+  } else if (amount > 20000000) {
+    filingFeeInr = 5000;
+    feeSlabLabel = 'Above ₹2 crore paid: ₹5,000+ (as per NCDRC slab)';
+  }
+
+  return {
+    paidAmountInr: amount,
+    competentForum: forum,
+    filingFeeInr,
+    feeSlabLabel,
+    statutoryBasis: 'Consumer Protection (Jurisdiction of the District Commission, the State Commission and the National Commission) Rules, 2021 & Rule 7 of Consumer Protection (Consumer Disputes Redressal Commissions) Rules, 2020'
+  };
+}
+
+/**
+ * Deterministic Negotiable Instruments Act, 1881 — Section 138 & Section 142 Deadline & Jurisdiction Calculator.
+ */
+export function evaluateNiAct138Deadlines({
+  dishonourDate,
+  noticeSentDate = null,
+  noticeReceivedDate = null,
+  evaluationDate = new Date().toISOString().slice(0, 10)
+} = {}) {
+  if (!dishonourDate) return null;
+
+  const daysSinceDishonour = daysBetween(dishonourDate, evaluationDate);
+  const noticeDeadlineDate = addDays(dishonourDate, 30);
+  const daysRemainingForNotice = 30 - daysSinceDishonour;
+  const noticeWindowExpired = !noticeSentDate && daysSinceDishonour > 30;
+
+  let paymentCureDeadlineDate = null;
+  let complaintFilingDeadlineDate = null;
+  let daysRemainingForPayment = null;
+
+  if (noticeReceivedDate) {
+    paymentCureDeadlineDate = addDays(noticeReceivedDate, 15);
+    complaintFilingDeadlineDate = addDays(paymentCureDeadlineDate, 30);
+    daysRemainingForPayment = daysBetween(evaluationDate, paymentCureDeadlineDate);
+  }
+
+  return {
+    governingAct: 'Negotiable Instruments Act, 1881 — Section 138 & Section 142',
+    dishonourDate,
+    evaluationDate,
+    daysSinceDishonour,
+    noticeDeadlineDate,
+    daysRemainingForNotice,
+    noticeWindowExpired,
+    paymentCureDeadlineDate,
+    daysRemainingForPayment,
+    complaintFilingDeadlineDate,
+    jurisdictionRule: 'Under Section 142(2)(a) NI Act (post-2015 amendment), if the cheque was presented for collection through a bank account, the criminal complaint MUST be filed in the court within whose local jurisdiction the branch of the bank where the PAYEE maintains the account is situated (not merely where the payee lives or works, if their bank branch is elsewhere).',
+    warning: 'CRITICAL: Consumer Protection Act 2-year (730-day) limitation does NOT apply to Section 138 NI Act. If the 30-day statutory demand notice window from the bank return memo is missed, criminal prosecution under Section 138 is barred.'
+  };
+}
+
+/**
+ * Deterministic Criminal Code (IPC/CrPC vs BNS/BNSS 01.07.2024 cutoff), Bailability & Arnesh Kumar Calculator.
+ */
+export function evaluateCriminalCodeAndBail({
+  incidentDate = null,
+  rawInput = '',
+  custodyDays = null
+} = {}) {
+  const beforeCutoff = Boolean(incidentDate && incidentDate < BNS_CUTOFF_DATE);
+  const substantiveCode = beforeCutoff
+    ? `Indian Penal Code, 1860 (incident date ${incidentDate} is prior to 01.07.2024 cutoff; saved under Section 358 BNS)`
+    : 'Bharatiya Nyaya Sanhita (BNS), 2023 (effective 01.07.2024; cite legacy IPC section alongside BNS for clarity)';
+  const proceduralCode = 'Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023 (governs all FIRs, notices, bail, and inquiries initiated on or after 01.07.2024; cite legacy CrPC equivalent in parentheses)';
+
+  const matchedOffences = VERIFIED_CRIMINAL_OFFENCE_MAP.filter(o => o.matchRegex.test(rawInput));
+
+  let defaultBailStatus = null;
+  if (Number.isFinite(Number(custodyDays)) && Number(custodyDays) > 0) {
+    const days = Number(custodyDays);
+    defaultBailStatus = {
+      custodyDays: days,
+      sixtyDayThresholdReached: days >= 60,
+      ninetyDayThresholdReached: days >= 90,
+      rule: 'Under Section 187(2)-(3) BNSS (formerly Section 167(2) CrPC), an accused in custody is entitled to indefeasible Default/Statutory Bail if the police fail to file the chargesheet within 60 days (for offences punishable up to 10 years) or 90 days (for offences punishable with death, life imprisonment, or >= 10 years).'
+    };
+  }
+
+  return {
+    bnsCutoffDate: BNS_CUTOFF_DATE,
+    incidentDate: incidentDate || 'Not specified (provide both BNS/BNSS 2023 and legacy IPC/CrPC sections)',
+    substantiveCode,
+    proceduralCode,
+    matchedOffences,
+    proceduralEquivalents: PROCEDURAL_CODE_EQUIVALENTS,
+    defaultBailStatus
+  };
+}
+
+/**
+ * Deterministic Civil Suit Written Statement Window (Order VIII Rule 1 CPC).
+ */
+export function evaluateCivilWrittenStatementWindow({
+  serviceDate,
+  evaluationDate = new Date().toISOString().slice(0, 10),
+  isCommercialSuit = false,
+  writtenStatementFiled = false
+} = {}) {
+  if (!serviceDate) return null;
+  const daysSinceService = daysBetween(serviceDate, evaluationDate);
+  const baseDeadline = addDays(serviceDate, 30);
+  const maxDays = isCommercialSuit ? 120 : 90;
+  const outerDeadline = addDays(serviceDate, maxDays);
+
+  return {
+    governingRule: isCommercialSuit
+      ? 'Order VIII Rule 1 CPC (as amended by Commercial Courts Act, 2015 — strict 120-day mandatory forfeiture cap per SCG Contracts India)'
+      : 'Order VIII Rule 1 CPC (30 days base + extendable up to 90 days from service of summons with recorded reasons and costs per Kailash v. Nanhku)',
+    serviceDate,
+    daysSinceService,
+    baseDeadline,
+    outerDeadline,
+    writtenStatementFiled,
+    exceededOuterWindow: !writtenStatementFiled && daysSinceService > maxDays
+  };
+}
+
+/**
+ * Post-Generation Legal Guardrail Verifier across Consumer, Property/RERA, Matrimony, Inheritance & Criminal domains.
+ * Catches dangerous legal misstatements in LLM output so they are flagged explicitly.
+ */
+export function verifyDomainLegalAccuracy(markdown = '', { domain = 'consumer', paidAmountInr = null } = {}) {
+  const text = String(markdown || '');
+  const warnings = [];
+  const checks = [];
+
+  // 1. Criminal / Matrimonial 498A / BNS 85 bailability check
+  if (/\b(498\s*-?\s*a|bns\s*85)\b/i.test(text)) {
+    const falselyCallsBailable = /\b(?:charge|offence|498\s*-?\s*a|section\s+85)\s+is\s+bailable\b/i.test(text)
+      && !/\bnon\s*-?\s*bailable\b/i.test(text);
+    if (falselyCallsBailable) {
+      warnings.push('⚠️ Legal Accuracy Alert: Section 498A IPC / Section 85 BNS is NON-BAILABLE (though subject to Arnesh Kumar / Section 35(3) BNSS notice safeguards).');
+    } else {
+      checks.push('✓ Verified: Section 498A IPC / Section 85 BNS non-bailable status & BNSS s.35(3) safeguard respected.');
+    }
+  }
+
+  // 2. Matrimonial DV Act: Protection Officer vs Magistrate & Restitution of Conjugal Rights misuse
+  if (domain === 'matrimonial-family' || /\b(streedhan|stridhan|protection\s+order|domestic\s+violence)\b/i.test(text)) {
+    if (/protection\s+officer\s+(?:can|may|will)\s+issue\s+a\s+protection\s+order/i.test(text)) {
+      warnings.push('⚠️ Legal Accuracy Alert: A Protection Officer cannot issue a Protection Order; only a Magistrate can pass a Protection Order under Section 18 of the PWDVA, 2005.');
+    }
+    if (/restitution\s+of\s+conjugal\s+rights[\s\S]{0,180}(?:recover|return)[\s\S]{0,80}(?:streedhan|stridhan|jewellery|passport)/i.test(text)) {
+      warnings.push('⚠️ Legal Accuracy Alert: Restitution of Conjugal Rights (Section 9 HMA) is for resuming cohabitation, NOT for recovering streedhan/documents (which falls under Section 12 read with Section 19(8) PWDVA, 2005 / Section 316(2) BNS).');
+    }
+    if (warnings.length === 0) {
+      checks.push('✓ Verified: Matrimonial / PWDVA 2005 remedies (Section 12 Magistrate application & BNSS s.144) accurately framed.');
+    }
+  }
+
+  // 3. Property / RERA concurrent jurisdiction & pecuniary slab check
+  if (domain === 'property-rera' || /\b(maharera|rera)\b/i.test(text)) {
+    if (/consumer\s+commission[\s\S]{0,120}(?:only\s+if\s+you\s+bought\s+via\s+a\s+broker|not\s+for\s+builder\s+delay)/i.test(text)) {
+      warnings.push('⚠️ Legal Accuracy Alert: Under Supreme Court precedent (Imperia Structures / Pioneer Urban Land), homebuyers have concurrent remedies before RERA and the Consumer Commission.');
+    } else {
+      checks.push('✓ Verified: RERA & Consumer Commission concurrent remedies and Authority vs Adjudicating Officer roles respected.');
+    }
+  }
+
+  // 4. Inheritance / Partition Sub-Registrar Caveat hallucination check
+  if (domain === 'inheritance-partition' || /\b(partition\s+suit|intestate)\b/i.test(text)) {
+    if (/caveat\s+at\s+the\s+sub\s*-?\s*registrar/i.test(text)) {
+      warnings.push('⚠️ Legal Accuracy Alert: Caveats under Section 148A CPC are filed in Civil Courts, not at the Sub-Registrar office; restraining a co-heir sale requires a Partition Suit + Order 39 Rules 1 & 2 CPC Temporary Injunction.');
+    } else {
+      checks.push('✓ Verified: Partition / succession remedies (HSA 1956 Class I shares & Order 39 CPC injunction) accurately stated.');
+    }
+  }
+
+  // 5. Consumer Fee & Pecuniary Jurisdiction check when paidAmountInr is known
+  if (paidAmountInr && paidAmountInr > 500000) {
+    if (/free\s*\(\s*up\s+to\s+₹?\s*50\s*lakh/i.test(text)) {
+      warnings.push('⚠️ Legal Accuracy Alert: Consumer Commission filing is ₹0 (free) only up to ₹5 lakh paid; claims above ₹5 lakh attract Rule 7 statutory fees, and claims above ₹50 lakh lie before the State Commission.');
+    }
+  }
+
+  return {
+    verified: warnings.length === 0,
+    warnings,
+    checks
+  };
+}

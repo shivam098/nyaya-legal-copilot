@@ -22,6 +22,10 @@ test('matchVerifiedLegalReferences matches traffic challans, consumer fees, OPC 
 
   const property = matchVerifiedLegalReferences('Builder delayed flat possession and marriage dispute', 'messy-dump-intake');
   assert.equal(property[0].id, 'property-rera-matrimony-labour');
+
+  const criminal = matchVerifiedLegalReferences('CAW Cell notice and 498A FIR arrest threat at the police station in Karnataka', 'criminal-advisor');
+  assert.ok(criminal.some(r => r.id === 'criminal-bns-bnss-and-ni138'));
+  assert.ok(!criminal.some(r => r.id === 'mv-act-traffic-challans'));
 });
 
 test('searchOfficialLegalWeb parses HTML results and degrades gracefully on failure', async () => {

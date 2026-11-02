@@ -7,7 +7,7 @@
 export const VERIFIED_LEGAL_REFERENCES = [
   {
     id: 'mv-act-traffic-challans',
-    keywords: ['traffic', 'challan', 'helmet', 'fine', 'dl', 'licence', 'license', 'parivahan', 'vehicle', 'speeding', 'overspeeding', 'signal', 'red light', 'seatbelt', 'seat belt', 'triple riding', 'drunk driving', 'insurance', 'pollution', 'puc', 'karnataka', 'bengaluru', 'bangalore', 'police'],
+    keywords: ['traffic challan', 'e-challan', 'echallan', 'helmet', 'seatbelt', 'seat belt', 'triple riding', 'drunk driving', 'parivahan', 'overspeeding', 'red light', 'motor vehicles act', 'driving licence', 'driving license', 'vcourts', 'puc'],
     title: 'Motor Vehicles Act, 1988 (as amended by MV Amendment Act, 2019) & e-Challan Portals',
     summary: `• Central Statutory Fine Rates (Motor Vehicles Act, 1988 as amended in 2019):
   - Riding without helmet (Section 194D): ₹1,000 fine and/or licence disqualification for 3 months.
@@ -30,42 +30,43 @@ export const VERIFIED_LEGAL_REFERENCES = [
     summary: `• Low-Headache Pre-Litigation Escalation (Free, No Lawyer Required):
   - National Consumer Helpline (NCH / INGRAM): https://consumerhelpline.gov.in | Toll-Free Call: 1915 | WhatsApp: 8800001915. Routes complaints directly to the brand's official convergence desk.
   - For warranty/service-centre refusals claiming "physical damage": demand a written Job Sheet / Inspection Report stating whether internal diagnostics were run, escalate to the brand's Customer Relations / Grievance Officer with invoice + clear photos, and file an NCH docket before considering court.
-• Official Consumer Commission Filing Fee Table (Rule 7, Consumer Protection (Consumer Disputes Redressal Commissions) Rules, 2020):
-  - Value of goods/services paid up to ₹5 lakh: ₹0 (NIL / Free filing).
+• Official Consumer Commission Filing Fee Table (Rule 7, Consumer Protection (Consumer Disputes Redressal Commissions) Rules, 2020 — based on consideration actually paid):
+  - Value of goods/services paid up to ₹5 lakh: ₹0 (NIL / Free filing — NEVER say free up to ₹50 lakh).
   - Above ₹5 lakh up to ₹10 lakh: ₹200.
   - Above ₹10 lakh up to ₹20 lakh: ₹400.
   - Above ₹20 lakh up to ₹50 lakh: ₹1,000.
-  - Above ₹50 lakh up to ₹1 crore: ₹2,000.
-• Pecuniary Jurisdiction (2021 Revised Rules, based on value actually paid, not compensation claimed):
-  - District Commission: Up to ₹50 lakh.
-  - State Commission: Above ₹50 lakh to ₹2 crore.
-  - National Commission (NCDRC): Above ₹2 crore.
+  - Above ₹50 lakh up to ₹1 crore: ₹2,000 (filed in State Commission).
+  - Above ₹1 crore up to ₹2 crore: ₹2,500 (filed in State Commission).
+• Pecuniary Jurisdiction (2021 Revised Rules, based strictly on value actually paid, not compensation claimed):
+  - District Commission: Up to ₹50 lakh paid.
+  - State Commission (SCDRC): Above ₹50 lakh to ₹2 crore paid (e.g., a ₹72 lakh flat or ₹1.85 crore hospital claim lies in the State Commission, NOT District Commission).
+  - National Commission (NCDRC): Above ₹2 crore paid.
 • Statutory Limitation & Timelines:
-  - Limitation to file complaint (CPA s.69): 2 years from cause of action (condonable for sufficient cause).
-  - Opposite Party Written Version cap (CPA s.38(2)(a)): 30 days + max 15 days extension (45 days strict ceiling per Constitution Bench in New India Assurance v. Hilli Multipurpose Cold Storage).
+  - Limitation to file complaint (CPA s.69): 2 years from cause of action (condonable under s.69(2) for sufficient cause).
+  - Opposite Party Written Version cap (CPA s.38(2)(a)): 30 days + max 15 days extension (45 days strict non-extendable ceiling per 5-Judge Constitution Bench in New India Assurance v. Hilli Multipurpose Cold Storage, (2020) 5 SCC 757).
+  - Electronic Evidence: Section 63 of the Bharatiya Sakshya Adhiniyam (BSA), 2023 (in pari materia with repealed Section 65B of the Indian Evidence Act; per Arjun Panditrao Khotkar (2020) 7 SCC 1, citing the old section number is a curable procedural irregularity if substantive device/control statements are present).
   - Online Filing Portal: https://e-jagriti.gov.in (e-Jagriti / e-Daakhil).`
   },
   {
     id: 'companies-act-opc-llp-pvt-ltd',
-    keywords: ['company', 'incorporation', 'opc', 'one person company', 'llp', 'private limited', 'pvt ltd', 'sole proprietorship', 'founder', 'solo founder', 'roc', 'mca', 'spice', 'inc-20a', 'adt-1', 'aoc-4', 'mgt-7', 'dir-3', 'resubmission', 'startup'],
+    keywords: ['company', 'incorporation', 'opc', 'one person company', 'llp', 'private limited', 'pvt ltd', 'sole proprietorship', 'founder', 'solo founder', 'roc', 'mca', 'spice', 'inc-20a', 'adt-1', 'aoc-4', 'mgt-7', 'dir-3', 'resubmission', 'startup', '10a', '248'],
     title: 'Companies Act, 2013 & LLP Act, 2008 — Verified Structure & Compliance Rules (MCA21)',
     summary: `• Solo Founder Entity Options (India):
   - Sole Proprietorship: 1 owner, no separate legal entity (unlimited personal liability), minimal setup (GST/Udyam/Shop & Establishment/current bank account as applicable), lowest annual compliance.
   - One Person Company (OPC — Section 2(62) Companies Act, 2013): 1 shareholder + 1 nominee (no second co-founder required), limited liability. IMPORTANT 2021 RULE UPDATE: Under the Companies (Incorporation) Second Amendment Rules, 2021 (effective 1 April 2021), the old mandatory conversion thresholds (₹50 lakh paid-up capital / ₹2 crore turnover) were REMOVED. An OPC has no compulsory conversion ceiling and can convert voluntarily into a Pvt Ltd at any time.
-  - Private Limited Company (Pvt Ltd): Minimum 2 shareholders and 2 directors (at least 1 resident in India for 120+ days), separate legal entity, standard vehicle for equity investors (VC/angel) and employee stock options (ESOPs).
+  - Private Limited Company (Pvt Ltd): Minimum 2 shareholders and 2 directors (at least 1 resident in India for 120+ days), separate legal entity, standard vehicle for equity investors (VC/angel) and employee stock options (ESOPs — Employee Stock Option Plans).
   - Limited Liability Partnership (LLP): Requires minimum 2 partners (cannot be formed solo without a second partner).
 • Statutory Audit Rules:
   - Pvt Ltd & OPC: Statutory audit by a Chartered Accountant (CA) is mandatory every financial year regardless of turnover.
   - LLP: Statutory audit is required only if annual turnover exceeds ₹40 lakh OR partner contribution exceeds ₹25 lakh.
-• Key Post-Incorporation Filings (Companies):
-  - Form INC-20A (Commencement of Business declaration): within 180 days of incorporation.
-  - Form ADT-1 (First Auditor appointment): within 30 days of incorporation (by Board) / 90 days (at EGM).
-  - Annual Filings: Form AOC-4 (financial statements, within 30 days of AGM; 180 days from FY end for OPC) & Form MGT-7 / MGT-7A (annual return, within 60 days of AGM).
+• Key Post-Incorporation Filings & Section 10A(2) / 248(1)(d) Rescue:
+  - Form INC-20A (Commencement of Business declaration under Section 10A): within 180 days of incorporation. If missed and RoC issues a Section 10A(2) / 248(1)(d) Show Cause Notice, immediately file belated INC-20A with additional fee once subscription money is credited (which removes the s.248(1)(d) strike-off ground), reply to SCN with SRN, and apply for civil penalty adjudication under Section 454 (Form ADJ), NOT criminal compounding under Section 441.
+  - Form ADT-1 (First Auditor appointment): within 30 days of incorporation.
   - Official Portal: https://www.mca.gov.in`
   },
   {
     id: 'banking-upi-cyber-insurance-ombudsman',
-    keywords: ['bank', 'upi', 'fraud', 'scam', 'cyber', 'chargeback', 'credit card', 'debit card', 'loan', 'nbfc', 'rbi', 'ombudsman', 'insurance', 'claim rejected', 'irdai', 'bima bharosa', 'flight', 'airline', 'airsewa'],
+    keywords: ['bank', 'upi', 'fraud', 'scam', 'cyber', 'chargeback', 'credit card', 'debit card', 'loan', 'nbfc', 'rbi', 'ombudsman', 'insurance', 'claim rejected', 'irdai', 'bima bharosa', 'flight', 'airline', 'airsewa', '1930'],
     title: 'RBI Integrated Ombudsman, Cyber Fraud (1930) & Insurance Ombudsman Portals',
     summary: `• Unauthorized UPI / Bank / Card Fraud:
   - Immediately call 1930 (National Cyber Crime Helpline) and report at https://cybercrime.gov.in to freeze the money trail.
@@ -79,16 +80,41 @@ export const VERIFIED_LEGAL_REFERENCES = [
   },
   {
     id: 'property-rera-matrimony-labour',
-    keywords: ['property', 'builder', 'flat', 'rera', 'landlord', 'tenant', 'rent', 'deposit', 'eviction', 'divorce', 'matrimony', 'marriage', '498a', 'domestic violence', 'dv', 'maintenance', 'streedhan', 'alimony', 'salary', 'employer', 'pf', 'gratuity'],
-    title: 'Property / RERA, Matrimonial / Family & Labour Conciliation Routes',
-    summary: `• Property, Builder Delay & Tenancy:
-  - Registered Builder Delay / Defect: State RERA Conciliation Forum & RERA Complaint under Section 18/31 of RERA Act, 2016 (or Consumer Commission for homebuyers, as remedies are concurrent per Imperia Structures / Pioneer Urban Land).
-  - Landlord / Tenant Security Deposit or Eviction: Check written Rent Agreement notice/lock-in terms, send a documented written notice/email, and use State Rent Authority / Civil Court / Mediation (not Consumer Commission unless a paid broker/platform service deficiency is involved).
-• Matrimonial & Family Disputes:
-  - Immediate safety / domestic violence: Emergency 112, Women Helpline 181, local Protection Officer or One Stop Centre (Sakhi) under Protection of Women from Domestic Violence Act, 2005.
-  - Pre-litigation / Responding to Notice or CAW Cell: Preserve chat/financial records, attend Crime Against Women (CAW) / Family Counselling Cell or Mediation Centre calmly with written chronology, and respond factually to any legal notice before escalating.
-• Unpaid Salary / Labour / MSME Dues:
-  - Ministry of Labour SAMADHAN Portal (https://samadhan.labour.gov.in) for workman/conciliation disputes; MSME Samadhaan (https://samadhaan.msme.gov.in) for Udyam-registered suppliers.`
+    keywords: ['property', 'builder', 'flat', 'rera', 'maharera', 'possession', 'occupancy certificate', 'allotment', 'landlord', 'tenant', 'rent', 'deposit', 'eviction', 'divorce', 'matrimony', 'marriage', '498a', 'domestic violence', 'dv', 'pwdva', 'maintenance', 'streedhan', 'stridhan', 'alimony', 'in-laws', 'intestate', 'partition', 'ancestral', 'legal heir', 'succession', 'salary', 'employer', 'pf', 'gratuity'],
+    title: 'Property / RERA, Matrimonial / PWDVA 2005, Inheritance / Partition & Labour Routes',
+    summary: `• Property, Builder Delay & RERA vs Consumer Commission (Authoritative Law):
+  - Concurrent Remedies: Under Supreme Court binding precedent (Imperia Structures Ltd. v. Anil Patni, (2020) 10 SCC 783; Pioneer Urban Land), a homebuyer is a consumer and remedies under the RERA Act, 2016 and the Consumer Protection Act, 2019 are CONCURRENT (NEVER claim Consumer Commission is only for broker/platform disputes).
+  - RERA Authority vs Adjudicating Officer Split (Newtech Promoters v. State of UP, (2021) 18 SCC 1): Under Section 18(1) RERA Act (note: Section 18(1) has clauses (a) and (b) and a proviso for monthly delay interest; there is NO "Section 18(1)(d)"), if the allottee stays in the project and seeks possession + statutory delay interest + restraint on unlawful cancellation/escalation under Sections 18(1) & 31 (with interim stay under Section 36), jurisdiction lies with the Regulatory Authority (e.g., MahaRERA Authority / Conciliation Forum), whereas standalone compensation claims lie before the Adjudicating Officer.
+  - Pecuniary Note for Consumer Commission: If consideration paid is ₹72 lakh (between ₹50 lakh and ₹2 crore), the Consumer complaint lies before the State Commission (SCDRC) with a ₹2,000 Rule 7 filing fee (NOT District Commission and NOT ₹0 fee).
+• Intestate Succession, Ancestral Property & Partition Suits (Hindu Succession Act, 1956 & CPC):
+  - Equal Class I Heir Share: When a Hindu male dies intestate (without a Will), his self-acquired property devolves equally under Section 8 HSA 1956 upon Class I legal heirs (widow/mother, sons, and daughters — a married daughter has the exact same equal share as a son; under Section 6 HSA as amended in 2005, daughters are also equal coparceners in joint family property).
+  - How to Stop an Unauthorized Sale by a Co-Heir: Send a written objection/notice to the co-heir and give written intimation with the Death Certificate to the banks holding FDs/accounts (freezing unilateral withdrawal) and local Sub-Registrar. To legally block a property transfer, file a Suit for Partition, Separate Possession & Rendition of Rental Accounts in the Civil Court along with an urgent Application for Temporary Injunction against alienation under Order 39 Rules 1 & 2 CPC (which also triggers Section 52 Transfer of Property Act lis pendens). NEVER tell a user to file a "Caveat at the Sub-Registrar's office for ₹100–500" — a Caveat under Section 148A CPC is filed in a Court (valid for 90 days) against ex-parte court orders, not at a Sub-Registrar office.
+• Matrimonial Lockout, Streedhan & Domestic Violence (PWDVA 2005 & BNSS 2023):
+  - Single-Window Remedy for Locked-Out Wife: Under Section 12 of the Protection of Women from Domestic Violence Act, 2005 (PWDVA), an aggrieved woman can file ONE combined application before the Judicial Magistrate seeking:
+    1. Protection Order (Section 18) — issued ONLY by the Magistrate (a Protection Officer CANNOT issue a Protection Order; the Protection Officer records the Domestic Incident Report (DIR) and assists the woman in filing before the Magistrate).
+    2. Residence Order (Section 19) — right to reside in the shared household (regardless of whether husband or in-laws own it) OR direction to husband to pay rent for alternative accommodation.
+    3. Return of Streedhan, Passport & Certificates (Section 19(8)) — Magistrate can direct the respondent to return possession of streedhan (jewellery), passport, educational certificates, and child's birth certificate. NEVER advise filing "Restitution of Conjugal Rights (Section 9 HMA)" to recover streedhan or emergency shelter.
+    4. Monetary Relief & Interim Maintenance (Section 20 & Section 23) + Temporary Custody of Child (Section 21).
+  - Summary Maintenance: Filed under Section 144 of the Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023 (which replaced Section 125 CrPC from 1 July 2024).
+  - Emergency Helplines: 112 (Emergency), 181 (Women Helpline), One Stop Centre (Sakhi), or District Legal Services Authority (DLSA — free legal aid lawyer for women under Section 12 Legal Services Authorities Act).`
+  },
+  {
+    id: 'criminal-bns-bnss-and-ni138',
+    keywords: ['fir', 'zero fir', 'police station', 'arrest', 'bail', 'anticipatory bail', '498a', 'bns', 'bnss', 'bsa', 'caw cell', 'mahila thana', '41a', 'arnesh kumar', 'quash', 'quashing', 'chargesheet', 'extortion', 'cheque', 'dishonour', 'dishonoured', 'bounce', 'bounced', '138', 'return memo', 'insufficient funds'],
+    title: 'Criminal Procedure (BNS / BNSS / BSA 2023), 498A / Arnesh Kumar Arrest Shield & NI Act s.138 Cheque Bounce Rules',
+    summary: `• BNS / BNSS / BSA 2023 vs IPC / CrPC (1 July 2024 Cutoff):
+  - Offences committed on/after 01.07.2024 are governed by the Bharatiya Nyaya Sanhita (BNS), 2023; offences prior to 01.07.2024 remain under IPC (saved by s.358 BNS). Current police inquiries, notices, bail, and court procedures follow the Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023. Always cite both the new BNS/BNSS section and the old IPC/CrPC section for clarity.
+• CAW Cell / Mahila Thana & Section 85 BNS (formerly Section 498A IPC) Defence:
+  - NON-BAILABLE Status: Section 85 BNS / Section 498A IPC is Cognizable and NON-BAILABLE (punishable up to 3 years). NEVER state that Section 498A / Section 85 BNS is "bailable".
+  - Mandatory Arrest Protection (Arnesh Kumar & Section 35(3) BNSS): Because the maximum punishment is <= 7 years (3 years), the Supreme Court judgment in Arnesh Kumar v. State of Bihar, (2014) 8 SCC 273 and Section 35(3) BNSS (formerly Section 41A CrPC) strictly prohibit automatic arrest. Police must issue a Notice of Appearance under Section 35(3) BNSS, and if the accused appears and cooperates, police cannot arrest without recording specific written reasons under s.35(1)(b) BNSS and obtaining Magistrate scrutiny.
+  - CAW Cell Appearance: A Crime Against Women (CAW) Cell / Family Counselling call is a pre-FIR reconciliation/mediation step, NOT an arrest warrant. Attend calmly (or request virtual/date accommodation for elderly parents), submit a concise written factual chronology, and preserve WhatsApp/written proof of any unlawful lump-sum money threat (which supports defence and Anticipatory Bail under Section 482 BNSS / old s.438 CrPC). Do NOT rush to file an aggressive counter-FIR before attending the counselling session, as premature counter-FIRs escalate hostility and derail mediation.
+• Victim FIR Registration & Refusal Escalation:
+  - Zero FIR / e-FIR (Section 173(1) BNSS, old s.154 CrPC) -> Written representation to SP/DCP by post (Section 173(4) BNSS, old s.154(3) CrPC) -> Application before Judicial Magistrate for investigation direction (Section 175(3) BNSS, old s.156(3) CrPC, supported by sworn affidavit per Priyanka Srivastava).
+• Negotiable Instruments Act, 1881 — Section 138 Cheque Bounce (Strict Statutory Clock):
+  - Step 1 (Demand Notice): Must be dispatched within 30 DAYS of receiving the bank return memo (Section 138 Proviso (b)). Missing this 30-day window permanently bars criminal prosecution on that presentation (unless the cheque is still within its 3-month validity and can be re-presented).
+  - Step 2 (Drawer Cure Period): Drawer gets 15 DAYS from receipt of the notice to make payment (Section 138 Proviso (c)).
+  - Step 3 (Magistrate Complaint): Must be filed within 30 DAYS (1 month) after the 15-day cure period expires (Section 142(1)(b)).
+  - Territorial Jurisdiction (Section 142(2)(a) NI Act): For a cheque deposited for collection through a bank account, the complaint MUST be filed in the court having jurisdiction over the BANK BRANCH WHERE THE PAYEE MAINTAINS THEIR ACCOUNT (ask where the payee's bank branch is located rather than assuming their home/factory city).`
   }
 ];
 
@@ -129,6 +155,8 @@ function stripHtmlTags(html = '') {
     .trim();
 }
 
+const BLOCKED_WEB_DOMAINS = /(?:github\.com|scribd\.com|financialfilings\.com|pinterest\.|facebook\.com|instagram\.com|youtube\.com|wikipedia\.org)/i;
+
 /**
  * Performs a fast, timeout-bounded live web search prioritizing Indian government/legal sources.
  * Gracefully returns [] if offline, disabled, or running inside mocked test environments.
@@ -138,10 +166,11 @@ export async function searchOfficialLegalWeb(rawQuery = '', { timeoutMs = 2800, 
     .split('ATTACHED FOLDER / TEXT DOCUMENTS:')[0]
     .replace(/User Role:.*?\n/gi, '')
     .replace(/Need Type:.*?\n/gi, '')
+    .replace(/Case Sub-Track:.*?\n/gi, '')
     .replace(/Raw Story \/ WhatsApp Chat:/gi, '')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 180);
+    .slice(0, 120);
 
   if (!cleanQuery || cleanQuery.length < 8) return [];
   if (process.env.NYAYA_DISABLE_WEB_SEARCH === '1' || process.env.LLM_PROVIDER === 'openai') {
@@ -149,7 +178,7 @@ export async function searchOfficialLegalWeb(rawQuery = '', { timeoutMs = 2800, 
   }
 
   try {
-    const searchTerms = `${cleanQuery} India law official gov.in`;
+    const searchTerms = `${cleanQuery} India law statute official gov.in OR nic.in OR indiankanoon.org`;
     const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchTerms)}`;
     const res = await fetchImpl(url, {
       method: 'GET',
@@ -174,6 +203,7 @@ export async function searchOfficialLegalWeb(rawQuery = '', { timeoutMs = 2800, 
           // keep original
         }
       }
+      if (BLOCKED_WEB_DOMAINS.test(href)) continue;
       const title = stripHtmlTags(match[2]);
       const snippet = stripHtmlTags(match[3]);
       if (title && snippet) {
