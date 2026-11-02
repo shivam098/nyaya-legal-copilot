@@ -380,4 +380,20 @@ test('profile signup/login, Gmail quick login, Rs 500 monthly trial cap, user is
   assert.ok(hopperSignup.userQuota.fpIpSpendInr > 0);
   assert.equal(hopperSignup.userQuota.sharedFromDeviceOrIp, true);
   assert.equal(hopperSignup.userQuota.monthlySpendInr, hopperSignup.userQuota.fpIpSpendInr);
+
+  // 5. Advocate Mode (lawyer-workbench): Tofan Singh / Tufan Singh NDPS s.67 + Bare Act dossier & links in one place
+  const { result: advRes } = await analyze('analyze-stream', {
+    userId: 'synthetic-advocate-tofan-singh',
+    door: 'lawyer-workbench',
+    mode: 'lawyer-research-bench',
+    caseState: {
+      researchTask: 'judgment-and-bare-act',
+      proceedingStage: 'bail'
+    },
+    rawInput: 'Advocate Research Mode: judgment-and-bare-act\nProceeding Stage: bail\nQuery / Citation / Issue:\nNeed Tufan Singh judgment on NDPS Section 67 confessional statement, Bare Act provisions, and links for bail argument.'
+  });
+  assert.ok(advRes.engineResult.advocateResearch);
+  assert.equal(advRes.engineResult.advocateResearch.matchedJudgments[0].id, 'tofan-singh-ndps-s67');
+  assert.equal(advRes.engineResult.advocateResearch.matchedJudgments[0].links.indianKanoonDocUrl, 'https://indiankanoon.org/doc/143202244/');
+  assert.ok(advRes.engineResult.advocateResearch.directLinks.some(l => l.url.includes('indiacode.nic.in')));
 });

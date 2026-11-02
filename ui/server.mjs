@@ -34,6 +34,10 @@ import {
   buildGroundedLegalContext
 } from '../src/engine/legal-web-search.mjs';
 import {
+  matchLandmarkJudgmentsAndBareActs,
+  buildAdvocateResearchContext
+} from '../src/engine/lawyer-research.mjs';
+import {
   listSessionsForUser,
   getSessionWithTurnsForUser,
   saveOrAppendSessionTurn,
@@ -1125,9 +1129,25 @@ const server = http.createServer(async (req, res) => {
           `${userQuestionOnly || effectiveRawInput} ${inferredCaseState.subTrack || ''} ${engineResult.domainInfo?.domain || ''} ${priorTurnsContext.slice(0, 600)}`,
           mode
         );
+        const shouldRunAdvocateBench = (
+          door === 'lawyer-workbench' ||
+          mode === 'lawyer-research-bench' ||
+          matchLandmarkJudgmentsAndBareActs(`${userQuestionOnly || effectiveRawInput} ${priorTurnsContext.slice(0, 600)}`).length > 0
+        );
+        const advocateResearch = shouldRunAdvocateBench
+          ? await buildAdvocateResearchContext(`${userQuestionOnly || effectiveRawInput} ${priorTurnsContext.slice(0, 600)}`)
+          : null;
+
         engineResult.retrievedSources = matchedSources;
         engineResult.verifiedReferences = groundedLegal.verifiedRefs.map(r => r.title);
         engineResult.liveWebResults = groundedLegal.webResults;
+        if (advocateResearch) {
+          engineResult.advocateResearch = {
+            matchedJudgments: advocateResearch.matchedJudgments,
+            liveJudgments: advocateResearch.liveJudgments,
+            directLinks: advocateResearch.directLinks
+          };
+        }
 
         const systemPrompt = buildAnalysisSystemPrompt({ mode, isFollowUpTurn });
 
@@ -1146,7 +1166,7 @@ DETERMINISTIC RULE ENGINE OUTPUT:
 ${JSON.stringify(engineResult, null, 2)}
 
 === VERIFIED INDIAN STATUTORY & OFFICIAL PORTAL REFERENCE PACK + LIVE WEB LOOKUP ===
-${groundedLegal.contextBlock}
+${groundedLegal.contextBlock}${advocateResearch ? `\n\n${advocateResearch.contextBlock}` : ''}
 
 === CASE DOCUMENT DIGEST & IMAGE TRANSCRIPTION (AI-extracted; check against source) ===
 ${activeFolderDigest || '(No folder digest — see raw record below)'}
@@ -1301,8 +1321,24 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
 
       const engineResult = computeCaseEngine(inferredCaseState, { door, mode, rawInput: effectiveRawInput });
       const groundedLegal = await buildGroundedLegalContext(effectiveRawInput, mode);
+      const shouldRunAdvocateBench = (
+        door === 'lawyer-workbench' ||
+        mode === 'lawyer-research-bench' ||
+        matchLandmarkJudgmentsAndBareActs(effectiveRawInput).length > 0
+      );
+      const advocateResearch = shouldRunAdvocateBench
+        ? await buildAdvocateResearchContext(effectiveRawInput)
+        : null;
+
       engineResult.verifiedReferences = groundedLegal.verifiedRefs.map(r => r.title);
       engineResult.liveWebResults = groundedLegal.webResults;
+      if (advocateResearch) {
+        engineResult.advocateResearch = {
+          matchedJudgments: advocateResearch.matchedJudgments,
+          liveJudgments: advocateResearch.liveJudgments,
+          directLinks: advocateResearch.directLinks
+        };
+      }
       const systemPrompt = buildAnalysisSystemPrompt({
         mode,
         isFollowUpTurn: Boolean(existingSession?.turns?.length)
@@ -1320,7 +1356,7 @@ DETERMINISTIC RULE ENGINE OUTPUT:
 ${JSON.stringify(engineResult, null, 2)}
 
 === VERIFIED INDIAN STATUTORY & OFFICIAL PORTAL REFERENCE PACK + LIVE WEB LOOKUP ===
-${groundedLegal.contextBlock}${priorTurnsContext}
+${groundedLegal.contextBlock}${advocateResearch ? `\n\n${advocateResearch.contextBlock}` : ''}${priorTurnsContext}
 
 CURRENT USER UPDATE / QUESTION / RAW WHATSAPP CHAT / DOCUMENTS:
 ${effectiveRawInput || '(See attached images and Case State above)'}${imageSummary}`;

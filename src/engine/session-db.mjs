@@ -268,6 +268,9 @@ export function deriveSessionTitle({ title, door, caseState, rawInput }) {
   if (door === 'company') {
     return snippet ? `[Company] ${snippet}` : `Company / RoC Advisory`;
   }
+  if (door === 'lawyer-workbench' || caseState?.researchTask) {
+    return snippet ? `[Advocate Bench] ${snippet}` : `Advocate Judgment & Bare Act Dossier`;
+  }
   const roleLabel = caseState?.role === 'defender' ? 'Defend Claim' : 'Dispute';
   return snippet ? `[${roleLabel}] ${snippet}` : `${roleLabel} Session`;
 }
