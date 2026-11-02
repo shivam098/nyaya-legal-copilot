@@ -734,9 +734,13 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
       };
 
       const submitTurnFeedback = async (ratingValue, noteText = turnFeedbackNote) => {
-        const lastTurn = activeSession?.turns?.[activeSession.turns.length - 1];
-        if (!lastTurn?.id) return;
         setTurnRating(ratingValue);
+        const lastTurn = activeSession?.turns?.[activeSession.turns.length - 1];
+        if (!lastTurn?.id) {
+          setFeedbackSavedMsg(ratingValue === 1 ? '✓ Marked helpful' : '✓ Feedback noted');
+          setTimeout(() => setFeedbackSavedMsg(''), 2500);
+          return;
+        }
         try {
           const res = await fetch(`/api/turns/${lastTurn.id}/feedback`, {
             method: 'POST',
