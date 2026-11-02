@@ -39,6 +39,10 @@ import {
   buildAdvocateResearchContext
 } from '../src/engine/lawyer-research.mjs';
 import {
+  isSupportedAudioFile,
+  transcribeAudioBuffer
+} from '../src/engine/audio-transcriber.mjs';
+import {
   listSessionsForUser,
   getSessionWithTurnsForUser,
   saveOrAppendSessionTurn,
@@ -417,6 +421,20 @@ async function scanLocalFolder(folderInput) {
         textFiles.push(...zipDocs);
       } catch {
         skipped.push(relPath);
+      }
+    } else if (isSupportedAudioFile(fullPath)) {
+      try {
+        const buf = fs.readFileSync(fullPath);
+        const audioRes = await transcribeAudioBuffer(buf, relPath);
+        if (audioRes?.formattedContent) {
+          textFiles.push({
+            name: `${relPath} [Transcribed Audio — Whisper ${audioRes.model}]`,
+            size: fileStat.size,
+            content: audioRes.formattedContent
+          });
+        }
+      } catch {
+        skipped.push(`${relPath} (audio transcription failed)`);
       }
     } else if (IMAGE_MIME_MAP[ext]) {
       try {
@@ -867,6 +885,26 @@ const server = http.createServer(async (req, res) => {
       if (ext === '.zip') {
         const docs = extractZipBufferTexts(buf, name);
         sendJson(res, 200, { docs });
+        return;
+      }
+      if (isSupportedAudioFile(name)) {
+        try {
+          const audioRes = await transcribeAudioBuffer(buf, name, { language: body.language || null });
+          sendJson(res, 200, {
+            docs: [{
+              name: `${name} [Transcribed Audio · Whisper ${audioRes.model}]`,
+              size: buf.length,
+              content: audioRes.formattedContent
+            }],
+            transcript: audioRes.romanText || audioRes.rawText,
+            rawTranscript: audioRes.rawText,
+            detectedLanguage: audioRes.detectedLanguage,
+            durationSec: audioRes.durationSec,
+            model: audioRes.model
+          });
+        } catch (audioErr) {
+          sendJson(res, 500, { error: audioErr.message || 'Audio transcription failed' });
+        }
         return;
       }
       sendJson(res, 200, { docs: [] });

@@ -396,4 +396,18 @@ test('profile signup/login, Gmail quick login, Rs 500 monthly trial cap, user is
   assert.equal(advRes.engineResult.advocateResearch.matchedJudgments[0].id, 'tofan-singh-ndps-s67');
   assert.equal(advRes.engineResult.advocateResearch.matchedJudgments[0].links.indianKanoonDocUrl, 'https://indiankanoon.org/doc/143202244/');
   assert.ok(advRes.engineResult.advocateResearch.directLinks.some(l => l.url.includes('indiacode.nic.in')));
+
+  // 6. Voice recording upload (/api/extract-file with .opus / .mp3 / .wav audio)
+  const audioExtractRes = await (await fetch(`${baseUrl}/api/extract-file`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: 'PTT-20261102-WA0001.opus',
+      base64: Buffer.from('HINDI_TEST').toString('base64')
+    })
+  })).json();
+  assert.equal(audioExtractRes.model, 'large-v3-turbo');
+  assert.match(audioExtractRes.transcript, /mujhe/i);
+  assert.equal(audioExtractRes.docs.length, 1);
+  assert.match(audioExtractRes.docs[0].name, /Transcribed Audio · Whisper large-v3-turbo/);
 });
