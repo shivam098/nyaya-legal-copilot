@@ -43,7 +43,8 @@ import {
   transcribeAudioBuffer
 } from '../src/engine/audio-transcriber.mjs';
 import {
-  runPractitionerIntelligence
+  runPractitionerIntelligence,
+  parseAndStripDynamicIntakeMeta
 } from '../src/engine/practitioner-intelligence.mjs';
 import {
   listAllPractitionerLessons,
@@ -528,6 +529,7 @@ function computeCaseEngine(
     door = '',
     mode = '',
     rawInput = '',
+    priorTurns = [],
     isFollowUpTurn = false,
     hasAttachments = false,
     forceFullRoadmap = false
@@ -598,6 +600,7 @@ function computeCaseEngine(
 
   const practitionerIntelligence = runPractitionerIntelligence({
     rawInput,
+    priorTurns,
     domainInfo,
     paidAmountInr,
     caseState,
@@ -1134,6 +1137,7 @@ const server = http.createServer(async (req, res) => {
           door: effectiveDoor,
           mode: effectiveMode,
           rawInput: effectiveRawInput,
+          priorTurns: existingSession?.turns || [],
           isFollowUpTurn,
           hasAttachments: Boolean(hasNewFolderUpload || hasImages || existingSession?.folderDigest),
           forceFullRoadmap: Boolean(body.forceFullRoadmap || inferredCaseState.forceFullRoadmap)
@@ -1385,8 +1389,21 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
           }
         });
 
+        const parsedMeta = parseAndStripDynamicIntakeMeta(llmRes.content);
+        const finalAdviceMarkdown = parsedMeta.cleanMarkdown;
+        if (parsedMeta.dynamicMeta?.questions?.length > 0 && engineResult.practitionerIntelligence?.factProbing) {
+          const existingQTexts = new Set(
+            (engineResult.practitionerIntelligence.factProbing.clarifyingQuestions || []).map(q => q.question.toLowerCase())
+          );
+          const mergedQuestions = [
+            ...(engineResult.practitionerIntelligence.factProbing.clarifyingQuestions || []),
+            ...parsedMeta.dynamicMeta.questions.filter(q => !existingQTexts.has(q.question.toLowerCase()))
+          ].slice(0, 4);
+          engineResult.practitionerIntelligence.factProbing.clarifyingQuestions = mergedQuestions;
+        }
+
         // Deterministic Post-Generation Fact & Record Verifier (Zero LLM Cost Guardrail)
-        const verification = verifyDraftAgainstRecord(llmRes.content, inferredCaseState, {
+        const verification = verifyDraftAgainstRecord(finalAdviceMarkdown, inferredCaseState, {
           domain: engineResult.domainInfo?.domain || 'consumer',
           paidAmountInr: engineResult.paidAmountInr
         });
@@ -1416,7 +1433,7 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
           imagesCount: hasImages ? images.length : 0,
           folderPath,
           engineResult,
-          assistantMarkdown: llmRes.content,
+          assistantMarkdown: finalAdviceMarkdown,
           model: llmRes.model,
           tokens: llmRes.billingEntry?.totalTokens || 0,
           costInr: llmRes.billingEntry?.estimatedInr || 0,
@@ -1430,7 +1447,7 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
           session: updatedSession,
           sessions: listSessionsForUser(userId, 50),
           engineResult,
-          adviceMarkdown: llmRes.content,
+          adviceMarkdown: finalAdviceMarkdown,
           model: llmRes.model,
           billingEntry: llmRes.billingEntry,
           billingTotals: scopeBillingForUser(readBillingLedger(), userId).totals
@@ -1494,6 +1511,7 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
         door: effectiveDoor,
         mode: effectiveMode,
         rawInput: effectiveRawInput,
+        priorTurns: existingSession?.turns || [],
         isFollowUpTurn: Boolean(existingSession?.turns?.length),
         hasAttachments: Boolean((Array.isArray(images) && images.length > 0) || existingSession?.folderDigest),
         forceFullRoadmap: Boolean(body.forceFullRoadmap || inferredCaseState.forceFullRoadmap)

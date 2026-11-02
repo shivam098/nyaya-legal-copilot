@@ -919,6 +919,21 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
       const [lessonTopic, setLessonTopic] = useState('');
       const [lessonText, setLessonText] = useState('');
       const [lessonSaving, setLessonSaving] = useState(false);
+      const [selectedQuickReplies, setSelectedQuickReplies] = useState({});
+
+      const toggleQuickReplyChip = (questionId, optionText) => {
+        setSelectedQuickReplies(prev => {
+          const next = { ...prev };
+          if (next[questionId] === optionText) {
+            delete next[questionId];
+          } else {
+            next[questionId] = optionText;
+          }
+          const combined = Object.values(next).filter(Boolean).join(' · ');
+          setFollowUpText(combined);
+          return next;
+        });
+      };
 
       const saveAdminPractitionerLesson = async (e) => {
         e.preventDefault();
@@ -1737,6 +1752,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
             throw new Error('The connection ended before the answer was confirmed. Do not use any partial draft; retry or check this saved case before continuing.');
           }
           setFollowUpText('');
+          setSelectedQuickReplies({});
           await refreshConfig();
         } catch (err) {
           setError(err.message);
@@ -3921,28 +3937,46 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                       </div>
                     )}
 
-                    {result.engineResult.practitionerIntelligence.factReadiness?.intakeStage === 'clarify-first' && (
-                      <div class="p-2.5 rounded-xl bg-amber-50 border border-amber-300 space-y-1.5">
+                    {result.engineResult.practitionerIntelligence.factReadiness?.slots?.length > 0 && (
+                      <div class="p-2.5 rounded-xl bg-white border border-zinc-200/90 space-y-2">
                         <div class="flex flex-wrap items-center justify-between gap-2">
-                          <span class="font-bold text-amber-950">
-                            🗣️ Step 1 of 2 — Confirming Your Facts & Available Proof First (Seasoned Lawyer Mode)
+                          <span class="font-bold text-zinc-900 text-xs">
+                            📋 Live Case Fact Sheet ({result.engineResult.practitionerIntelligence.factReadiness.factDimensionsConfirmed}/{result.engineResult.practitionerIntelligence.factReadiness.totalSlots || 5} Legal Slots Confirmed)
                           </span>
-                          <button
-                            type="button"
-                            disabled={loading || voice.busy}
-                            onClick={() => runAnalysis(
-                              activeSession?.mode || result?.engineResult?.effectiveMode || 'auto',
-                              'Please generate the complete legal roadmap, statutory analysis, and ready-to-use draft based on the facts shared so far, using placeholders for any unconfirmed details.',
-                              null,
-                              true
-                            )}
-                            class="px-2.5 py-1 rounded-lg bg-zinc-900 text-white font-semibold text-[11px] hover:bg-zinc-800 transition disabled:opacity-50"
-                          >
-                            ⚡ Skip questions & build full roadmap now →
-                          </button>
+                          {result.engineResult.practitionerIntelligence.factReadiness.intakeStage === 'clarify-first' ? (
+                            <button
+                              type="button"
+                              disabled={loading || voice.busy}
+                              onClick={() => runAnalysis(
+                                activeSession?.mode || result?.engineResult?.effectiveMode || 'auto',
+                                'Please generate the complete legal roadmap, statutory analysis, and ready-to-use draft based on the facts shared so far, using placeholders for any unconfirmed details.',
+                                null,
+                                true
+                              )}
+                              class="px-2.5 py-1 rounded-lg bg-zinc-900 text-white font-semibold text-[11px] hover:bg-zinc-800 transition disabled:opacity-50"
+                            >
+                              ⚡ Skip questions & build full roadmap now →
+                            </button>
+                          ) : (
+                            <span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-950 font-semibold text-[10px]">
+                              ✓ Ready for Full Legal Roadmap
+                            </span>
+                          )}
                         </div>
-                        <div class="text-zinc-700 leading-relaxed">
-                          Like a real advocate, Nyaya checks your exact stage, aggravating facts, and available documents before prescribing a final strategy. Tap a quick answer below or reply in your own words.
+                        <div class="flex flex-wrap gap-1.5">
+                          {result.engineResult.practitionerIntelligence.factReadiness.slots.map(sl => (
+                            <span
+                              key={sl.id}
+                              title={sl.summary}
+                              class={`px-2 py-0.5 rounded-lg border text-[11px] font-medium ${
+                                sl.confirmed
+                                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                                  : 'bg-amber-50 border-amber-200 text-amber-900'
+                              }`}
+                            >
+                              {sl.confirmed ? '✓' : '⏳'} {sl.label}
+                            </span>
+                          ))}
                         </div>
                       </div>
                     )}
@@ -4180,29 +4214,45 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
 
                     <div class="pt-4 border-t border-zinc-200/80 space-y-3">
                       {result?.engineResult?.practitionerIntelligence?.factProbing?.clarifyingQuestions?.length > 0 && (
-                        <div class="p-3 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2 text-xs">
-                          <div class="font-semibold text-amber-950">
-                            💬 Lawyer's Clarifying Questions (tap an option or type below to sharpen your plan):
+                        <div class="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2.5 text-xs">
+                          <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="font-semibold text-amber-950">
+                              💬 Lawyer's Clarifying Questions — Select your answers below (multi-select supported):
+                            </div>
+                            {Object.keys(selectedQuickReplies).length > 0 && (
+                              <button
+                                type="button"
+                                disabled={loading || voice.busy}
+                                onClick={() => runAnalysis(activeSession?.mode || result?.engineResult?.effectiveMode || 'auto', followUpText.trim())}
+                                class="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs shadow-sm transition disabled:opacity-50"
+                              >
+                                ✓ Confirm Selected Facts ({Object.keys(selectedQuickReplies).length}) & Continue →
+                              </button>
+                            )}
                           </div>
                           {result.engineResult.practitionerIntelligence.factProbing.clarifyingQuestions.map((cq) => (
-                            <div key={cq.id} class="space-y-1.5">
+                            <div key={cq.id} class="p-2.5 rounded-lg bg-white/80 border border-amber-200/80 space-y-1.5">
                               <div class="font-medium text-zinc-900">{cq.question}</div>
                               <div class="text-[11px] text-zinc-600">{cq.whyLawyerAsks}</div>
                               <div class="flex flex-wrap gap-1.5 pt-0.5">
-                                {(cq.quickReplies || []).map((qr, qIdx) => (
-                                  <button
-                                    key={qIdx}
-                                    type="button"
-                                    disabled={loading || voice.busy}
-                                    onClick={() => {
-                                      setFollowUpText(qr);
-                                      runAnalysis(activeSession?.mode, qr);
-                                    }}
-                                    class="text-left text-xs px-2.5 py-1.5 rounded-lg bg-white hover:bg-amber-100 text-zinc-800 border border-amber-300 font-medium transition disabled:opacity-50"
-                                  >
-                                    {qr} →
-                                  </button>
-                                ))}
+                                {(cq.quickReplies || []).map((qr, qIdx) => {
+                                  const isSelected = selectedQuickReplies[cq.id] === qr;
+                                  return (
+                                    <button
+                                      key={qIdx}
+                                      type="button"
+                                      disabled={loading || voice.busy}
+                                      onClick={() => toggleQuickReplyChip(cq.id, qr)}
+                                      class={`text-left text-xs px-2.5 py-1.5 rounded-lg border font-medium transition disabled:opacity-50 ${
+                                        isSelected
+                                          ? 'bg-emerald-700 text-white border-emerald-800 shadow-sm'
+                                          : 'bg-white hover:bg-amber-100 text-zinc-800 border-amber-300'
+                                      }`}
+                                    >
+                                      {isSelected ? `✓ ${qr}` : `+ ${qr}`}
+                                    </button>
+                                  );
+                                })}
                               </div>
                             </div>
                           ))}

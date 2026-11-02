@@ -13,14 +13,45 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..', '..');
+const embeddingWorkerPath = path.join(__dirname, 'embedding-worker.py');
 
 export const EMBEDDING_DIM = 384;
+export const EMBEDDING_MODEL_ID = 'Xenova/multilingual-e5-small+legal-anchors-384';
+
+/**
+ * Optional Neural Transformer Embedding via Local ONNX Runtime (`Xenova/multilingual-e5-small`, 384-dim)
+ * Can be called directly for neural batch embedding, and is fused with the 384-dim Legal Concept Anchor vector.
+ */
+export function computeNeuralOnnxEmbeddingsBatch(texts = [], prefix = 'query: ') {
+  if (!Array.isArray(texts) || texts.length === 0) return [];
+  try {
+    const payload = JSON.stringify({ id: 'batch-1', texts, prefix }) + '\n';
+    const proc = spawnSync('python', [embeddingWorkerPath], {
+      input: payload,
+      encoding: 'utf8',
+      timeout: 8000
+    });
+    if (proc.status === 0 && proc.stdout) {
+      const firstLine = proc.stdout.trim().split(/\r?\n/).find(l => l.startsWith('{'));
+      if (firstLine) {
+        const parsed = JSON.parse(firstLine);
+        if (parsed.ok && Array.isArray(parsed.embeddings)) {
+          return parsed.embeddings.map(arr => new Float32Array(arr));
+        }
+      }
+    }
+  } catch {
+    // Fallback gracefully to fast in-process concept+subword embedding
+  }
+  return [];
+}
 
 /**
  * 64 Multilingual Legal Concept Anchors (Dims 0..63)
@@ -382,6 +413,22 @@ export const STATUTORY_PROVISIONS_SEED = [
     maxPunishment: 'Up to 2 years imprisonment, or fine up to twice the cheque amount, or both',
     arneshKumarApplies: 1,
     practitionerEscalationNote: 'If the 30-day demand notice window from the Return Memo is missed and the cheque is still within its 3-month validity, the payee can re-present the cheque to generate a fresh Return Memo and fresh 30-day clock; if validity expired, pursue a Summary Suit under Order 37 CPC / MSME Samadhaan / Section 318 BNS if dishonest from inception.'
+  },
+
+  // === CLUSTER 8: CYBER ACCOUNT FREEZE (BNSS s.106), EMPLOYMENT FORCED RESIGNATION & HOSPITAL DETENTION ===
+  {
+    id: 'bnss-106-cyber-bank-account-freeze',
+    act: 'Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023',
+    section: 'Section 106 & Section 107 BNSS + Section 497/503 BNSS (formerly Section 102 & 451/457 CrPC)',
+    legacyEquivalent: 'Section 102 CrPC (Cyber Cell Lien / Debit Freeze on Bank Account)',
+    chapterCluster: 'cyber-bank-freeze-unfreeze',
+    title: 'Bank Account Debit Freeze / Lien by Cyber Cell on P2P / UPI Layer Transaction',
+    ingredients: 'When a bank account is suddenly debit-frozen or placed under a hold/lien due to a 1930 NCRP cyber complaint (Layer 2 / Layer 3 / P2P / merchant receipt): Police frequently issue a blanket notice under Section 106 BNSS (old s.102 CrPC) freezing the entire bank account instead of placing a lien only on the disputed transaction amount.',
+    cognizable: 'Procedural Seizure / Defreeze Remedy',
+    bailable: 'N/A',
+    maxPunishment: 'N/A — Defreeze Application under Section 497/503 BNSS or High Court Writ under Article 226',
+    arneshKumarApplies: 1,
+    practitionerEscalationNote: 'Practitioner Unfreeze Protocol: (1) Obtain the exact NCRP Acknowledgement Number, Investigating Officer (IO) contact, and disputed Layer amount from your home bank branch; (2) Under High Court precedents, police cannot freeze an entire operational bank account for a small disputed credit—ask the bank/IO to convert a total debit freeze into a "Lien Marked ONLY on the Disputed Amount" upon furnishing KYC and invoice/proof of bona fide sale, or file an application before the jurisdictional Magistrate under Section 497/503 BNSS (or High Court Article 226 Writ).'
   }
 ];
 
