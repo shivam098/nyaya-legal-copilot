@@ -202,6 +202,125 @@ export function detectLegalDomain({ door = '', mode = '', caseState = {}, rawInp
   };
 }
 
+function parseFlexibleDateToIso(dateStr = '') {
+  const s = String(dateStr || '').trim();
+  const isoMatch = s.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  const dmyMatch = s.match(/\b(\d{1,2})[./-](\d{1,2})[./-](\d{4})\b/);
+  if (dmyMatch) {
+    return `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
+  }
+  return null;
+}
+
+/**
+ * Unified Multimodal Auto-Sense Router:
+ * Allows a user to simply type, speak, or drop files into ONE single input box without choosing a door or filling date pickers.
+ * Automatically senses:
+ * 1. Whether it is a New Problem, an Ongoing Court Case, a Company/RoC query, or an Advocate Judgment/Bare Act lookup
+ * 2. The exact legal domain & forum (Consumer, Property/RERA, Matrimony/DV, Partition, Criminal BNS/BNSS, Cheque Bounce s.138, Corporate)
+ * 3. User side (Complainant/Victim vs Respondent/Accused)
+ * 4. Key dates & procedural numbers mentioned in plain text (dishonourDate, serviceDate, nextHearingDate, writtenVersionFiledDate, adjournments)
+ */
+export function autoSenseIntakeFromText({ door = '', mode = '', caseState = {}, rawInput = '' } = {}) {
+  const text = String(rawInput || '');
+  const lower = text.toLowerCase();
+  const nextCaseState = { ...caseState };
+
+  // 1. Extract natural-language dates & procedural counts when not explicitly set in caseState
+  if (!nextCaseState.dishonourDate) {
+    const bounceMatch = text.match(/(?:dishonour(?:ed)?|bounced?|return\s+memo[^.\n]{0,40}?)\s+(?:on|dated)\s+(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}-\d{2}-\d{2})/i);
+    if (bounceMatch) {
+      nextCaseState.dishonourDate = parseFlexibleDateToIso(bounceMatch[1]);
+    }
+  }
+  if (!nextCaseState.serviceDate) {
+    const srvMatch = text.match(/(?:notice[^.\n]{0,30}?served|served\s+with\s+notice|served)\s+on\s+(?:[A-Za-z0-9.\s-]{0,20}?\s+on\s+)?(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}-\d{2}-\d{2})/i);
+    if (srvMatch) {
+      nextCaseState.serviceDate = parseFlexibleDateToIso(srvMatch[1]);
+    }
+  }
+  if (!nextCaseState.nextHearingDate) {
+    const hrgMatch = text.match(/(?:next\s+hearing(?:\s+is|\s+date)?|hearing\s+is\s+on|listed\s+(?:for\s+hearing\s+)?on|call\s+on)\s+(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}-\d{2}-\d{2})/i);
+    if (hrgMatch) {
+      nextCaseState.nextHearingDate = parseFlexibleDateToIso(hrgMatch[1]);
+    }
+  }
+  if (!nextCaseState.writtenVersionFiledDate) {
+    const wvDateMatch = text.match(/written\s+version[^.\n]{0,35}?(\d{1,2}[./-]\d{1,2}[./-]\d{4}|\d{4}-\d{2}-\d{2})/i);
+    if (wvDateMatch) {
+      nextCaseState.writtenVersionFiled = true;
+      nextCaseState.writtenVersionFiledDate = parseFlexibleDateToIso(wvDateMatch[1]);
+    }
+  }
+  if (nextCaseState.opEvidenceAdjournmentsGranted === undefined) {
+    const adjMatch = text.match(/\b(\d+)\s+adjournments?\b/i);
+    if (adjMatch) {
+      nextCaseState.opEvidenceAdjournmentsGranted = Number(adjMatch[1]);
+      nextCaseState.opponentAdjournments = Number(adjMatch[1]);
+    }
+  }
+  if (!nextCaseState.role) {
+    const isDefender = /\b(received\s+a\s+notice|summoned\s+to\s+caw|caw\s+cell\s+asking\s+me|police\s+called\s+me|threaten(?:ed|ing)\s+to\s+file\s+498a|demanding\s+(?:an\s+unfair\s+)?refund\s+from\s+us|filed\s+a\s+case\s+against\s+me|eviction\s+case\s+against\s+me)\b/i.test(lower);
+    nextCaseState.role = isDefender ? 'defender' : 'complainant';
+  }
+
+  const domainInfo = detectLegalDomain({ door, mode, caseState: nextCaseState, rawInput: text });
+
+  // Only override door/mode when the caller uses unified/auto routing (preserving explicit door/mode contracts!)
+  let resolvedDoor = door || 'start';
+  let resolvedMode = mode || 'messy-dump-intake';
+  let autoDetectedCategoryLabel = 'New Dispute / Practical Roadmap';
+
+  const isUnifiedOrAuto = (!door || door === 'unified') && (!mode || mode === 'auto');
+
+  const isAdvocateJudgmentQuery = /\b(tofan\s+singh|tufan\s+singh|arnesh\s+kumar|satender\s+kumar\s+antil|hilli\s+multipurpose|arjun\s+panditrao|imperia\s+structures|newtech\s+promoters|vineeta\s+sharma|rajnesh\s+v\.?\s+neha|lalita\s+kumari|priyanka\s+srivastava|judgment\s+dossier|bare\s+act\s+section|ratio\s+decidendi|\(\d{4}\)\s+\d+\s+scc)\b/i.test(lower);
+  const isOngoingCaseQuery = /\b(next\s+hearing|order\s+sheet|daily\s+order|written\s+version|written\s+statement|rejoinder|evidence\s+affidavit|adjournment|placed\s+ex-?parte|o\.?\s*s\.?\s*no\.?|c\.?\s*c\.?\s*no\.?|i\.?\s*a\.?\s*no\.?|framing\s+of\s+issues|execution\s+application)\b/i.test(lower);
+
+  if (isUnifiedOrAuto) {
+    if (isAdvocateJudgmentQuery) {
+      resolvedDoor = 'lawyer-workbench';
+      resolvedMode = 'lawyer-research-bench';
+      autoDetectedCategoryLabel = 'Advocate Mode — Judgment & Bare Act Dossier';
+    } else if (domainInfo.domain === 'corporate-roc') {
+      resolvedDoor = 'company';
+      resolvedMode = 'company-advisor';
+      nextCaseState.companyNeed = /\b(reject|resubmi|missed|penalty|strike-?off|show\s+cause|scn|inc-?20a|dir-?3)\b/i.test(lower)
+        ? 'roc-hiccup'
+        : 'choose-entity';
+      autoDetectedCategoryLabel = 'Company & Startup Advisory (MCA / RoC)';
+    } else if (isOngoingCaseQuery) {
+      resolvedDoor = 'midcase';
+      resolvedMode = 'midcase-battle-card';
+      if (!nextCaseState.stage) {
+        if (/written\s+arguments|final\s+arguments/i.test(lower)) nextCaseState.stage = 'final-arguments';
+        else if (/execution|section\s+71|section\s+72/i.test(lower)) nextCaseState.stage = 'final-order-and-execution';
+        else if (/op\s+evidence|adjournment/i.test(lower)) nextCaseState.stage = 'op-evidence';
+        else if (/written\s+version|45\s*-?\s*day/i.test(lower)) nextCaseState.stage = 'written-version-stage';
+        else nextCaseState.stage = 'other-or-unsure';
+      }
+      autoDetectedCategoryLabel = `Ongoing Court Case (${domainInfo.label.split('(')[0].trim()})`;
+    } else if (['property-rera', 'matrimonial-family', 'inheritance-partition', 'criminal-bns-bnss', 'cheque-bounce-138'].includes(domainInfo.domain)) {
+      resolvedDoor = 'civil-criminal';
+      resolvedMode = 'civil-criminal-advisor';
+      nextCaseState.subTrack = domainInfo.domain === 'criminal-bns-bnss' ? 'criminal' : domainInfo.domain;
+      autoDetectedCategoryLabel = `New Case — ${domainInfo.label.split('(')[0].trim()}`;
+    } else {
+      resolvedDoor = 'start';
+      resolvedMode = 'messy-dump-intake';
+      autoDetectedCategoryLabel = `New Dispute — ${domainInfo.label.split('(')[0].trim()}`;
+    }
+  }
+
+  return {
+    door: resolvedDoor,
+    mode: resolvedMode,
+    caseState: nextCaseState,
+    domainInfo,
+    autoDetectedCategoryLabel
+  };
+}
+
 /**
  * Extracts consideration / claim amount in INR from text or caseState (e.g. "Rs 72 lakhs", "₹8,000", "Rs 1.85 Crore").
  */

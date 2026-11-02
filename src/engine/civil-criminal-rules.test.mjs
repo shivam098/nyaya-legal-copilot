@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   detectLegalDomain,
+  autoSenseIntakeFromText,
   extractPaidAmountInr,
   evaluateConsumerPecuniaryAndFee,
   evaluateNiAct138Deadlines,
@@ -9,6 +10,37 @@ import {
   evaluateCivilWrittenStatementWindow,
   verifyDomainLegalAccuracy
 } from './civil-criminal-rules.mjs';
+
+test('autoSenseIntakeFromText routes unified single-box input and extracts dates/adjournments automatically', () => {
+  const adv = autoSenseIntakeFromText({
+    door: 'unified',
+    mode: 'auto',
+    rawInput: 'Give me the Tufan Singh judgment on NDPS Section 67 and Bare Act sections'
+  });
+  assert.equal(adv.door, 'lawyer-workbench');
+  assert.equal(adv.mode, 'lawyer-research-bench');
+
+  const mid = autoSenseIntakeFromText({
+    door: 'unified',
+    mode: 'auto',
+    rawInput: 'Notice was served on OP on 10.03.2026. OP filed Written Version on 28.04.2026 and took 3 adjournments. Next hearing is 09.11.2026.'
+  });
+  assert.equal(mid.door, 'midcase');
+  assert.equal(mid.mode, 'midcase-battle-card');
+  assert.equal(mid.caseState.serviceDate, '2026-03-10');
+  assert.equal(mid.caseState.writtenVersionFiledDate, '2026-04-28');
+  assert.equal(mid.caseState.opEvidenceAdjournmentsGranted, 3);
+  assert.equal(mid.caseState.nextHearingDate, '2026-11-09');
+
+  const chq = autoSenseIntakeFromText({
+    door: 'unified',
+    mode: 'auto',
+    rawInput: 'Buyer cheque for Rs 6,40,000 bounced on 06.10.2026 with return memo Funds Insufficient.'
+  });
+  assert.equal(chq.door, 'civil-criminal');
+  assert.equal(chq.mode, 'civil-criminal-advisor');
+  assert.equal(chq.caseState.dishonourDate, '2026-10-06');
+});
 
 test('detectLegalDomain accurately separates Consumer, Property/RERA, Matrimony, Partition, Cheque Bounce, Criminal, and Corporate', () => {
   assert.equal(

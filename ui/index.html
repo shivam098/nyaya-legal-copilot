@@ -710,6 +710,41 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
       const [lawyerProceedingStage, setLawyerProceedingStage] = useState('bail');
       const [lawyerNotes, setLawyerNotes] = useState('');
 
+      // Unified Single-Box Multimodal Intake state (Default Home Screen)
+      const [unifiedNotes, setUnifiedNotes] = useState('');
+
+      const previewAutoSensedCategory = (rawText = '') => {
+        const t = `${rawText} ${attachedTextDocs.map(d => d.name).join(' ')}`.toLowerCase();
+        if (!t.trim() && attachedImages.length === 0 && attachedTextDocs.length === 0) {
+          return 'Auto-detects new vs. ongoing case, domain, deadlines & Bare Acts';
+        }
+        if (/\b(tofan\s+singh|tufan\s+singh|arnesh\s+kumar|satender\s+kumar|hilli\s+multipurpose|arjun\s+panditrao|imperia\s+structures|newtech|vineeta\s+sharma|rajnesh\s+v|lalita\s+kumari|priyanka\s+srivastava|judgment\s+dossier|bare\s+act|ratio\s+decidendi|\(\d{4}\)\s+\d+\s+scc)\b/i.test(t)) {
+          return '⚖️ Advocate Mode — Judgment & Bare Act Dossier';
+        }
+        if (/\b(opc|one\s+person\s+company|pvt\s+ltd|private\s+limited|llp|sole\s+proprietorship|solo\s+founder|what\s+kind\s+of\s+company|incorporation|mca|roc|inc-?20a|adt-?1|aoc-?4|mgt-?7|dir-?3|strike-?off)\b/i.test(t)) {
+          return '🏢 Company & Startup Advisory (MCA / RoC)';
+        }
+        if (/\b(next\s+hearing|order\s+sheet|daily\s+order|written\s+version|written\s+statement|rejoinder|evidence\s+affidavit|adjournment|ex-?parte|o\.?\s*s\.?\s*no|c\.?\s*c\.?\s*no|i\.?\s*a\.?\s*no|framing\s+of\s+issues|execution)\b/i.test(t)) {
+          return '🏛️ Ongoing Court Case — Hearing Battle-Card & Script';
+        }
+        if (/\b(cheque\s+bounc|dishonour|return\s+memo|insufficient\s+funds|section\s+138|s\.?\s*138)\b/i.test(t)) {
+          return '🏦 Cheque Bounce — NI Act s.138 (30-Day Clock)';
+        }
+        if (/\b(fir\b|zero\s+fir|arrest|anticipatory\s+bail|regular\s+bail|498\s*-?\s*a|bns\s*85|caw\s+cell|mahila\s+thana|police\s+station|41a|35\(3\)\s+bnss|quash|extortion)\b/i.test(t)) {
+          return '🛡️ Criminal / Police / Bail Shield (BNS & BNSS 2023)';
+        }
+        if (/\b(matrimon|marriage|married|husband|wife|in-laws|mother-in-law|streedhan|stridhan|divorce|alimony|domestic\s+violence|dv\s+act|pwdva|maintenance)\b/i.test(t)) {
+          return '👨‍👩‍👧 Matrimony, Domestic Violence (PWDVA) & Family Law';
+        }
+        if (/\b(intestate|without\s+a\s+will|partition\s+suit|hindu\s+succession|coparcen|legal\s+heir|ancestral\s+property)\b/i.test(t)) {
+          return '📜 Family Property Partition & Succession (HSA 1956)';
+        }
+        if (/\b(rera|maharera|builder|occupancy\s+certificate|allotment|flat\s+delay|possession\s+delay|landlord|tenant|eviction|rent)\b/i.test(t)) {
+          return '🏠 Property, Builder Delay (RERA) & Tenancy';
+        }
+        return '⚡ New Dispute — Lowest-Headache Escalation & Legal Roadmap';
+      };
+
       // Live output state
       const [loading, setLoading] = useState(false);
       const [error, setError] = useState(null);
@@ -1492,6 +1527,11 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
               proceedingStage: lawyerProceedingStage
             };
             initialNotes = `Advocate Research Mode: ${lawyerResearchTask}\nProceeding Stage: ${lawyerProceedingStage}\nQuery / Citation / Issue:\n${lawyerNotes}`;
+          } else {
+            // Unified Single-Box Mode: backend autoSenseIntakeFromText detects new vs ongoing, domain, role, and dates!
+            mode = modeOverride || 'auto';
+            caseState = {};
+            initialNotes = unifiedNotes;
           }
 
           // If user clicks "Review in more depth" or asks a follow-up before a backend session exists (e.g. after "Load Sample"),
@@ -1523,7 +1563,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
             body: JSON.stringify({
               userId,
               sessionId: activeSession?.id || null,
-              door,
+              door: door || 'unified',
               mode,
               model: overrideModel || selectedModel,
               caseState,
@@ -2717,134 +2757,202 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
           <main class={`flex-1 w-full max-w-2xl mx-auto px-4 sm:px-6 py-5 sm:py-8 flex flex-col ${!door ? 'justify-center' : ''}`}>
             {door && <button onClick={goHome} class="self-start mb-4 text-sm text-zinc-500 hover:text-zinc-900">← Home</button>}
 
-            {/* ==================== STEP 1: HOME ENTRY ==================== */}
+            {/* ==================== STEP 1: UNIFIED MULTIMODAL OMNIBOX HOME ==================== */}
             {!door && (
-              <div class="space-y-6">
-                {!showDoorPicker ? (
-                  <section class="text-center space-y-6 py-8 sm:py-14">
-                    <p class="text-xs font-semibold uppercase tracking-widest text-amber-800">Your legal co-pilot</p>
-                    <h1 class="serif-heading text-4xl sm:text-5xl font-medium tracking-tight text-zinc-900 leading-tight">
-                      Let's find your next step.
-                    </h1>
-                    <p class="text-zinc-500 text-base leading-relaxed max-w-md mx-auto">
-                      Explain your situation by voice or text. Get help understanding what to do next.
-                    </p>
-                    <div class="space-y-3 pt-2">
-                      <button id="get-started" ref={getStartedButton} onClick={() => { setShowDoorPicker(true); setShowHistory(false); setShowSettings(false); setShowBilling(false); setShowGuide(false); setShowMenu(false); }}
-                        aria-controls="door-options" aria-expanded={showDoorPicker}
-                        class="w-full sm:w-auto min-h-[52px] px-10 py-3.5 rounded-2xl bg-zinc-900 text-white text-base font-semibold hover:bg-zinc-800 transition shadow-sm">
-                        Get started →
+              <div class="space-y-5">
+                <section class="text-center space-y-2.5 pt-2 pb-1">
+                  <p class="text-xs font-semibold uppercase tracking-widest text-amber-800">Your Indian Legal Co-Pilot</p>
+                  <h1 class="serif-heading text-3xl sm:text-4xl font-medium tracking-tight text-zinc-900 leading-tight">
+                    Let's find your next step.
+                  </h1>
+                  <p class="text-zinc-500 text-sm leading-relaxed max-w-lg mx-auto">
+                    Just type, speak in English, Hindi or Hinglish, or drop any files. Nyaya automatically senses whether it's a new dispute, an ongoing court case, a business filing, or a judgment/Bare Act lookup.
+                  </p>
+                </section>
+
+                {renderCaseTitleBar()}
+
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleDrop}
+                  class="bg-white rounded-2xl border border-zinc-200/95 p-4 sm:p-5 space-y-3.5 shadow-sm"
+                >
+                  <div class="flex flex-wrap items-center justify-between gap-2 pb-1 border-b border-zinc-100">
+                    <span class="text-xs font-semibold text-zinc-700">
+                      Explain your situation or ask any legal / judgment question
+                    </span>
+                    <span class="text-[11px] px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-950 border border-amber-200 font-medium">
+                      {previewAutoSensedCategory(unifiedNotes)}
+                    </span>
+                  </div>
+
+                  <textarea
+                    id="unified-notes"
+                    aria-label="Explain your case or legal question"
+                    rows="5"
+                    value={unifiedNotes}
+                    onChange={(e) => setUnifiedNotes(e.target.value)}
+                    onPaste={handlePasteEvent}
+                    placeholder="Type or speak in English, Hindi, or Hinglish — or drop WhatsApp chats, PDFs, court orders, or ask for a judgment/Bare Act (e.g., 'Tofan Singh NDPS s.67')..."
+                    class="w-full text-sm text-zinc-800 placeholder-zinc-400 focus:outline-none resize-y leading-relaxed"
+                  />
+
+                  <div class="space-y-1.5">
+                    <div class="text-[11px] font-medium text-zinc-400">
+                      Try an instant example (auto-detects case type & stage):
+                    </div>
+                    <div class="flex flex-wrap gap-1.5">
+                      {[
+                        {
+                          label: '⌚ Warranty repair refused',
+                          text: DOOR_DEMO_CATALOG.start.sampleInput
+                        },
+                        {
+                          label: '🏢 Flat delayed 3 yrs (RERA)',
+                          text: 'I booked a flat in Pune in 2021 and paid Rs 72 lakhs. Possession was due Dec 2023. The builder now demands Rs 4.5 lakhs extra and threatens cancellation in 7 days. I want the flat + delay interest.'
+                        },
+                        {
+                          label: '🏛️ Ongoing case: OP delaying',
+                          text: 'Notice was served on Opposite Party on 10.03.2026. I already filed my Complainant Evidence Affidavit, but OP has taken 3 adjournments without filing evidence. Next hearing is 09.11.2026.'
+                        },
+                        {
+                          label: '🏦 Cheque bounced 27 days ago',
+                          text: DOOR_DEMO_CATALOG['civil-criminal'].sampleInput
+                        },
+                        {
+                          label: '🚀 Solo founder: OPC vs Pvt Ltd',
+                          text: DOOR_DEMO_CATALOG.company.sampleInput
+                        },
+                        {
+                          label: '⚖️ Advocate: Tofan Singh + Bare Act',
+                          text: DOOR_DEMO_CATALOG['lawyer-workbench'].sampleInput
+                        }
+                      ].map((chip, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setUnifiedNotes(chip.text)}
+                          class="text-xs px-2.5 py-1 rounded-lg bg-zinc-100 hover:bg-amber-50 hover:border-amber-300 text-zinc-700 hover:text-amber-950 border border-zinc-200 transition"
+                        >
+                          {chip.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <VoiceInput inputId="unified-notes" setText={setUnifiedNotes} voice={voice} disabled={loading || Boolean(ingestProgress)} />
+                  {renderAttachmentsAndProgress()}
+                  {renderFolderScannerBar()}
+
+                  <div class="pt-3 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <label class="file-upload text-xs px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 cursor-pointer font-medium transition">
+                        🖼️ Attach Files (.pdf, .docx, .zip, images, .txt)
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*,.pdf,.docx,.zip,.txt,.md,.csv,.json,.log,.eml"
+                          class="hidden"
+                          onChange={handleFileUpload}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleClipboardButtonClick(setUnifiedNotes)}
+                        class="text-xs px-3 py-1.5 rounded-lg border border-zinc-200 hover:border-zinc-400 text-zinc-700 font-medium transition"
+                      >
+                        📋 Paste from Clipboard
                       </button>
-                      <p class="text-xs text-zinc-500">English, Hindi & Hinglish. Review your words before sending.</p>
-                      <div>
+                      {(unifiedNotes || attachedImages.length > 0 || attachedTextDocs.length > 0) && (
                         <button
                           type="button"
-                          onClick={() => { setShowGuide(true); setShowSettings(false); setShowHistory(false); setShowBilling(false); setShowMenu(false); }}
-                          class="text-xs font-medium text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-3.5 py-1.5 rounded-full transition"
+                          onClick={() => { voice.reset(); setUnifiedNotes(''); setAttachedImages([]); setAttachedTextDocs([]); setFolderScanSummary(null); }}
+                          class="text-xs text-zinc-400 hover:text-zinc-700 px-2 py-1"
                         >
-                          ✨ New here? See sample inputs & outputs
+                          Clear
                         </button>
-                      </div>
+                      )}
                     </div>
-                    {sessions.length > 0 && (
-                      <button onClick={() => { setShowHistory(true); setShowSettings(false); setShowBilling(false); }}
-                        class="text-sm font-medium text-zinc-600 underline underline-offset-4 hover:text-zinc-900">
-                        Continue a saved case
-                      </button>
-                    )}
-                  </section>
-                ) : (
-                <section id="door-options" aria-labelledby="door-picker-heading" class="space-y-5">
-                  <button onClick={() => { setShowDoorPicker(false); requestAnimationFrame(() => getStartedButton.current?.focus()); }}
-                    class="text-sm text-zinc-500 hover:text-zinc-900">← Back</button>
-                  <div class="space-y-2">
-                    <h1 id="door-picker-heading" ref={doorPickerHeading} tabIndex="-1" class="serif-heading text-3xl sm:text-4xl text-zinc-900">Where are you in your journey?</h1>
-                    <p class="text-sm text-zinc-500">Choose what fits. You can explain the details next.</p>
+
+                    <button
+                      id="get-started"
+                      ref={getStartedButton}
+                      onClick={() => runAnalysis('auto')}
+                      disabled={loading || Boolean(ingestProgress) || voice.busy || (!unifiedNotes.trim() && attachedImages.length === 0 && attachedTextDocs.length === 0)}
+                      class="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 transition disabled:opacity-50 shadow-sm"
+                    >
+                      {loading ? 'Analyzing & building your roadmap...' : 'Find My Next Step →'}
+                    </button>
                   </div>
-                <div class="space-y-3">
-                  <button
-                    data-door="start"
-                    onClick={() => startNewBlankSession('start')}
-                    class="w-full text-left p-4 sm:p-5 rounded-2xl bg-white border border-zinc-200/90 hover:border-zinc-900 hover:shadow-sm transition-all flex items-center justify-between gap-3 group"
-                  >
-                    <div class="space-y-1 pr-4">
-                      <div class="font-semibold text-zinc-900 text-base">
-                        New dispute or claim
-                      </div>
-                      <div class="text-sm text-zinc-500">
-                        Consumer, property/rent, matrimony/family, money, or responding to a notice/claim.
-                      </div>
-                    </div>
-                    <span class="text-zinc-300 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
-                  </button>
-
-                  <button
-                    data-door="midcase"
-                    onClick={() => startNewBlankSession('midcase')}
-                    class="w-full text-left p-4 sm:p-5 rounded-2xl bg-white border border-zinc-200/90 hover:border-zinc-900 hover:shadow-sm transition-all flex items-center justify-between gap-3 group"
-                  >
-                    <div class="space-y-1 pr-4">
-                      <div class="font-semibold text-zinc-900 text-base">
-                        An ongoing case
-                      </div>
-                      <div class="text-sm text-zinc-500">
-                        Prepare for your next hearing or understand a court order (Consumer, Civil, Family, or RERA).
-                      </div>
-                    </div>
-                    <span class="text-zinc-300 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
-                  </button>
-
-                  <button
-                    data-door="civil-criminal"
-                    onClick={() => startNewBlankSession('civil-criminal')}
-                    class="w-full text-left p-4 sm:p-5 rounded-2xl bg-white border border-zinc-200/90 hover:border-zinc-900 hover:shadow-sm transition-all flex items-center justify-between gap-3 group"
-                  >
-                    <div class="space-y-1 pr-4">
-                      <div class="font-semibold text-zinc-900 text-base">
-                        Property, Family, Matrimony & Criminal Law
-                      </div>
-                      <div class="text-sm text-zinc-500">
-                        Builder delay (RERA), family property partition, matrimony/DV, police FIR/bail (BNS/BNSS), or bounced cheque (s.138).
-                      </div>
-                    </div>
-                    <span class="text-zinc-300 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
-                  </button>
-
-                  <button
-                    data-door="company"
-                    onClick={() => startNewBlankSession('company')}
-                    class="w-full text-left p-4 sm:p-5 rounded-2xl bg-white border border-zinc-200/90 hover:border-zinc-900 hover:shadow-sm transition-all flex items-center justify-between gap-3 group"
-                  >
-                    <div class="space-y-1 pr-4">
-                      <div class="font-semibold text-zinc-900 text-base">
-                        Company or business
-                      </div>
-                      <div class="text-sm text-zinc-500">
-                        Choose a business structure or get help with company filings.
-                      </div>
-                    </div>
-                    <span class="text-zinc-300 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
-                  </button>
-
-                  <button
-                    data-door="lawyer-workbench"
-                    onClick={() => startNewBlankSession('lawyer-workbench')}
-                    class="w-full text-left p-4 sm:p-5 rounded-2xl bg-amber-50/60 border border-amber-300 hover:border-amber-900 hover:shadow-sm transition-all flex items-center justify-between gap-3 group"
-                  >
-                    <div class="space-y-1 pr-4">
-                      <div class="font-semibold text-zinc-900 text-base flex items-center gap-2">
-                        <span>⚖️ Advocate Mode: Judgments & Bare Act Workbench</span>
-                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-950 font-semibold">For Lawyers</span>
-                      </div>
-                      <div class="text-sm text-zinc-600">
-                        Find landmark judgments (e.g. Tofan Singh), exact Bare Act sections (BNS/BNSS/BSA ↔ IPC/CrPC/IEA), direct judgment links, and oral scripts in one place.
-                      </div>
-                    </div>
-                    <span class="text-amber-700 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition text-xl">→</span>
-                  </button>
                 </div>
-                </section>
-                )}
+
+                <details class="bg-white/70 rounded-2xl border border-zinc-200/80 px-4 py-3 text-xs">
+                  <summary class="cursor-pointer font-medium text-zinc-500 hover:text-zinc-800">
+                    Optional: Open a specialized form with manual date pickers or mode selectors
+                  </summary>
+                  <section id="door-options" aria-labelledby="door-picker-heading" class="space-y-3 pt-3 mt-2 border-t border-zinc-100">
+                    <h2 id="door-picker-heading" ref={doorPickerHeading} tabIndex="-1" class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                      Specialized Workspaces (Optional)
+                    </h2>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        data-door="start"
+                        onClick={() => startNewBlankSession('start')}
+                        class="text-left p-3 rounded-xl bg-zinc-50 border border-zinc-200 hover:border-zinc-900 transition flex items-center justify-between gap-2"
+                      >
+                        <div>
+                          <div class="font-semibold text-zinc-900 text-xs">New dispute or claim</div>
+                          <div class="text-[11px] text-zinc-500">Consumer, refund, or responding to a claim</div>
+                        </div>
+                        <span>→</span>
+                      </button>
+                      <button
+                        data-door="midcase"
+                        onClick={() => startNewBlankSession('midcase')}
+                        class="text-left p-3 rounded-xl bg-zinc-50 border border-zinc-200 hover:border-zinc-900 transition flex items-center justify-between gap-2"
+                      >
+                        <div>
+                          <div class="font-semibold text-zinc-900 text-xs">An ongoing case</div>
+                          <div class="text-[11px] text-zinc-500">Manual hearing dates & stage checkboxes</div>
+                        </div>
+                        <span>→</span>
+                      </button>
+                      <button
+                        data-door="civil-criminal"
+                        onClick={() => startNewBlankSession('civil-criminal')}
+                        class="text-left p-3 rounded-xl bg-zinc-50 border border-zinc-200 hover:border-zinc-900 transition flex items-center justify-between gap-2"
+                      >
+                        <div>
+                          <div class="font-semibold text-zinc-900 text-xs">Property, Family, Matrimony & Criminal Law</div>
+                          <div class="text-[11px] text-zinc-500">RERA, Partition, DV, BNS/BNSS & s.138</div>
+                        </div>
+                        <span>→</span>
+                      </button>
+                      <button
+                        data-door="company"
+                        onClick={() => startNewBlankSession('company')}
+                        class="text-left p-3 rounded-xl bg-zinc-50 border border-zinc-200 hover:border-zinc-900 transition flex items-center justify-between gap-2"
+                      >
+                        <div>
+                          <div class="font-semibold text-zinc-900 text-xs">Company or business</div>
+                          <div class="text-[11px] text-zinc-500">Entity choice & RoC filings</div>
+                        </div>
+                        <span>→</span>
+                      </button>
+                      <button
+                        data-door="lawyer-workbench"
+                        onClick={() => startNewBlankSession('lawyer-workbench')}
+                        class="sm:col-span-2 text-left p-3 rounded-xl bg-amber-50/70 border border-amber-200 hover:border-amber-900 transition flex items-center justify-between gap-2"
+                      >
+                        <div>
+                          <div class="font-semibold text-zinc-900 text-xs">⚖️ Advocate Mode: Judgments & Bare Act Workbench</div>
+                          <div class="text-[11px] text-zinc-600">Landmark precedents (e.g. Tofan Singh), Bare Acts & oral scripts</div>
+                        </div>
+                        <span>→</span>
+                      </button>
+                    </div>
+                  </section>
+                </details>
               </div>
             )}
 
