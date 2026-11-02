@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   translateLaymanToLegalIngredients,
   evaluateConversationalFactProbing,
+  buildCumulativeCaseFactSheet,
   evaluateCaseFactReadiness,
+  parseAndStripDynamicIntakeMeta,
   evaluateDownstreamTrapsAndAuditPrayer,
   matchPractitionerCaseTrajectories,
   runPractitionerIntelligence
@@ -11,6 +13,7 @@ import {
 import {
   EMBEDDING_DIM,
   computeSemanticEmbedding384,
+  computeNeuralOnnxEmbeddingsBatch,
   searchStatutoryProvisionsSemantic,
   addOrUpdatePractitionerLesson,
   searchPractitionerLessonsSemantic,
@@ -167,4 +170,45 @@ test('Super-Admin Teach Nyaya embeds 384-dim practitioner lessons in SQLite and 
   assert.ok(matched.some(m => m.id === 'test-lesson-ranchi-sanha'));
 
   deletePractitionerLesson('test-lesson-ranchi-sanha');
+});
+
+test('Phase 1: Cumulative CaseFactSheet tracks slots across turns and asks 0 questions when all slots are already confirmed', () => {
+  // When Turn 1 already contains role, date, amount/injury, authority status, and evidence -> 0 questions ('full-roadmap')
+  const richTurn1 = runPractitionerIntelligence({
+    rawInput: 'I am the victim. Yesterday on 02.11.2026 in Ranchi, two men on a bike snatched my gold chain worth Rs 95,000 and scratched my neck. Thana took a Sanha instead of FIR. We have CCTV footage and the jewellery bill.',
+    domainInfo: { domain: 'criminal-bns-bnss' },
+    isFollowUpTurn: false
+  });
+  assert.equal(richTurn1.factReadiness.intakeStage, 'full-roadmap');
+  assert.equal(richTurn1.factReadiness.factDimensionsConfirmed, 5);
+  assert.equal(richTurn1.factProbing.clarifyingQuestions.length, 0);
+
+  // When Turn 1 is vague and Turn 2 only answers the stage slot (1 chip clicked), adaptive filtering removes the stage question and keeps only unconfirmed slots
+  const partialFollowUp = runPractitionerIntelligence({
+    priorTurns: [{ userInput: 'Chain snatching case in Ranchi' }],
+    rawInput: 'Thana took an application / asked for a Sanha (missing report) instead of FIR',
+    domainInfo: { domain: 'criminal-bns-bnss' },
+    isFollowUpTurn: true
+  });
+  assert.ok(
+    !partialFollowUp.factProbing.clarifyingQuestions.some(q => q.id === 'probe-snatching-stage-and-hurt'),
+    'Already-confirmed authorityOrStageStatus slot should not be re-asked'
+  );
+  assert.ok(
+    partialFollowUp.factProbing.clarifyingQuestions.some(q => q.id === 'probe-snatching-injury-304-vs-309'),
+    'Unconfirmed aggravatingOrIngredientFacts slot should still be asked'
+  );
+});
+
+test('Phase 2 & Phase 4: parseAndStripDynamicIntakeMeta extracts dynamic LLM questions and ONNX multilingual-e5-small embeds 384-dim vectors', () => {
+  const sampleMd = `Here is a short orientation for your frozen bank account.\n\n<nyaya_intake_meta>{"readyForRoadmap":false,"questions":[{"id":"cyber-1","question":"Which state police Cyber Cell placed the hold and what is the disputed Layer amount?","whyLawyerAsks":"Under Section 106 BNSS, a total account freeze can be narrowed to a lien on the disputed amount.","quickReplies":["Only a small amount is disputed but full account is frozen","Bank gave me the NCRP acknowledgement number"]}]}</nyaya_intake_meta>`;
+  const parsed = parseAndStripDynamicIntakeMeta(sampleMd);
+  assert.ok(!parsed.cleanMarkdown.includes('nyaya_intake_meta'));
+  assert.equal(parsed.dynamicMeta.questions.length, 1);
+  assert.equal(parsed.dynamicMeta.questions[0].id, 'cyber-1');
+  assert.equal(parsed.dynamicMeta.questions[0].quickReplies.length, 2);
+
+  const onnxVecs = computeNeuralOnnxEmbeddingsBatch(['chain snatching in Ranchi'], 'query: ');
+  assert.equal(onnxVecs.length, 1);
+  assert.equal(onnxVecs[0].length, EMBEDDING_DIM);
 });

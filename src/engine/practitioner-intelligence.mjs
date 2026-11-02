@@ -167,6 +167,7 @@ export function evaluateConversationalFactProbing({
     if (/(\bsnatch(?:ed|ing)?\b|\bchain\s+snatch(?:ed|ing)?\b|\bmobile\s+snatch(?:ed|ing)?\b|झपटमारी|चेन\s+स्नैचिंग)/i.test(text)) {
       clarifyingQuestions.push({
         id: 'probe-snatching-stage-and-hurt',
+        slot: 'authorityOrStageStatus',
         question: '1. When & where did the snatching happen, and has the Thana registered an FIR yet (or asked you to give a "Sanha / गुमशुदगी lost report")?',
         whyLawyerAsks: 'Police sometimes downgrade snatching to a "lost item (Sanha)" to avoid an unsolved crime entry. Under Section 304 BNS, Snatching is strictly Cognizable regardless of value.',
         quickReplies: [
@@ -177,6 +178,7 @@ export function evaluateConversationalFactProbing({
       });
       clarifyingQuestions.push({
         id: 'probe-snatching-injury-304-vs-309',
+        slot: 'aggravatingOrIngredientFacts',
         question: '2. Did the snatcher cause ANY neck scratch/bruise, push/drag the victim, or show any weapon/threat?',
         whyLawyerAsks: 'CRITICAL: Section 304 BNS (Snatching) carries only 3 years (allowing easy Section 35(3) BNSS notice). If there was ANY scratch, push, fall, or threat of hurt, a Government Hospital MLC upgrades the charge to Robbery under Section 309(4) BNS (10 yrs) or Section 309(6) BNS (up to Life / 10 yrs RI)!',
         quickReplies: [
@@ -187,6 +189,7 @@ export function evaluateConversationalFactProbing({
       });
       clarifyingQuestions.push({
         id: 'probe-snatching-evidence-available',
+        slot: 'availableEvidence',
         question: '3. What proof or details do you currently have available with you?',
         whyLawyerAsks: 'Helps lock CCTV before it overwrites (3–7 days) and prepares ownership proof for Section 497/503 BNSS Jimmanama release.',
         quickReplies: [
@@ -201,6 +204,7 @@ export function evaluateConversationalFactProbing({
     if (!paidAmountInr && /\b(chori|theft|fraud|cheating|money|पैसा|चोरी|धोखाधड़ी)\b/i.test(text)) {
       clarifyingQuestions.push({
         id: 'probe-amount-and-handover',
+        slot: 'aggravatingOrIngredientFacts',
         question: 'What is the approximate rupee value/amount involved, and was the money/item taken without your knowledge or handed over by you on trust?',
         whyLawyerAsks: 'Under BNS s.303(2), theft below ₹5,000 is non-cognizable; and if you handed it over yourself, the offence is Criminal Breach of Trust (s.316 BNS) or Cheating (s.318 BNS), not Theft.',
         quickReplies: [
@@ -214,6 +218,7 @@ export function evaluateConversationalFactProbing({
     if (mentionsFirRefusalOrPolice && !/\b(written\s+complaint|dd\s+entry|receiving|sp\s+office|registered\s+post)\b/i.test(lower)) {
       clarifyingQuestions.push({
         id: 'probe-police-visit-details',
+        slot: 'authorityOrStageStatus',
         question: 'What exact incident did you report at the police station, and did you give a written application (with receiving) or only speak orally?',
         whyLawyerAsks: 'A lawyer first checks whether your facts disclose a cognizable offence under the BNSS First Schedule and whether police invoked a 14-day Preliminary Inquiry under Section 173(3) BNSS.',
         quickReplies: [
@@ -231,6 +236,7 @@ export function evaluateConversationalFactProbing({
     if (!hasSpecificCrueltyOrLockout) {
       clarifyingQuestions.push({
         id: 'probe-matrimonial-goal',
+        slot: 'aggravatingOrIngredientFacts',
         question: 'To guide you like a personal advocate: was there physical violence, lockout from the house, or retention of your streedhan/jewellery, OR was it a marital disagreement where you want to reconcile and resume living together?',
         whyLawyerAsks: 'If you want reconciliation after a minor disagreement, rushing into a criminal FIR (Section 85 BNS / 498A) can permanently break the marriage—Family Counselling or Section 9 HMA (Restitution) is better. If you face violence, lockout, or streedhan retention, Section 12 PWDVA before the Magistrate gives immediate protection, residence, and maintenance.',
         quickReplies: [
@@ -248,6 +254,7 @@ export function evaluateConversationalFactProbing({
     ) {
       clarifyingQuestions.push({
         id: 'probe-property-bank-loan',
+        slot: 'aggravatingOrIngredientFacts',
         question: 'Is there an active Bank Home Loan / EMI or Tripartite Subvention Agreement on this property, and do you want to stay in the project (possession + delay interest) or exit with a full refund?',
         whyLawyerAsks: 'In builder/land disputes where a bank loan is running, the bank will still pursue EMI recovery (SARFAESI / ECS bounce) unless your petition specifically prays for relief covering the lender/tripartite liability.',
         quickReplies: [
@@ -263,6 +270,7 @@ export function evaluateConversationalFactProbing({
       if (domainInfo.domain === 'cheque-bounce-138') {
         clarifyingQuestions.push({
           id: 'probe-138-dates-and-docs',
+          slot: 'incidentAndTimeline',
           question: 'To confirm your exact statutory clock: (1) What is the exact date on the Bank Return Memo, (2) Have you sent the 30-day demand notice yet, and (3) What documents do you have (original cheque, return memo, invoice/chat)?',
           whyLawyerAsks: 'Section 138 NI Act has an unforgiving 30-day notice window from the Return Memo and jurisdiction lies at the PAYEE\'S bank branch (Section 142(2)(a)).',
           quickReplies: [
@@ -274,6 +282,7 @@ export function evaluateConversationalFactProbing({
       } else if (domainInfo.domain === 'inheritance-partition') {
         clarifyingQuestions.push({
           id: 'probe-partition-facts',
+          slot: 'aggravatingOrIngredientFacts',
           question: 'Before we draft your strategy: (1) Did the owner pass away without a Will (intestate), (2) Who currently holds possession/papers, and (3) Is any co-heir trying to sell or transfer the property right now?',
           whyLawyerAsks: 'Determines whether we need an immediate written bank/Sub-Registrar objection + Civil Partition Suit with an Order 39 Rules 1 & 2 CPC Temporary Injunction.',
           quickReplies: [
@@ -285,6 +294,7 @@ export function evaluateConversationalFactProbing({
       } else if (domainInfo.isConsumerForum) {
         clarifyingQuestions.push({
           id: 'probe-consumer-facts-and-proof',
+          slot: 'availableEvidence',
           question: 'Before prescribing your next move: (1) How much did you pay and when, (2) Did the company/service centre give a written refusal or job sheet, and (3) What proof do you have (invoice, warranty card, WhatsApp/email, photos)?',
           whyLawyerAsks: 'A seasoned practitioner checks if we can resolve this fast via a written job-sheet demand + Brand Grievance Officer + NCH 1915 / RBI / Insurance Ombudsman before spending time in Consumer Court.',
           quickReplies: [
@@ -296,6 +306,7 @@ export function evaluateConversationalFactProbing({
       } else {
         clarifyingQuestions.push({
           id: 'probe-general-facts-and-docs',
+          slot: 'authorityOrStageStatus',
           question: 'Before I give you a final legal roadmap, please confirm: (1) When did this happen and what stage is it at today, (2) What documents or proof do you have in hand, and (3) What exact outcome do you want?',
           whyLawyerAsks: 'A seasoned lawyer never guesses facts—confirming your stage and available proof first ensures we pick the right section and forum.',
           quickReplies: [
@@ -314,12 +325,84 @@ export function evaluateConversationalFactProbing({
 }
 
 /**
- * TWO-SPEED "CLARIFY & CONFIRM FACTS FIRST" GATE (#1)
- * Evaluates whether the user has supplied sufficient facts & evidence details, or whether
- * Nyaya should first ask & confirm the facts like a seasoned lawyer before rushing into a long answer.
+ * PHASE 1: CUMULATIVE `CaseFactSheet` STATE MACHINE & ADAPTIVE `0..N` QUESTION GATE
+ * Aggregates facts across ALL turns in the session (`priorTurns` + `rawInput`) into 5 legal branch-point slots,
+ * determines which slots are `confirmed` vs `missing`, and decides dynamically whether 0, 1, 2, or 3 questions are needed.
  */
+export function buildCumulativeCaseFactSheet({
+  priorTurns = [],
+  rawInput = '',
+  hasAttachments = false,
+  caseState = {},
+  domainInfo = {}
+} = {}) {
+  const priorUserText = Array.isArray(priorTurns)
+    ? priorTurns.map(t => String(t.userInput || '').split('ATTACHED FOLDER / TEXT DOCUMENTS:')[0]).join('\n')
+    : '';
+  const currentUserText = String(rawInput || '').split('ATTACHED FOLDER / TEXT DOCUMENTS:')[0].trim();
+  const cumulativeUserText = `${priorUserText}\n${currentUserText}`.trim();
+  const wordCount = cumulativeUserText.split(/\s+/).filter(Boolean).length;
+
+  const hasRoleAndParties = Boolean(
+    caseState.role ||
+    /\b(i\s+am|my\s+mother|my\s+father|my\s+wife|my\s+husband|complainant|respondent|accused|victim|buyer|tenant|landlord|builder|bank|police|thana|company|employer|client)\b/i.test(cumulativeUserText)
+  );
+
+  const hasDateOrTimeline = /\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2}|today|yesterday|recently|just\s+happened|last\s+week|last\s+month|\d+\s+days?\s+ago|\d+\s+months?\s+ago|202\d|आज|कल|महीने|दिन\s+पहले)\b/i.test(cumulativeUserText)
+    || Boolean(caseState.serviceDate || caseState.dishonourDate || caseState.nextHearingDate || caseState.keyDate);
+
+  const hasAggravatingOrIngredientDetail = /\b(rs\.?|inr|₹|\d+\s*(?:lakh|crore|thousand|hazar|हजार|लाख)|hurt|injured|scratch|bruise|no\s+physical\s+injury|yanked\s+suddenly|bleeding|fracture|weapon|pushed|dragged|entrusted|handed\s+over|without\s+my\s+consent|disagreement|reconcil|locked\s+out|active\s+bank\s+home\s+loan|no\s+bank\s+loan|चोट|खरोंच)\b/i.test(cumulativeUserText);
+
+  const hasStageOrAuthorityStatus = /\b(fir\s+no|fir\s+is\s+already|going\s+to\s+the\s+thana\s+now|sanha|missing\s+report|registered|refused|rejected|notice\s+served|return\s+memo|written\s+version|adjournment|hearing|order\s+sheet|caw\s+cell|thana\s+took|police\s+said|no\s+police\s+complaint|already\s+complained|थाना|मना\s+कर\s+दिया)\b/i.test(cumulativeUserText);
+
+  const hasEvidenceMention = hasAttachments || /\b(invoice|bill|no\s+bill\s+available|receipt|whatsapp|email|cctv|photo|family\s+photos|video|medical|mlc|agreement|allotment|cheque|memo|बिल|रसीद|चैट|सीसीटीवी)\b/i.test(cumulativeUserText);
+
+  const slots = [
+    {
+      id: 'roleAndParties',
+      label: 'Party & Role',
+      confirmed: hasRoleAndParties,
+      summary: hasRoleAndParties ? `Role: ${caseState.role || 'Identified in facts'}` : 'Confirm whose side you are on & opposite party'
+    },
+    {
+      id: 'incidentAndTimeline',
+      label: 'Timeline & Incident',
+      confirmed: hasDateOrTimeline,
+      summary: hasDateOrTimeline ? 'Timeline / date noted' : 'When & where the incident occurred'
+    },
+    {
+      id: 'aggravatingOrIngredientFacts',
+      label: 'Statutory Ingredients / Injury / Value',
+      confirmed: hasAggravatingOrIngredientDetail,
+      summary: hasAggravatingOrIngredientDetail ? 'Key ingredient / injury / amount noted' : 'Specific aggravating facts (hurt/force, amount, or entrustment)'
+    },
+    {
+      id: 'authorityOrStageStatus',
+      label: 'Current Stage (Thana / Notice / Court)',
+      confirmed: hasStageOrAuthorityStatus,
+      summary: hasStageOrAuthorityStatus ? 'Current procedural stage confirmed' : 'Whether FIR/Sanha/Notice/Case is filed & authority response'
+    },
+    {
+      id: 'availableEvidence',
+      label: 'Available Proof',
+      confirmed: hasEvidenceMention,
+      summary: hasEvidenceMention ? 'Available proof / documents noted' : 'What bills, CCTV, photos, chats, or medical proof exist'
+    }
+  ];
+
+  const confirmedSlotIds = new Set(slots.filter(s => s.confirmed).map(s => s.id));
+  return {
+    wordCount,
+    slots,
+    confirmedSlotIds,
+    confirmedCount: confirmedSlotIds.size,
+    missingSlots: slots.filter(s => !s.confirmed)
+  };
+}
+
 export function evaluateCaseFactReadiness({
   rawInput = '',
+  priorTurns = [],
   isFollowUpTurn = false,
   hasAttachments = false,
   forceFullRoadmap = false,
@@ -327,45 +410,88 @@ export function evaluateCaseFactReadiness({
   domainInfo = {},
   caseState = {}
 } = {}) {
-  const userTextOnly = String(rawInput || '').split('ATTACHED FOLDER / TEXT DOCUMENTS:')[0].trim();
-  const wordCount = userTextOnly.split(/\s+/).filter(Boolean).length;
-
-  const hasDateOrTimeline = /\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2}|today|yesterday|last\s+week|last\s+month|\d+\s+days?\s+ago|\d+\s+months?\s+ago|आज|कल|महीने|दिन\s+पहले)\b/i.test(userTextOnly)
-    || Boolean(caseState.serviceDate || caseState.dishonourDate || caseState.nextHearingDate);
-  const hasAmountOrInjuryDetail = /\b(rs\.?|inr|₹|\d+\s*(?:lakh|crore|thousand|hazar|हजार|लाख)|hurt|injured|scratch|bleeding|fracture|weapon|चोट|खरोंच)\b/i.test(userTextOnly);
-  const hasStageOrAuthorityStatus = /\b(fir\s+no|registered|refused|rejected|notice\s+served|return\s+memo|written\s+version|adjournment|hearing|order\s+sheet|caw\s+cell|thana\s+said|police\s+said|थाना|मना\s+कर\s+दिया)\b/i.test(userTextOnly);
-  const hasEvidenceMention = hasAttachments || /\b(invoice|bill|receipt|whatsapp|email|cctv|photo|video|medical|mlc|agreement|allotment|cheque|memo|बिल|रसीद|चैट|सीसीटीवी)\b/i.test(userTextOnly);
-
-  const factDimensionsConfirmed = [
-    wordCount >= 28,
-    hasDateOrTimeline,
-    hasAmountOrInjuryDetail,
-    hasStageOrAuthorityStatus,
-    hasEvidenceMention
-  ].filter(Boolean).length;
+  const sheet = buildCumulativeCaseFactSheet({
+    priorTurns,
+    rawInput,
+    hasAttachments,
+    caseState,
+    domainInfo
+  });
 
   const isAdvocateLookup = mode === 'lawyer-research-bench';
+  const userExplicitlyAskedForDraftOrFullPlan = /\b(draft|write\s+a\s+letter|write\s+complaint|full\s+roadmap|skip\s+questions|bilingual|हिंदी\s+में\s+ड्राफ्ट)\b/i.test(rawInput);
 
-  // Trigger 'clarify-first' when on Turn 1 without attachments/override and fewer than 3 fact dimensions are present
+  // Adaptive Multi-Turn Gate:
+  // - 0 questions ('full-roadmap') if >= 4/5 slots are already confirmed on Turn 1, OR >= 3/5 slots confirmed on a follow-up turn,
+  //   OR attachments are uploaded, OR user explicitly requested a draft / full roadmap.
+  // - Otherwise stays in 'clarify-first' to confirm the remaining missing slots!
+  const requiredSlots = isFollowUpTurn ? 3 : 4;
   const shouldClarifyFirst = Boolean(
-    !isFollowUpTurn &&
     !hasAttachments &&
     !forceFullRoadmap &&
     !isAdvocateLookup &&
-    (wordCount < 45 || factDimensionsConfirmed < 3)
+    !userExplicitlyAskedForDraftOrFullPlan &&
+    (sheet.confirmedCount < requiredSlots || (!isFollowUpTurn && sheet.wordCount < 35 && sheet.confirmedCount < 4))
   );
 
   return {
     intakeStage: shouldClarifyFirst ? 'clarify-first' : 'full-roadmap',
     shouldClarifyFirst,
-    wordCount,
-    factDimensionsConfirmed,
-    missingDimensions: [
-      !hasDateOrTimeline ? 'Exact date / timeline of the incident' : null,
-      !hasStageOrAuthorityStatus ? 'Current stage (whether FIR/complaint/notice is already filed & what the authority/other side said)' : null,
-      !hasAmountOrInjuryDetail ? 'Specific aggravating facts (e.g., any physical hurt/push/threat, or exact rupee value involved)' : null,
-      !hasEvidenceMention ? 'Available proof in hand (bills, CCTV, photos, chats, medical report, written receiving)' : null
-    ].filter(Boolean)
+    wordCount: sheet.wordCount,
+    factDimensionsConfirmed: sheet.confirmedCount,
+    totalSlots: sheet.slots.length,
+    slots: sheet.slots,
+    confirmedSlotIds: Array.from(sheet.confirmedSlotIds),
+    missingDimensions: sheet.missingSlots.map(s => s.summary)
+  };
+}
+
+/**
+ * PHASE 2: LLM-DRIVEN DYNAMIC QUESTION & OPTION EXTRACTOR (`<nyaya_intake_meta>`)
+ * Strips the hidden `<nyaya_intake_meta>{...}</nyaya_intake_meta>` JSON block from visible markdown
+ * and returns dynamically generated questions & options for ANY novel long-tail legal scenario!
+ */
+export function parseAndStripDynamicIntakeMeta(markdown = '') {
+  const raw = String(markdown || '');
+  const metaRegex = /<nyaya_intake_meta>\s*([\s\S]*?)\s*<\/nyaya_intake_meta>/i;
+  const match = raw.match(metaRegex);
+  if (!match) {
+    return {
+      cleanMarkdown: raw,
+      dynamicMeta: null
+    };
+  }
+
+  const cleanMarkdown = raw.replace(metaRegex, '').trim();
+  let dynamicMeta = null;
+  try {
+    const parsed = JSON.parse(match[1]);
+    if (parsed && typeof parsed === 'object') {
+      dynamicMeta = {
+        readyForRoadmap: Boolean(parsed.readyForRoadmap),
+        confirmedFacts: Array.isArray(parsed.confirmedFacts) ? parsed.confirmedFacts : [],
+        questions: Array.isArray(parsed.questions)
+          ? parsed.questions
+              .filter(q => q && typeof q.question === 'string' && q.question.trim())
+              .map((q, idx) => ({
+                id: q.id || `llm-dyn-q-${idx + 1}`,
+                slot: q.slot || 'dynamic',
+                question: q.question.trim(),
+                whyLawyerAsks: q.whyLawyerAsks || q.whyItMatters || 'Helps tailor the exact legal section and forum.',
+                quickReplies: Array.isArray(q.quickReplies || q.options)
+                  ? (q.quickReplies || q.options).map(o => String(o).trim()).filter(Boolean).slice(0, 4)
+                  : []
+              }))
+          : []
+      };
+    }
+  } catch {
+    // Ignore malformed JSON inside tag while still stripping tag from user-facing prose
+  }
+
+  return {
+    cleanMarkdown,
+    dynamicMeta
   };
 }
 
@@ -633,6 +759,7 @@ export function buildBilingualDraftInstruction(domainInfo = {}) {
  */
 export function runPractitionerIntelligence({
   rawInput = '',
+  priorTurns = [],
   domainInfo = {},
   paidAmountInr = null,
   caseState = {},
@@ -644,8 +771,14 @@ export function runPractitionerIntelligence({
   forceFullRoadmap = false,
   mode = ''
 } = {}) {
+  const priorUserText = Array.isArray(priorTurns)
+    ? priorTurns.map(t => String(t.userInput || '').split('ATTACHED FOLDER / TEXT DOCUMENTS:')[0]).join('\n')
+    : '';
+  const cumulativeInput = priorUserText ? `${priorUserText}\n${rawInput}` : rawInput;
+
   const factReadiness = evaluateCaseFactReadiness({
     rawInput,
+    priorTurns,
     isFollowUpTurn,
     hasAttachments,
     forceFullRoadmap: Boolean(forceFullRoadmap || caseState.forceFullRoadmap),
@@ -653,13 +786,33 @@ export function runPractitionerIntelligence({
     domainInfo,
     caseState
   });
-  const ingredientTranslations = translateLaymanToLegalIngredients(rawInput, paidAmountInr);
-  const factProbing = evaluateConversationalFactProbing({
-    rawInput,
+  const ingredientTranslations = translateLaymanToLegalIngredients(cumulativeInput, paidAmountInr);
+  const rawFactProbing = evaluateConversationalFactProbing({
+    rawInput: cumulativeInput,
     domainInfo,
     paidAmountInr,
     caseState
   });
+
+  // Adaptive 0..N Question Filtering:
+  // Remove questions whose slot is already confirmed across the cumulative CaseFactSheet!
+  const confirmedSet = new Set(factReadiness.confirmedSlotIds || []);
+  let adaptiveQuestions = (rawFactProbing.clarifyingQuestions || []).filter(
+    q => !q.slot || !confirmedSet.has(q.slot)
+  );
+  // If we are still in clarify-first mode and all template slots happened to match regexes, keep at least 1 high-value question
+  if (factReadiness.shouldClarifyFirst && adaptiveQuestions.length === 0 && rawFactProbing.clarifyingQuestions?.length > 0) {
+    adaptiveQuestions = rawFactProbing.clarifyingQuestions.slice(0, 1);
+  }
+  // If >= 4 slots are confirmed (full-roadmap ready), 0 clarifying questions are needed unless 1 slot remains open
+  if (!factReadiness.shouldClarifyFirst && factReadiness.factDimensionsConfirmed >= 4) {
+    adaptiveQuestions = [];
+  }
+
+  const factProbing = {
+    ...rawFactProbing,
+    clarifyingQuestions: adaptiveQuestions
+  };
   const foresightAndPrayer = evaluateDownstreamTrapsAndAuditPrayer({
     rawInput,
     domainInfo
