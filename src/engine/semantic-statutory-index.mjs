@@ -639,18 +639,24 @@ export function searchStatutoryProvisionsSemantic(queryText = '', { topK = 3, ex
   const queryVec = computeSemanticEmbedding384(queryText);
   const allRows = db.prepare(`SELECT * FROM statutory_provisions`).all();
 
-  // Optional FTS5 boost for exact section/keyword hits
-  const ftsHits = new Set();
+  // Optional FTS5 boost ordered by BM25 relevance (excluding generic stop-words like 'section'/'bns'/'case')
+  const ftsStopWords = new Set(['section', 'sections', 'under', 'bns', 'bnss', 'ipc', 'crpc', 'case', 'with', 'from', 'that', 'this', 'what', 'have', 'someone']);
+  const ftsHits = new Map();
   const safeTerms = String(queryText || '')
+    .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .split(/\s+/)
-    .filter(w => w.length >= 3)
+    .filter(w => w.length >= 3 && !ftsStopWords.has(w))
     .slice(0, 10);
   if (safeTerms.length > 0) {
     try {
       const ftsQuery = safeTerms.map(t => `"${t}"`).join(' OR ');
-      const rows = db.prepare(`SELECT id FROM statutory_provisions_fts WHERE statutory_provisions_fts MATCH ? LIMIT 8`).all(ftsQuery);
-      for (const r of rows) ftsHits.add(r.id);
+      const rows = db.prepare(
+        `SELECT id, bm25(statutory_provisions_fts) AS bm25_score FROM statutory_provisions_fts WHERE statutory_provisions_fts MATCH ? ORDER BY bm25(statutory_provisions_fts) LIMIT 6`
+      ).all(ftsQuery);
+      rows.forEach((r, idx) => {
+        ftsHits.set(r.id, Math.max(0.04, 0.14 - idx * 0.02));
+      });
     } catch {
       // Ignore malformed FTS syntax
     }
@@ -659,7 +665,7 @@ export function searchStatutoryProvisionsSemantic(queryText = '', { topK = 3, ex
   const scored = allRows.map(row => {
     const rowVec = bufferToFloat32(row.embedding_blob);
     const cosine = cosineSimilarity384(queryVec, rowVec);
-    const ftsBonus = ftsHits.has(row.id) ? 0.12 : 0;
+    const ftsBonus = ftsHits.get(row.id) || 0;
     const score = Number((cosine + ftsBonus).toFixed(4));
     return {
       id: row.id,
