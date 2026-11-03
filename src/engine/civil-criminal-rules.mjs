@@ -130,6 +130,35 @@ export function detectLegalDomain({ door = '', mode = '', caseState = {}, rawInp
   const hasMatrimonySignals = /\b(matrimon|marriage|married|husband|wife|in-laws|mother-in-law|streedhan|stridhan|divorce|alimony|domestic\s+violence|dv\s+act|pwdva|protection\s+officer|shared\s+household|caw\s+cell|mahila\s+thana|498\s*-?\s*a|restitution\s+of\s+conjugal)\b/i.test(text);
   const hasCriminalArrestOrFirSignals = /\b(fir\b|zero\s+fir|arrest|anticipatory\s+bail|regular\s+bail|498\s*-?\s*a|bns\s*\d*|bnss\s*\d*|caw\s+cell|mahila\s+thana|police\s+station|thana\b|41a\s+crpc|35\(3\)\s+bnss|quash|chargesheet|remand|extortion|snatch|snatched|snatching|robbery|theft|chori|stolen|assault|beaten|cognizable|non-bailable)\b/i.test(text);
 
+  // Exclusive-tribunal pillars are checked before the general criminal/family routes, because the
+  // forum (DRT, MACT, Maintenance Tribunal) is decided by the subject matter, not by a passing FIR mention.
+  if (/\b(sarfaesi|13\s*\(\s*2\s*\)\s*notice|13\s*\(\s*4\s*\)|possession\s+notice|symbolic\s+possession|bank\s+auction|e-?auction|drt\b|debts?\s+recovery\s+tribunal|recovery\s+agents?|declared\s+(?:as\s+)?npa|\bnpa\b|cibil\s+(?:error|wrong|score\s+(?:wrong|dropped)))/i.test(text)) {
+    return {
+      domain: 'banking-sarfaesi',
+      forum: 'drt-or-rbi-ombudsman',
+      isConsumerForum: false,
+      label: 'Banking Recovery & SARFAESI (DRT Section 17 / RBI Integrated Ombudsman)'
+    };
+  }
+
+  if (/\b(road\s+accident|motor\s+accident|accident\s+claim|mact\b|hit\s+and\s+run|run\s+over\s+by|(?:car|truck|bus|bike|vehicle)\s+hit\s+(?:me|my|him|her)|died\s+in\s+(?:a\s+)?(?:road\s+)?accident)/i.test(text)) {
+    return {
+      domain: 'motor-accident-mact',
+      forum: 'motor-accident-claims-tribunal',
+      isConsumerForum: false,
+      label: 'Motor Accident Claims (MACT — Sections 164/166 Motor Vehicles Act)'
+    };
+  }
+
+  if (/\b(senior\s+citizens?\s+act|maintenance\s+tribunal|(?:elderly|old|aged)\s+(?:mother|father|parents?)|(?:my\s+)?(?:son|daughter|children)\s+(?:is|are)\s+(?:not\s+looking\s+after|harassing|threatening)\s+(?:me|us|my\s+parents)|gift\s+deed\s+(?:to|in\s+favour\s+of)\s+(?:my\s+)?(?:son|daughter))/i.test(text)) {
+    return {
+      domain: 'senior-citizens',
+      forum: 'maintenance-tribunal-sdo',
+      isConsumerForum: false,
+      label: 'Senior Citizens & Parents (Maintenance Tribunal — Sections 4, 5 & 23 of the 2007 Act)'
+    };
+  }
+
   if (caseState.subTrack === 'criminal' || mode === 'criminal-advisor' || (hasCriminalArrestOrFirSignals && !/\b(locked\s+the\s+door|pushed\s+me\s+out|need\s+a\s+roof|monthly\s+money\s+for\s+my\s+child)\b/i.test(text))) {
     return {
       domain: 'criminal-bns-bnss',
@@ -154,6 +183,15 @@ export function detectLegalDomain({ door = '', mode = '', caseState = {}, rawInp
       forum: 'civil-court',
       isConsumerForum: false,
       label: 'Civil Court — Property Partition, Injunction (Order 39 CPC) & Succession (HSA 1956)'
+    };
+  }
+
+  if (/\b(mutation|dakhil[\s-]?kharij|jamabandi|khatauni|khatiyan|circle\s+officer|tehsildar|revenue\s+court|cnt\s+act|chota\s*nagpur\s+tenancy|spt\s+act|raiyati|bhumidhar|land\s+record|encroach(?:ed|ment)\s+(?:on\s+)?(?:my\s+)?(?:land|plot))/i.test(text) && caseState.subTrack !== 'property-rera') {
+    return {
+      domain: 'land-revenue',
+      forum: 'revenue-court-or-civil-court',
+      isConsumerForum: false,
+      label: 'Land Records, Mutation & State Land Laws (Revenue Courts / Civil Court for Title)'
     };
   }
 
@@ -185,12 +223,30 @@ export function detectLegalDomain({ door = '', mode = '', caseState = {}, rawInp
     };
   }
 
-  if (/\b(unpaid\s+salary|salary\s+hold|relieving\s+letter|gratuity|provident\s+fund|samadhan|msme\s+samadhaan|labour\s+commissioner)\b/i.test(text)) {
+  if (/\b(unpaid\s+salary|salary\s+(?:hold|not\s+paid|pending)|relieving\s+letter|experience\s+letter|full\s+(?:and|&)\s+final|gratuity|provident\s+fund|\bepf\b|samadhan|labour\s+commissioner|forced\s+(?:me\s+)?to\s+resign|forced\s+resignation|terminated\s+(?:from\s+(?:my\s+)?job|without\s+notice)|non-?compete|notice\s+period\s+(?:buyout|recovery)|posh\b|sexual\s+harassment\s+at\s+(?:work|office|workplace)|internal\s+(?:complaints\s+)?committee|layoff|laid\s+off)/i.test(text)) {
     return {
-      domain: 'labour-msme',
-      forum: 'labour-or-msme-conciliation',
+      domain: 'employment-labour',
+      forum: 'labour-authority-or-civil-court',
       isConsumerForum: false,
-      label: 'Labour Conciliation (SAMADHAN) & MSME Samadhaan'
+      label: 'Employment & Labour (Wages, Gratuity, Resignation, Non-Compete & POSH)'
+    };
+  }
+
+  if (/\b(msme\s+samadhaan|msme|udyam|msefc|facilitation\s+council|arbitration\s+clause|arbitral\s+award|sole\s+arbitrator|section\s+(?:8|11|34)\s+(?:of\s+the\s+)?arbitration)/i.test(text)) {
+    return {
+      domain: 'msme-arbitration',
+      forum: 'msefc-or-arbitral-tribunal',
+      isConsumerForum: false,
+      label: 'MSME Dues & Arbitration (MSMED Act Sections 15–19 / Arbitration Act)'
+    };
+  }
+
+  if (/\b(gst\s+notice|drc-?0?1|show\s+cause\s+notice\s+under\s+(?:section\s+)?7[34]|gst\s+registration\s+cancel|income[\s-]?tax\s+notice|section\s+148a?\s+(?:notice|of\s+(?:the\s+)?income)|reassessment\s+notice|143\(1\)\s+intimation|\brti\b|right\s+to\s+information|public\s+information\s+officer|writ\s+petition|article\s+226|article\s+32)/i.test(text)) {
+    return {
+      domain: 'tax-rti-writ',
+      forum: 'statutory-authority-or-high-court',
+      isConsumerForum: false,
+      label: 'Tax Notices, RTI & Constitutional Writs (CGST / Income-tax / RTI Act / Article 226)'
     };
   }
 

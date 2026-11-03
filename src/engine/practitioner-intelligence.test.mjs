@@ -114,8 +114,9 @@ test('Two-Speed Clarify-First Gate triggers on 1-line Ranchi chain snatching pro
     'Should include s.304 Snatching vs s.309 Robbery neck-injury probing question'
   );
 
-  // Follow-up turn or forceFullRoadmap switches to full-roadmap
+  // Follow-up turn (cumulative with Turn 1) or forceFullRoadmap switches to full-roadmap
   const followUpCheck = evaluateCaseFactReadiness({
+    priorTurns: [{ userInput: oneLiner }],
     rawInput: 'It happened today, there was a neck scratch, and we have nearby CCTV.',
     isFollowUpTurn: true,
     domainInfo: { domain: 'criminal-bns-bnss' }
@@ -180,7 +181,10 @@ test('Phase 1: Cumulative CaseFactSheet tracks slots across turns and asks 0 que
     isFollowUpTurn: false
   });
   assert.equal(richTurn1.factReadiness.intakeStage, 'full-roadmap');
-  assert.equal(richTurn1.factReadiness.factDimensionsConfirmed, 5);
+  assert.equal(richTurn1.factReadiness.totalSlots, 6);
+  assert.equal(richTurn1.factReadiness.factDimensionsConfirmed, 6);
+  assert.equal(richTurn1.factReadiness.detectedState.state, 'Jharkhand');
+  assert.equal(richTurn1.jurisdictionState.state, 'Jharkhand');
   assert.equal(richTurn1.factProbing.clarifyingQuestions.length, 0);
 
   // When Turn 1 is vague and Turn 2 only answers the stage slot (1 chip clicked), adaptive filtering removes the stage question and keeps only unconfirmed slots
@@ -227,4 +231,18 @@ test('False Section 69 BNS / Marital Context defence retrieves Pramod Suryabhan 
     intel.factProbing.clarifyingQuestions.some(q => q.id === 'probe-bns69-marital-or-relationship-status'),
     'Should probe whether parties are already married (s.63 Exception 2) vs consensual breakup (Pramod Suryabhan Pawar)'
   );
+});
+
+test('runPractitionerIntelligence wires maintainability, paper trail, forum election, flanks and new-pillar statutes', () => {
+  const intel = runPractitionerIntelligence({
+    rawInput: 'Bank declared my home loan NPA. The recovery agent says the bank will use SARFAESI and auction my house, but only over the phone. Nothing in writing yet.',
+    domainInfo: { domain: 'banking-sarfaesi', label: 'Banking Recovery & SARFAESI' },
+    isFollowUpTurn: false
+  });
+  assert.ok(intel.maintainabilityAudit.ousters.some(o => o.id === 'sarfaesi-s34'));
+  assert.equal(intel.paperTrailAudit.oralOnlyDeficit, true);
+  assert.equal(intel.forumElection.relationship, 'exclusive-tribunal');
+  assert.ok(intel.flankRisks.some(f => f.id === 'credit-report'));
+  assert.ok(intel.semanticStatutoryCluster.some(s => s.id === 'sarfaesi-13-17-34-drt'));
+  assert.match(intel.crossExaminationInstruction, /Contradiction Table/);
 });

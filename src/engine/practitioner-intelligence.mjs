@@ -13,6 +13,14 @@ import {
   searchStatutoryProvisionsSemantic,
   searchPractitionerLessonsSemantic
 } from './semantic-statutory-index.mjs';
+import {
+  detectIndianState,
+  evaluateMaintainabilityAndOusters,
+  evaluatePaperTrailAndSelfGoals,
+  evaluateForumElectionAndEconomics,
+  evaluateFlankRisks,
+  buildCrossExaminationInstruction
+} from './maintainability-auditor.mjs';
 
 /**
  * 1. LAYMAN-TO-LEGAL INGREDIENT TRANSLATOR (#2)
@@ -167,7 +175,7 @@ export function evaluateConversationalFactProbing({
     if (/\b(section\s+69|s\.?\s*69\b|bns\s*69|false\s+promise\s+to\s+marry|deceitful\s+means|marital\s+rape|376|breakup\s+case|false\s+rape)\b/i.test(text)) {
       clarifyingQuestions.push({
         id: 'probe-bns69-marital-or-relationship-status',
-        slot: 'aggravatingOrIngredientFacts',
+        slot: 'statutoryIngredientsAndValue',
         question: '1. Are the parties already legally married (or was it a consensual relationship/engagement that later broke off)?',
         whyLawyerAsks: 'CRITICAL DISTINCTION: If already legally married (wife >= 18 yrs), Section 69 BNS ("false promise to marry") cannot legally apply at all, and Exception 2 to Section 63 BNS excludes marital intercourse from s.63/64 BNS! If it was a consensual relationship breakup, Pramod Suryabhan Pawar ((2019) 9 SCC 608) holds that subsequent inability to marry is NOT an offence under s.69 BNS unless the promise was fake from Day 1.',
         quickReplies: [
@@ -178,7 +186,7 @@ export function evaluateConversationalFactProbing({
       });
       clarifyingQuestions.push({
         id: 'probe-bns69-fir-and-bail-status',
-        slot: 'authorityOrStageStatus',
+        slot: 'authorityAndForumStatus',
         question: '2. Has an FIR already been registered at the Thana, or is it currently at the threat / police-call stage?',
         whyLawyerAsks: 'Because Section 69 BNS carries up to 10 years (> 7 years), automatic Section 35(3) BNSS (Arnesh Kumar) notice protection does NOT apply—if an FIR is registered or imminent, moving for Section 482 BNSS Anticipatory Bail is the #1 priority.',
         quickReplies: [
@@ -189,7 +197,7 @@ export function evaluateConversationalFactProbing({
       });
       clarifyingQuestions.push({
         id: 'probe-bns69-digital-evidence',
-        slot: 'availableEvidence',
+        slot: 'paperTrailAndAdmissions',
         question: '3. Do you have WhatsApp chats, call recordings, family-introduction messages, or proof of any monetary/blackmail threat?',
         whyLawyerAsks: 'WhatsApp chats showing mutual consent, genuine marriage efforts/family talks, or extortion demands (certified under Section 63 BSA) are the exact evidence High Courts use to grant Anticipatory Bail (s.482 BNSS) and quash the FIR (s.528 BNSS).',
         quickReplies: [
@@ -204,7 +212,7 @@ export function evaluateConversationalFactProbing({
     if (/(\bsnatch(?:ed|ing)?\b|\bchain\s+snatch(?:ed|ing)?\b|\bmobile\s+snatch(?:ed|ing)?\b|झपटमारी|चेन\s+स्नैचिंग)/i.test(text)) {
       clarifyingQuestions.push({
         id: 'probe-snatching-stage-and-hurt',
-        slot: 'authorityOrStageStatus',
+        slot: 'authorityAndForumStatus',
         question: '1. When & where did the snatching happen, and has the Thana registered an FIR yet (or asked you to give a "Sanha / गुमशुदगी lost report")?',
         whyLawyerAsks: 'Police sometimes downgrade snatching to a "lost item (Sanha)" to avoid an unsolved crime entry. Under Section 304 BNS, Snatching is strictly Cognizable regardless of value.',
         quickReplies: [
@@ -215,7 +223,7 @@ export function evaluateConversationalFactProbing({
       });
       clarifyingQuestions.push({
         id: 'probe-snatching-injury-304-vs-309',
-        slot: 'aggravatingOrIngredientFacts',
+        slot: 'statutoryIngredientsAndValue',
         question: '2. Did the snatcher cause ANY neck scratch/bruise, push/drag the victim, or show any weapon/threat?',
         whyLawyerAsks: 'CRITICAL: Section 304 BNS (Snatching) carries only 3 years (allowing easy Section 35(3) BNSS notice). If there was ANY scratch, push, fall, or threat of hurt, a Government Hospital MLC upgrades the charge to Robbery under Section 309(4) BNS (10 yrs) or Section 309(6) BNS (up to Life / 10 yrs RI)!',
         quickReplies: [
@@ -226,7 +234,7 @@ export function evaluateConversationalFactProbing({
       });
       clarifyingQuestions.push({
         id: 'probe-snatching-evidence-available',
-        slot: 'availableEvidence',
+        slot: 'paperTrailAndAdmissions',
         question: '3. What proof or details do you currently have available with you?',
         whyLawyerAsks: 'Helps lock CCTV before it overwrites (3–7 days) and prepares ownership proof for Section 497/503 BNSS Jimmanama release.',
         quickReplies: [
@@ -241,7 +249,7 @@ export function evaluateConversationalFactProbing({
     if (!paidAmountInr && /\b(chori|theft|fraud|cheating|money|पैसा|चोरी|धोखाधड़ी)\b/i.test(text)) {
       clarifyingQuestions.push({
         id: 'probe-amount-and-handover',
-        slot: 'aggravatingOrIngredientFacts',
+        slot: 'statutoryIngredientsAndValue',
         question: 'What is the approximate rupee value/amount involved, and was the money/item taken without your knowledge or handed over by you on trust?',
         whyLawyerAsks: 'Under BNS s.303(2), theft below ₹5,000 is non-cognizable; and if you handed it over yourself, the offence is Criminal Breach of Trust (s.316 BNS) or Cheating (s.318 BNS), not Theft.',
         quickReplies: [
@@ -255,7 +263,7 @@ export function evaluateConversationalFactProbing({
     if (mentionsFirRefusalOrPolice && !/\b(written\s+complaint|dd\s+entry|receiving|sp\s+office|registered\s+post)\b/i.test(lower)) {
       clarifyingQuestions.push({
         id: 'probe-police-visit-details',
-        slot: 'authorityOrStageStatus',
+        slot: 'authorityAndForumStatus',
         question: 'What exact incident did you report at the police station, and did you give a written application (with receiving) or only speak orally?',
         whyLawyerAsks: 'A lawyer first checks whether your facts disclose a cognizable offence under the BNSS First Schedule and whether police invoked a 14-day Preliminary Inquiry under Section 173(3) BNSS.',
         quickReplies: [
@@ -273,7 +281,7 @@ export function evaluateConversationalFactProbing({
     if (!hasSpecificCrueltyOrLockout) {
       clarifyingQuestions.push({
         id: 'probe-matrimonial-goal',
-        slot: 'aggravatingOrIngredientFacts',
+        slot: 'statutoryIngredientsAndValue',
         question: 'To guide you like a personal advocate: was there physical violence, lockout from the house, or retention of your streedhan/jewellery, OR was it a marital disagreement where you want to reconcile and resume living together?',
         whyLawyerAsks: 'If you want reconciliation after a minor disagreement, rushing into a criminal FIR (Section 85 BNS / 498A) can permanently break the marriage—Family Counselling or Section 9 HMA (Restitution) is better. If you face violence, lockout, or streedhan retention, Section 12 PWDVA before the Magistrate gives immediate protection, residence, and maintenance.',
         quickReplies: [
@@ -291,7 +299,7 @@ export function evaluateConversationalFactProbing({
     ) {
       clarifyingQuestions.push({
         id: 'probe-property-bank-loan',
-        slot: 'aggravatingOrIngredientFacts',
+        slot: 'statutoryIngredientsAndValue',
         question: 'Is there an active Bank Home Loan / EMI or Tripartite Subvention Agreement on this property, and do you want to stay in the project (possession + delay interest) or exit with a full refund?',
         whyLawyerAsks: 'In builder/land disputes where a bank loan is running, the bank will still pursue EMI recovery (SARFAESI / ECS bounce) unless your petition specifically prays for relief covering the lender/tripartite liability.',
         quickReplies: [
@@ -307,7 +315,7 @@ export function evaluateConversationalFactProbing({
       if (domainInfo.domain === 'cheque-bounce-138') {
         clarifyingQuestions.push({
           id: 'probe-138-dates-and-docs',
-          slot: 'incidentAndTimeline',
+          slot: 'incidentTimelineAndState',
           question: 'To confirm your exact statutory clock: (1) What is the exact date on the Bank Return Memo, (2) Have you sent the 30-day demand notice yet, and (3) What documents do you have (original cheque, return memo, invoice/chat)?',
           whyLawyerAsks: 'Section 138 NI Act has an unforgiving 30-day notice window from the Return Memo and jurisdiction lies at the PAYEE\'S bank branch (Section 142(2)(a)).',
           quickReplies: [
@@ -319,7 +327,7 @@ export function evaluateConversationalFactProbing({
       } else if (domainInfo.domain === 'inheritance-partition') {
         clarifyingQuestions.push({
           id: 'probe-partition-facts',
-          slot: 'aggravatingOrIngredientFacts',
+          slot: 'statutoryIngredientsAndValue',
           question: 'Before we draft your strategy: (1) Did the owner pass away without a Will (intestate), (2) Who currently holds possession/papers, and (3) Is any co-heir trying to sell or transfer the property right now?',
           whyLawyerAsks: 'Determines whether we need an immediate written bank/Sub-Registrar objection + Civil Partition Suit with an Order 39 Rules 1 & 2 CPC Temporary Injunction.',
           quickReplies: [
@@ -331,7 +339,7 @@ export function evaluateConversationalFactProbing({
       } else if (domainInfo.isConsumerForum) {
         clarifyingQuestions.push({
           id: 'probe-consumer-facts-and-proof',
-          slot: 'availableEvidence',
+          slot: 'paperTrailAndAdmissions',
           question: 'Before prescribing your next move: (1) How much did you pay and when, (2) Did the company/service centre give a written refusal or job sheet, and (3) What proof do you have (invoice, warranty card, WhatsApp/email, photos)?',
           whyLawyerAsks: 'A seasoned practitioner checks if we can resolve this fast via a written job-sheet demand + Brand Grievance Officer + NCH 1915 / RBI / Insurance Ombudsman before spending time in Consumer Court.',
           quickReplies: [
@@ -343,7 +351,7 @@ export function evaluateConversationalFactProbing({
       } else {
         clarifyingQuestions.push({
           id: 'probe-general-facts-and-docs',
-          slot: 'authorityOrStageStatus',
+          slot: 'authorityAndForumStatus',
           question: 'Before I give you a final legal roadmap, please confirm: (1) When did this happen and what stage is it at today, (2) What documents or proof do you have in hand, and (3) What exact outcome do you want?',
           whyLawyerAsks: 'A seasoned lawyer never guesses facts—confirming your stage and available proof first ensures we pick the right section and forum.',
           quickReplies: [
@@ -363,9 +371,14 @@ export function evaluateConversationalFactProbing({
 
 /**
  * PHASE 1: CUMULATIVE `CaseFactSheet` STATE MACHINE & ADAPTIVE `0..N` QUESTION GATE
- * Aggregates facts across ALL turns in the session (`priorTurns` + `rawInput`) into 5 legal branch-point slots,
+ * Aggregates facts across ALL turns in the session (`priorTurns` + `rawInput`) into the 6 Senior-Counsel slots,
  * determines which slots are `confirmed` vs `missing`, and decides dynamically whether 0, 1, 2, or 3 questions are needed.
+ *
+ * The 6 slots: (1) who vs whom, (2) when & which State, (3) statutory ingredients / value / severity,
+ * (4) current stage before any authority or forum, (5) paper trail & admissions, (6) desired relief & parallel exposures.
  */
+const STATE_SENSITIVE_DOMAINS = new Set(['land-revenue', 'tenancy-civil', 'inheritance-partition', 'property-rera']);
+
 export function buildCumulativeCaseFactSheet({
   priorTurns = [],
   rawInput = '',
@@ -379,51 +392,68 @@ export function buildCumulativeCaseFactSheet({
   const currentUserText = String(rawInput || '').split('ATTACHED FOLDER / TEXT DOCUMENTS:')[0].trim();
   const cumulativeUserText = `${priorUserText}\n${currentUserText}`.trim();
   const wordCount = cumulativeUserText.split(/\s+/).filter(Boolean).length;
+  const detectedState = detectIndianState(`${cumulativeUserText}\n${rawInput}`, caseState);
 
   const hasRoleAndParties = Boolean(
     caseState.role ||
-    /\b(i\s+am|my\s+mother|my\s+father|my\s+wife|my\s+husband|complainant|respondent|accused|victim|buyer|tenant|landlord|builder|bank|police|thana|company|employer|client)\b/i.test(cumulativeUserText)
+    /\b(i\s+am|my\s+mother|my\s+father|my\s+wife|my\s+husband|complainant|respondent|accused|victim|buyer|tenant|landlord|builder|bank|police|thana|company|employer|employee|client)\b/i.test(cumulativeUserText)
   );
 
   const hasDateOrTimeline = /\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2}|today|yesterday|recently|just\s+happened|last\s+week|last\s+month|\d+\s+days?\s+ago|\d+\s+months?\s+ago|202\d|आज|कल|महीने|दिन\s+पहले)\b/i.test(cumulativeUserText)
-    || Boolean(caseState.serviceDate || caseState.dishonourDate || caseState.nextHearingDate || caseState.keyDate);
+    || Boolean(caseState.serviceDate || caseState.dishonourDate || caseState.nextHearingDate || caseState.keyDate || caseState.incidentDate);
+  const stateNeeded = STATE_SENSITIVE_DOMAINS.has(domainInfo.domain);
+  const timelineAndStateConfirmed = hasDateOrTimeline && (Boolean(detectedState) || !stateNeeded);
 
-  const hasAggravatingOrIngredientDetail = /\b(rs\.?|inr|₹|\d+\s*(?:lakh|crore|thousand|hazar|हजार|लाख)|hurt|injured|scratch|bruise|no\s+physical\s+injury|yanked\s+suddenly|bleeding|fracture|weapon|pushed|dragged|entrusted|handed\s+over|without\s+my\s+consent|disagreement|reconcil|locked\s+out|active\s+bank\s+home\s+loan|no\s+bank\s+loan|चोट|खरोंच)\b/i.test(cumulativeUserText);
+  const hasIngredientDetail = /\b(rs\.?|inr|₹|\d+\s*(?:lakh|crore|thousand|hazar|हजार|लाख)|hurt|injured|scratch(?:ed)?|bruise|no\s+physical\s+injury|yanked\s+suddenly|bleeding|fracture|weapon|pushed|dragged|entrusted|handed\s+over|without\s+my\s+consent|disagreement|reconcil|locked\s+out|already\s+(?:legally\s+)?married|consensual\s+relationship|active\s+bank\s+home\s+loan|no\s+bank\s+loan|चोट|खरोंच)\b/i.test(cumulativeUserText);
 
-  const hasStageOrAuthorityStatus = /\b(fir\s+no|fir\s+is\s+already|going\s+to\s+the\s+thana\s+now|sanha|missing\s+report|registered|refused|rejected|notice\s+served|return\s+memo|written\s+version|adjournment|hearing|order\s+sheet|caw\s+cell|thana\s+took|police\s+said|no\s+police\s+complaint|already\s+complained|थाना|मना\s+कर\s+दिया)\b/i.test(cumulativeUserText);
+  const hasStageOrAuthorityStatus = /\b(fir\s+no|fir\s+is\s+already|going\s+to\s+the\s+thana\s+now|sanha|missing\s+report|registered|refused|rejected|notice\s+served|return\s+memo|written\s+version|adjournment|hearing|order\s+sheet|caw\s+cell|thana\s+took|police\s+said|no\s+police\s+complaint|no\s+fir|already\s+complained|only\s+threats|new\s+issue|थाना|मना\s+कर\s+दिया)\b/i.test(cumulativeUserText);
 
-  const hasEvidenceMention = hasAttachments || /\b(invoice|bill|no\s+bill\s+available|receipt|whatsapp|email|cctv|photo|family\s+photos|video|medical|mlc|agreement|allotment|cheque|memo|बिल|रसीद|चैट|सीसीटीवी)\b/i.test(cumulativeUserText);
+  const hasPaperTrail = hasAttachments || /\b(invoice|bill|no\s+bill\s+available|receipt|whatsapp|email|cctv|photo|family\s+photos|video|medical|mlc|agreement|allotment|cheque|memo|letter|screenshot|recording|marriage\s+certificate|बिल|रसीद|चैट|सीसीटीवी)\b/i.test(cumulativeUserText);
+
+  const hasExplicitRelief = /\b(i\s+want|we\s+want|seeking|refund|possession|compensation|maintenance|bail|quash|recover|get\s+(?:it\s+)?back|return\s+(?:of\s+)?my|reconcil|divorce|stop\s+(?:the|them|him|her)|unfreeze|protection|relief|register\s+(?:an?\s+)?fir|peaceful\s+resolution|counselling)\b/i.test(cumulativeUserText);
+  const reliefImpliedForVictim = domainInfo.domain === 'criminal-bns-bnss' && /\b(victim|snatch(?:ed|ing)?|stolen|robbed|beaten|attacked|assaulted)\b/i.test(cumulativeUserText);
+  const hasDesiredRelief = hasExplicitRelief || reliefImpliedForVictim;
 
   const slots = [
     {
       id: 'roleAndParties',
-      label: 'Party & Role',
+      label: 'Who vs Whom',
       confirmed: hasRoleAndParties,
-      summary: hasRoleAndParties ? `Role: ${caseState.role || 'Identified in facts'}` : 'Confirm whose side you are on & opposite party'
+      summary: hasRoleAndParties ? `Role: ${caseState.role || 'identified in facts'}` : 'Whose side you are on, and who the other party is (person, company or government body)'
     },
     {
-      id: 'incidentAndTimeline',
-      label: 'Timeline & Incident',
-      confirmed: hasDateOrTimeline,
-      summary: hasDateOrTimeline ? 'Timeline / date noted' : 'When & where the incident occurred'
+      id: 'incidentTimelineAndState',
+      label: 'When & Which State',
+      confirmed: timelineAndStateConfirmed,
+      summary: timelineAndStateConfirmed
+        ? `Timeline noted${detectedState ? ` · ${detectedState.state}` : ''}`
+        : stateNeeded && hasDateOrTimeline
+        ? 'Which State/city the property or dispute is in (local laws differ)'
+        : 'When it happened (decides deadlines and old IPC vs new BNS)'
     },
     {
-      id: 'aggravatingOrIngredientFacts',
-      label: 'Statutory Ingredients / Injury / Value',
-      confirmed: hasAggravatingOrIngredientDetail,
-      summary: hasAggravatingOrIngredientDetail ? 'Key ingredient / injury / amount noted' : 'Specific aggravating facts (hurt/force, amount, or entrustment)'
+      id: 'statutoryIngredientsAndValue',
+      label: 'Key Facts, Amount & Severity',
+      confirmed: hasIngredientDetail,
+      summary: hasIngredientDetail ? 'Key ingredient / injury / amount noted' : 'The facts that decide the exact section (force or hurt, amount, entrustment, marital status)'
     },
     {
-      id: 'authorityOrStageStatus',
-      label: 'Current Stage (Thana / Notice / Court)',
+      id: 'authorityAndForumStatus',
+      label: 'Current Stage',
       confirmed: hasStageOrAuthorityStatus,
-      summary: hasStageOrAuthorityStatus ? 'Current procedural stage confirmed' : 'Whether FIR/Sanha/Notice/Case is filed & authority response'
+      summary: hasStageOrAuthorityStatus ? 'Current procedural stage confirmed' : 'Whether a complaint, FIR, notice or case already exists, and what the authority did'
     },
     {
-      id: 'availableEvidence',
-      label: 'Available Proof',
-      confirmed: hasEvidenceMention,
-      summary: hasEvidenceMention ? 'Available proof / documents noted' : 'What bills, CCTV, photos, chats, or medical proof exist'
+      id: 'paperTrailAndAdmissions',
+      label: 'Paper Trail & Admissions',
+      confirmed: hasPaperTrail,
+      summary: hasPaperTrail ? 'Documents / proof noted' : 'What is in writing (bills, chats, MLC, CCTV) and whether anything was signed or admitted'
+    },
+    {
+      id: 'desiredReliefAndFlanks',
+      label: 'Goal & Parallel Risks',
+      confirmed: hasDesiredRelief,
+      summary: hasDesiredRelief ? 'Desired outcome noted' : 'What outcome you want, and any parallel exposure (loan, job, family)'
     }
   ];
 
@@ -431,6 +461,7 @@ export function buildCumulativeCaseFactSheet({
   return {
     wordCount,
     slots,
+    detectedState,
     confirmedSlotIds,
     confirmedCount: confirmedSlotIds.size,
     missingSlots: slots.filter(s => !s.confirmed)
@@ -456,19 +487,19 @@ export function evaluateCaseFactReadiness({
   });
 
   const isAdvocateLookup = mode === 'lawyer-research-bench';
-  const userExplicitlyAskedForDraftOrFullPlan = /\b(draft|write\s+a\s+letter|write\s+complaint|full\s+roadmap|skip\s+questions|bilingual|हिंदी\s+में\s+ड्राफ्ट)\b/i.test(rawInput);
+  const userExplicitlyAskedForDraftOrFullPlan = /\b(draft|write\s+a\s+letter|write\s+complaint|full\s+roadmap|skip\s+questions|bilingual|cross-?examination|हिंदी\s+में\s+ड्राफ्ट)\b/i.test(rawInput);
 
-  // Adaptive Multi-Turn Gate:
-  // - 0 questions ('full-roadmap') if >= 4/5 slots are already confirmed on Turn 1, OR >= 3/5 slots confirmed on a follow-up turn,
-  //   OR attachments are uploaded, OR user explicitly requested a draft / full roadmap.
-  // - Otherwise stays in 'clarify-first' to confirm the remaining missing slots!
-  const requiredSlots = isFollowUpTurn ? 3 : 4;
+  // Adaptive multi-turn gate over the 6 slots:
+  // - 'full-roadmap' when >= 5/6 slots are confirmed on Turn 1, or >= 4/6 cumulatively on a follow-up,
+  //   or when records are attached, or the user explicitly asks for a draft / full plan.
+  // - Otherwise 'clarify-first' asks only for the still-missing slots.
+  const requiredSlots = isFollowUpTurn ? 4 : 5;
   const shouldClarifyFirst = Boolean(
     !hasAttachments &&
     !forceFullRoadmap &&
     !isAdvocateLookup &&
     !userExplicitlyAskedForDraftOrFullPlan &&
-    (sheet.confirmedCount < requiredSlots || (!isFollowUpTurn && sheet.wordCount < 35 && sheet.confirmedCount < 4))
+    (sheet.confirmedCount < requiredSlots || (!isFollowUpTurn && sheet.wordCount < 35 && sheet.confirmedCount < 5))
   );
 
   return {
@@ -478,6 +509,7 @@ export function evaluateCaseFactReadiness({
     factDimensionsConfirmed: sheet.confirmedCount,
     totalSlots: sheet.slots.length,
     slots: sheet.slots,
+    detectedState: sheet.detectedState,
     confirmedSlotIds: Array.from(sheet.confirmedSlotIds),
     missingDimensions: sheet.missingSlots.map(s => s.summary)
   };
@@ -842,7 +874,7 @@ export function runPractitionerIntelligence({
     adaptiveQuestions = rawFactProbing.clarifyingQuestions.slice(0, 1);
   }
   // If >= 4 slots are confirmed (full-roadmap ready), 0 clarifying questions are needed unless 1 slot remains open
-  if (!factReadiness.shouldClarifyFirst && factReadiness.factDimensionsConfirmed >= 4) {
+  if (!factReadiness.shouldClarifyFirst && factReadiness.factDimensionsConfirmed >= 5) {
     adaptiveQuestions = [];
   }
 
@@ -856,17 +888,29 @@ export function runPractitionerIntelligence({
   });
   const matchedTrajectories = matchPractitionerCaseTrajectories(rawInput, domainInfo);
 
+  // Senior-Counsel threshold checks (Stage 2), paper trail (Stage 1b), forum election (Stage 3), flanks (Stage 4)
+  const maintainabilityAudit = evaluateMaintainabilityAndOusters({
+    rawInput: cumulativeInput,
+    domainInfo,
+    caseState
+  });
+  const paperTrailAudit = evaluatePaperTrailAndSelfGoals({ rawInput: cumulativeInput, hasAttachments });
+  const forumElection = evaluateForumElectionAndEconomics({ domainInfo });
+  const flankRisks = evaluateFlankRisks({ rawInput: cumulativeInput, domainInfo });
+  const jurisdictionState = factReadiness.detectedState || detectIndianState(cumulativeInput, caseState);
+
   // SQLite 384-Dim Semantic Vector Search + Adjacent Chapter-Cluster Expansion + Admin Practitioner Lessons
   const semanticStatutoryCluster = searchStatutoryProvisionsSemantic(
-    `${rawInput} ${domainInfo.domain || ''} ${domainInfo.label || ''}`,
+    `${cumulativeInput} ${domainInfo.domain || ''} ${domainInfo.label || ''}`,
     { topK: 3, expandCluster: true }
   );
   const semanticPractitionerLessons = searchPractitionerLessonsSemantic(
-    rawInput,
+    cumulativeInput,
     domainInfo.domain || '',
     3
   );
   const bilingualDraftInstruction = buildBilingualDraftInstruction(domainInfo);
+  const crossExaminationInstruction = buildCrossExaminationInstruction(domainInfo);
 
   const partial = {
     factReadiness,
@@ -874,9 +918,15 @@ export function runPractitionerIntelligence({
     factProbing,
     foresightAndPrayer,
     matchedTrajectories,
+    maintainabilityAudit,
+    paperTrailAudit,
+    forumElection,
+    flankRisks,
+    jurisdictionState,
     semanticStatutoryCluster,
     semanticPractitionerLessons,
-    bilingualDraftInstruction
+    bilingualDraftInstruction,
+    crossExaminationInstruction
   };
 
   const instantTriage = buildInstantTriageCard({

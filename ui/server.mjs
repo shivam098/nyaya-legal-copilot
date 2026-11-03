@@ -1155,7 +1155,19 @@ const server = http.createServer(async (req, res) => {
         const ruleLogs = [
           `✓ Detected Legal Domain & Forum: ${engineResult.domainInfo?.label || effectiveMode}`,
           engineResult.practitionerIntelligence?.factReadiness
-            ? `✓ Two-Speed Intake Gate: ${engineResult.practitionerIntelligence.factReadiness.intakeStage.toUpperCase()} (${engineResult.practitionerIntelligence.factReadiness.factDimensionsConfirmed}/5 fact dimensions present)`
+            ? `✓ Two-Speed Intake Gate: ${engineResult.practitionerIntelligence.factReadiness.intakeStage.toUpperCase()} (${engineResult.practitionerIntelligence.factReadiness.factDimensionsConfirmed}/${engineResult.practitionerIntelligence.factReadiness.totalSlots} Senior-Counsel slots confirmed${engineResult.practitionerIntelligence.jurisdictionState ? ` · State: ${engineResult.practitionerIntelligence.jurisdictionState.state}` : ''})`
+            : null,
+          engineResult.practitionerIntelligence?.maintainabilityAudit?.ousters?.length
+            ? `✓ Section 9 CPC Ouster Check: ${engineResult.practitionerIntelligence.maintainabilityAudit.ousters.map(o => `${o.statute} ${o.section} → ${o.exclusiveForum.split(' (')[0]}`).join(' | ')}`
+            : null,
+          engineResult.practitionerIntelligence?.maintainabilityAudit?.limitationChecks?.length
+            ? `✓ Limitation Ceilings: ${engineResult.practitionerIntelligence.maintainabilityAudit.limitationChecks.map(l => `${l.label} [${l.status}${l.daysRemaining !== null ? `, ${l.daysRemaining}d left` : ''}]`).join(' | ')}`
+            : null,
+          engineResult.practitionerIntelligence?.forumElection
+            ? `✓ Doctrine of Election: ${engineResult.practitionerIntelligence.forumElection.relationship} — ${engineResult.practitionerIntelligence.forumElection.electionRule}`
+            : null,
+          engineResult.practitionerIntelligence?.paperTrailAudit?.oralOnlyDeficit || engineResult.practitionerIntelligence?.paperTrailAudit?.selfGoals?.length
+            ? `⚠️ Paper Trail: ${engineResult.practitionerIntelligence.paperTrailAudit.oralOnlyDeficit ? 'oral-only so far' : 'documents noted'}${engineResult.practitionerIntelligence.paperTrailAudit.selfGoals.length ? ` · self-goal risks: ${engineResult.practitionerIntelligence.paperTrailAudit.selfGoals.map(s => s.id).join(', ')}` : ''}`
             : null,
           engineResult.practitionerIntelligence?.semanticStatutoryCluster?.length
             ? `✓ SQLite 384-Dim Vector + Cluster Search (${engineResult.practitionerIntelligence.semanticStatutoryCluster.length} sections): ${engineResult.practitionerIntelligence.semanticStatutoryCluster.map(s => `${s.section} [cos=${s.similarityScore}${s.isAdjacentClusterSection ? ', cluster-sibling' : ''}]`).join(' | ')}`

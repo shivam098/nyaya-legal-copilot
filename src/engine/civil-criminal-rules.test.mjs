@@ -73,6 +73,23 @@ test('detectLegalDomain accurately separates Consumer, Property/RERA, Matrimony,
   );
 });
 
+test('detectLegalDomain routes the newer practice pillars to their exclusive forums', () => {
+  const cases = [
+    ['Bank sent a SARFAESI 13(2) notice and now a possession notice for auction of my house', 'banking-sarfaesi'],
+    ['My father died in a road accident when a truck hit his bike', 'motor-accident-mact'],
+    ['My son is not looking after me and I gave a gift deed to my son for the house', 'senior-citizens'],
+    ['HR forced me to resign and my full and final settlement and gratuity are pending', 'employment-labour'],
+    ['Buyer has not paid my invoices for 120 days, I am Udyam registered MSME', 'msme-arbitration'],
+    ['I received a GST notice DRC-01 for mismatch in input credit', 'tax-rti-writ'],
+    ['Circle officer rejected my dakhil kharij mutation in Ranchi', 'land-revenue']
+  ];
+  for (const [rawInput, expected] of cases) {
+    assert.equal(detectLegalDomain({ door: 'start', rawInput }).domain, expected, rawInput);
+  }
+  // A caveat under Section 148A CPC must not be mistaken for an Income-tax Section 148A notice
+  assert.notEqual(detectLegalDomain({ door: 'start', rawInput: 'Should I file a caveat under Section 148A CPC before evicting the tenant?' }).domain, 'tax-rti-writ');
+});
+
 test('evaluateConsumerPecuniaryAndFee computes exact 2021 pecuniary forum and Rule 7 fee slabs', () => {
   const repair8k = evaluateConsumerPecuniaryAndFee(extractPaidAmountInr('paid 8000 rupaye for phone repair'));
   assert.equal(repair8k.filingFeeInr, 0);
