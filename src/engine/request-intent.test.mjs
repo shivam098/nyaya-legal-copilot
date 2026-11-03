@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { autoSenseIntakeFromText, detectRequestIntent } from './civil-criminal-rules.mjs';
-import { runPractitionerIntelligence } from './practitioner-intelligence.mjs';
+import { runPractitionerIntelligence, mergeDynamicClarifyingQuestions } from './practitioner-intelligence.mjs';
 
 function analyse(rawInput, { priorTurns = [], mode } = {}) {
   const auto = autoSenseIntakeFromText({ door: 'unified', mode: mode || 'auto', caseState: {}, rawInput });
@@ -60,4 +60,20 @@ test('a defaulted role is not counted as a confirmed fact', () => {
   const { pi } = analyse('chain snatching');
   const role = pi.factReadiness.slots.find(s => s.id === 'roleAndParties');
   assert.equal(role.confirmed, false);
+});
+
+test('LLM-proposed questions never duplicate the cards (drafting cards are authoritative)', () => {
+  const drafting = analyse('help me draft a rent agreement').pi;
+  mergeDynamicClarifyingQuestions(drafting, [{ id: 'q1', question: 'Are you the landlord or the tenant?', quickReplies: [] }]);
+  assert.equal(drafting.factProbing.clarifyingQuestions.length, 3);
+
+  const dispute = analyse('chain snatching case in Ranchi').pi;
+  const before = dispute.factProbing.clarifyingQuestions.length;
+  mergeDynamicClarifyingQuestions(dispute, [
+    { id: 'dup', question: `${dispute.factProbing.clarifyingQuestions[0].question.replace(/^\d+\.\s*/, '')} (please confirm)`, quickReplies: [] },
+    { id: 'new', question: 'Which police station area did this happen in?', quickReplies: [] }
+  ]);
+  const ids = dispute.factProbing.clarifyingQuestions.map(q => q.id);
+  assert.ok(!ids.includes('dup'));
+  assert.equal(ids.includes('new'), before < 4);
 });
