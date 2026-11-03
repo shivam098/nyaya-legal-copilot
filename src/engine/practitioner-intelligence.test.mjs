@@ -212,3 +212,19 @@ test('Phase 2 & Phase 4: parseAndStripDynamicIntakeMeta extracts dynamic LLM que
   assert.equal(onnxVecs.length, 1);
   assert.equal(onnxVecs[0].length, EMBEDDING_DIM);
 });
+
+test('False Section 69 BNS / Marital Context defence retrieves Pramod Suryabhan Pawar, s.63 Exception 2 BNS, and s.482/528 BNSS shields', () => {
+  const intel = runPractitionerIntelligence({
+    rawInput: 'Someone is threatening me with a false Section 69 BNS case in context of marriage / breakup',
+    domainInfo: { domain: 'criminal-bns-bnss' },
+    isFollowUpTurn: false
+  });
+  assert.ok(
+    intel.semanticStatutoryCluster.some(s => s.id === 'bns-69-false-promise-and-s63-marital-exception'),
+    'Should retrieve Section 69 BNS & Section 63 Exception 2 BNS defence provision'
+  );
+  assert.ok(
+    intel.factProbing.clarifyingQuestions.some(q => q.id === 'probe-bns69-marital-or-relationship-status'),
+    'Should probe whether parties are already married (s.63 Exception 2) vs consensual breakup (Pramod Suryabhan Pawar)'
+  );
+});
