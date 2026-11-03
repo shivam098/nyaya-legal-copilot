@@ -44,7 +44,8 @@ import {
 } from '../src/engine/audio-transcriber.mjs';
 import {
   runPractitionerIntelligence,
-  parseAndStripDynamicIntakeMeta
+  parseAndStripDynamicIntakeMeta,
+  mergeDynamicClarifyingQuestions
 } from '../src/engine/practitioner-intelligence.mjs';
 import {
   listAllPractitionerLessons,
@@ -1403,16 +1404,7 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
 
         const parsedMeta = parseAndStripDynamicIntakeMeta(llmRes.content);
         const finalAdviceMarkdown = parsedMeta.cleanMarkdown;
-        if (parsedMeta.dynamicMeta?.questions?.length > 0 && engineResult.practitionerIntelligence?.factProbing) {
-          const existingQTexts = new Set(
-            (engineResult.practitionerIntelligence.factProbing.clarifyingQuestions || []).map(q => q.question.toLowerCase())
-          );
-          const mergedQuestions = [
-            ...(engineResult.practitionerIntelligence.factProbing.clarifyingQuestions || []),
-            ...parsedMeta.dynamicMeta.questions.filter(q => !existingQTexts.has(q.question.toLowerCase()))
-          ].slice(0, 4);
-          engineResult.practitionerIntelligence.factProbing.clarifyingQuestions = mergedQuestions;
-        }
+        mergeDynamicClarifyingQuestions(engineResult.practitionerIntelligence, parsedMeta.dynamicMeta?.questions);
 
         // Deterministic Post-Generation Fact & Record Verifier (Zero LLM Cost Guardrail)
         const verification = verifyDraftAgainstRecord(finalAdviceMarkdown, inferredCaseState, {
@@ -1584,15 +1576,7 @@ ${effectiveRawInput || '(See attached images and Case State above)'}${imageSumma
       });
       const parsedSyncMeta = parseAndStripDynamicIntakeMeta(llmRes.content);
       const finalSyncMarkdown = parsedSyncMeta.cleanMarkdown;
-      if (parsedSyncMeta.dynamicMeta?.questions?.length > 0 && engineResult.practitionerIntelligence?.factProbing) {
-        const existingQTexts = new Set(
-          (engineResult.practitionerIntelligence.factProbing.clarifyingQuestions || []).map(q => q.question.toLowerCase())
-        );
-        engineResult.practitionerIntelligence.factProbing.clarifyingQuestions = [
-          ...(engineResult.practitionerIntelligence.factProbing.clarifyingQuestions || []),
-          ...parsedSyncMeta.dynamicMeta.questions.filter(q => !existingQTexts.has(q.question.toLowerCase()))
-        ].slice(0, 4);
-      }
+      mergeDynamicClarifyingQuestions(engineResult.practitionerIntelligence, parsedSyncMeta.dynamicMeta?.questions);
 
       const verification = verifyDraftAgainstRecord(finalSyncMarkdown, inferredCaseState, {
         domain: engineResult.domainInfo?.domain || 'consumer',

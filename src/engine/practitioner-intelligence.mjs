@@ -681,6 +681,26 @@ export function buildDraftingFactSheet({ documentType = '', priorTurns = [], raw
 }
 
 /**
+ * Merges LLM-proposed questions into the deterministic question cards without duplicates.
+ * Drafting checklists are authoritative (their terms are fixed per document), so LLM extras are not added there.
+ */
+export function mergeDynamicClarifyingQuestions(practitionerIntelligence, dynamicQuestions = []) {
+  if (!practitionerIntelligence?.factProbing || !Array.isArray(dynamicQuestions) || dynamicQuestions.length === 0) return;
+  if (practitionerIntelligence.factReadiness?.kind === 'drafting') return;
+  if (practitionerIntelligence.factReadiness && !practitionerIntelligence.factReadiness.shouldClarifyFirst) return;
+  const normalize = q => String(q || '').toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/^\s*\d+[.)]\s*/, '').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean).slice(0, 8).join(' ');
+  const existing = practitionerIntelligence.factProbing.clarifyingQuestions || [];
+  const seen = new Set(existing.map(q => normalize(q.question)));
+  const additions = dynamicQuestions.filter(q => {
+    const key = normalize(q.question);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  practitionerIntelligence.factProbing.clarifyingQuestions = [...existing, ...additions].slice(0, 4);
+}
+
+/**
  * PHASE 2: LLM-DRIVEN DYNAMIC QUESTION & OPTION EXTRACTOR (`<nyaya_intake_meta>`)
  * Strips the hidden `<nyaya_intake_meta>{...}</nyaya_intake_meta>` JSON block from visible markdown
  * and returns dynamically generated questions & options for ANY novel long-tail legal scenario!
