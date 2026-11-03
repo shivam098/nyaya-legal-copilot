@@ -915,7 +915,6 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
         await refreshConfig('');
       };
 
-      const [adminLoading, setAdminLoading] = useState(false);
       const [lessonDomain, setLessonDomain] = useState('criminal-bns-bnss');
       const [lessonTopic, setLessonTopic] = useState('');
       const [lessonText, setLessonText] = useState('');
@@ -3926,7 +3925,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                   <div class="p-2.5 rounded-xl bg-zinc-50 border border-zinc-200/90 space-y-2 text-xs">
                     <div class="flex flex-wrap items-center justify-between gap-2">
                       <span class="font-bold text-zinc-900">
-                        📋 Case Fact Sheet ({result.engineResult.practitionerIntelligence.factReadiness.factDimensionsConfirmed}/{result.engineResult.practitionerIntelligence.factReadiness.totalSlots || 5} Legal Slots Confirmed)
+                        📋 Case Fact Sheet ({result.engineResult.practitionerIntelligence.factReadiness.factDimensionsConfirmed}/{result.engineResult.practitionerIntelligence.factReadiness.totalSlots || 6} Senior-Counsel Slots Confirmed)
                       </span>
                       {result.engineResult.practitionerIntelligence.factReadiness.intakeStage === 'clarify-first' ? (
                         <button
@@ -3996,6 +3995,120 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                               <strong>Immediate First Move:</strong> {result.engineResult.practitionerIntelligence.instantTriage.firstMoveNow}
                             </p>
                           </div>
+                        </div>
+                      )}
+
+                      {(result.engineResult.practitionerIntelligence.maintainabilityAudit?.ousters?.length > 0 ||
+                        result.engineResult.practitionerIntelligence.maintainabilityAudit?.limitationChecks?.length > 0 ||
+                        result.engineResult.practitionerIntelligence.maintainabilityAudit?.arbitration ||
+                        result.engineResult.practitionerIntelligence.paperTrailAudit?.oralOnlyDeficit ||
+                        result.engineResult.practitionerIntelligence.paperTrailAudit?.selfGoals?.length > 0 ||
+                        result.engineResult.practitionerIntelligence.forumElection ||
+                        result.engineResult.practitionerIntelligence.flankRisks?.length > 0) && (
+                        <div class="p-2.5 rounded-xl bg-white border border-indigo-200/90 space-y-2">
+                          <div class="font-semibold text-indigo-950 flex flex-wrap items-center justify-between gap-2">
+                            <span>🏛️ Senior-Counsel Threshold Check — Maintainability, Deadlines, Forum Election & Flanks</span>
+                            {result.engineResult.practitionerIntelligence.jurisdictionState?.state && (
+                              <span class="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-900 font-medium">
+                                📍 {result.engineResult.practitionerIntelligence.jurisdictionState.state}
+                              </span>
+                            )}
+                          </div>
+
+                          {result.engineResult.practitionerIntelligence.jurisdictionState?.localLawNote && (
+                            <div class="text-zinc-600 leading-relaxed">
+                              <strong>State law note:</strong> {result.engineResult.practitionerIntelligence.jurisdictionState.localLawNote}
+                            </div>
+                          )}
+
+                          {result.engineResult.practitionerIntelligence.maintainabilityAudit?.limitationChecks?.map(lc => (
+                            <div key={lc.id} class={`p-2 rounded-lg border ${
+                              lc.status === 'barred-hard-ceiling'
+                                ? 'bg-red-50 border-red-200 text-red-950'
+                                : lc.status === 'extension-window-only' || lc.status === 'delayed-condonation-needed'
+                                ? 'bg-amber-50 border-amber-200 text-amber-950'
+                                : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                            }`}>
+                              <div class="font-semibold">
+                                ⏱️ {lc.label}: {lc.status === 'date-needed'
+                                  ? 'date needed to compute'
+                                  : lc.status === 'barred-hard-ceiling'
+                                  ? `outer limit of ${lc.outerDays} days has passed`
+                                  : lc.status === 'delayed-condonation-needed'
+                                  ? `${lc.daysElapsed} days elapsed — condonation application needed`
+                                  : lc.status === 'extension-window-only'
+                                  ? `in the extension window (${lc.daysRemaining} day(s) left)`
+                                  : `within time (${lc.daysRemaining} day(s) left of ${lc.outerDays})`}
+                              </div>
+                              <div class="text-zinc-600 leading-relaxed">{lc.rule}{lc.verifyNote ? ` ${lc.verifyNote}` : ''}</div>
+                            </div>
+                          ))}
+
+                          {result.engineResult.practitionerIntelligence.maintainabilityAudit?.ousters?.map(o => (
+                            <div key={o.id} class="p-2 rounded-lg bg-zinc-50 border border-zinc-200 space-y-0.5">
+                              <div class="font-semibold text-zinc-900">🚫 Civil court barred — {o.statute}, {o.section}</div>
+                              <div class="text-zinc-700"><strong>Correct forum:</strong> {o.exclusiveForum}</div>
+                              {o.exception && <div class="text-zinc-500">{o.exception}</div>}
+                              {o.verifyNote && <div class="text-amber-800">{o.verifyNote}</div>}
+                            </div>
+                          ))}
+
+                          {result.engineResult.practitionerIntelligence.maintainabilityAudit?.arbitration && (
+                            <div class="p-2 rounded-lg bg-zinc-50 border border-zinc-200 space-y-0.5">
+                              <div class="font-semibold text-zinc-900">📑 Arbitration clause in the contract</div>
+                              <div class="text-zinc-700">{result.engineResult.practitionerIntelligence.maintainabilityAudit.arbitration.statutoryOverride}</div>
+                              {result.engineResult.practitionerIntelligence.maintainabilityAudit.arbitration.unilateralAppointmentDetected && (
+                                <div class="text-amber-900">{result.engineResult.practitionerIntelligence.maintainabilityAudit.arbitration.unilateralAppointmentRule}</div>
+                              )}
+                            </div>
+                          )}
+
+                          {result.engineResult.practitionerIntelligence.paperTrailAudit?.stepZeroAdvice && (
+                            <div class="p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-950">
+                              <strong>📄 Step 0 — Create a paper trail:</strong> {result.engineResult.practitionerIntelligence.paperTrailAudit.stepZeroAdvice}
+                            </div>
+                          )}
+                          {result.engineResult.practitionerIntelligence.paperTrailAudit?.selfGoals?.map(sg => (
+                            <div key={sg.id} class="p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-950 space-y-0.5">
+                              <div class="font-semibold">⚠️ {sg.issue}</div>
+                              <div class="text-zinc-700">{sg.counterMove}</div>
+                            </div>
+                          ))}
+
+                          {result.engineResult.practitionerIntelligence.forumElection && (
+                            <div class="p-2 rounded-lg bg-zinc-50 border border-zinc-200 space-y-1.5">
+                              <div class="font-semibold text-zinc-900">⚖️ Doctrine of Election: {result.engineResult.practitionerIntelligence.forumElection.electionRule}</div>
+                              <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse text-[11px]">
+                                  <thead>
+                                    <tr class="border-b border-zinc-200 text-zinc-500">
+                                      <th class="py-1 pr-2">Route</th>
+                                      <th class="py-1 pr-2">Best for</th>
+                                      <th class="py-1 pr-2">Day-1 interim power</th>
+                                      <th class="py-1 pr-2">How it is enforced</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody class="divide-y divide-zinc-200/60">
+                                    {result.engineResult.practitionerIntelligence.forumElection.options.map((op, oIdx) => (
+                                      <tr key={oIdx}>
+                                        <td class="py-1 pr-2 font-medium text-zinc-900">{op.forum}</td>
+                                        <td class="py-1 pr-2 text-zinc-700">{op.bestFor}</td>
+                                        <td class="py-1 pr-2 text-zinc-700">{op.interimPower}</td>
+                                        <td class="py-1 pr-2 text-zinc-700">{op.executionTeeth}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+
+                          {result.engineResult.practitionerIntelligence.flankRisks?.map(fr => (
+                            <div key={fr.id} class="p-2 rounded-lg bg-zinc-50 border border-zinc-200 space-y-0.5">
+                              <div class="font-semibold text-zinc-900">🛡️ Flank: {fr.risk}</div>
+                              <div class="text-zinc-700">{fr.shield}</div>
+                            </div>
+                          ))}
                         </div>
                       )}
 
@@ -4147,6 +4260,20 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                             title="Generate ready-to-sign Bilingual (Hindi + English) Thana Complaint / Legal Notice / Court Application"
                           >
                             🇮🇳 Draft in Hindi + English
+                          </button>
+                          <button
+                            onClick={() => runAnalysis(
+                              activeSession?.mode || result?.engineResult?.effectiveMode || 'auto',
+                              result?.engineResult?.practitionerIntelligence?.crossExaminationInstruction ||
+                                'Prepare a contradiction table and 10–15 closed, leading cross-examination questions based only on the record in this case, flagging any document still needed.',
+                              null,
+                              true
+                            )}
+                            disabled={voice.busy}
+                            class="px-3 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-950 font-semibold border border-purple-300 transition disabled:opacity-50"
+                            title="Generate a contradiction table and cross-examination questions from the opponent's reply, affidavit or FIR"
+                          >
+                            ⚔️ Cross-Examination & Contradictions
                           </button>
                           <button
                             onClick={() => runAnalysis(activeSession?.mode, 'Review the advice for this situation in more depth. Re-check assumptions, relevant evidence and legal requirements, explain trade-offs plainly, and improve the requested plan or draft without inventing facts.', escalationModel, true)}

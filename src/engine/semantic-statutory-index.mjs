@@ -97,12 +97,12 @@ const MULTILINGUAL_LEGAL_CONCEPT_ANCHORS = [
   /\b(marital\s+argument|minor\s+quarrel|nok\s*jhok|not\s+calling\s+back|reconcil|mediation|restitution\s+of\s+conjugal|section\s+9\s+hma|नोकझोंक|मायके|सुलह)\b/gi,
   /\b(child\s+custody|visitation|guardianship|section\s+21\s+pwdva|बच्चे\s+की\s+कस्टडी)\b/gi,
   /\b(divorce|mutual\s+consent|13b\s+hma|contested\s+divorce|तलाक)\b/gi,
-  /\b(senior\s+citizen|parents\s+maintenance|evict\s+abusive\s+son|माता\s+पिता\s+भरण\s+पोषण)\b/gi,
+  /\b(senior\s+citizen|elderly\s+parents?|old\s+parents|maintenance\s+tribunal|gift\s+deed|section\s+23\s+senior|parents\s+maintenance|evict\s+abusive\s+son|माता\s+पिता\s+भरण\s+पोषण)\b/gi,
 
   // 32..39: Property, Builder/RERA, Bank Loan Trap & Family Partition
   /\b(rera|maharera|builder\s+delay|possession\s+delay|flat\s+delay|occupancy\s+certificate|section\s+18\s+rera|section\s+31\s+rera|imperia\s+structures|newtech\s+promoters|बिल्डर)\b/gi,
-  /\b(home\s+loan|bank\s+loan|emi\s+harassment|tripartite\s+agreement|subvention\s+scheme|sarfaesi|drt\b|cibil|बैंक\s+लोन|ईएमआई)\b/gi,
-  /\b(land\s+fraud|plot\s+fraud|fake\s+registry|mutation|jamabandi|encumbrance|zameen|जमीन\s+धोखाधड़ी|रजिस्ट्री)\b/gi,
+  /\b(home\s+loan|bank\s+loan|emi\s+harassment|recovery\s+agent|possession\s+notice|bank\s+auction|13\(2\)|13\(4\)|securitisation|tripartite\s+agreement|subvention\s+scheme|sarfaesi|drt\b|cibil|बैंक\s+लोन|ईएमआई)\b/gi,
+  /\b(land\s+fraud|plot\s+fraud|fake\s+registry|mutation|dakhil\s+kharij|khatiyan|circle\s+officer|revenue\s+court|cnt\s+act|raiyati|jamabandi|encumbrance|zameen|जमीन\s+धोखाधड़ी|रजिस्ट्री)\b/gi,
   /\b(partition\s+suit|ancestral\s+property|coparcener|daughter\s+share|section\s+6\s+hsa|vineeta\s+sharma|intestate|without\s+a\s+will|बंटवारा|पैतृक\s+संपत्ति)\b/gi,
   /\b(temporary\s+injunction|order\s+39|stay\s+on\s+sale|lis\s+pendens|section\s+52\s+tpa|स्टे\s+ऑर्डर|रोक)\b/gi,
   /\b(tenancy|landlord|tenant|eviction|security\s+deposit|rent\s+agreement|किरायेदार|मकान\s+मालिक)\b/gi,
@@ -123,10 +123,10 @@ const MULTILINGUAL_LEGAL_CONCEPT_ANCHORS = [
   /\b(section\s+138|ni\s+act|cheque\s+bounce|cheque\s+dishonour|return\s+memo|insufficient\s+funds|30\s+days\s+notice|15\s+days\s+payment|चेक\s+बाउंस)\b/gi,
   /\b(section\s+142\(2\)\(a\)|payee\s+bank\s+branch|section\s+139\s+presumption|section\s+143a\s+interim\s+compensation)\b/gi,
   /\b(website\s+client|freelance|software\s+project|scope\s+of\s+work|milestone|partial\s+delivery|quantum\s+meruit|section\s+70\s+contract\s+act|unfair\s+refund\s+demand)\b/gi,
-  /\b(unpaid\s+salary|relieving\s+letter|full\s+and\s+final|samadhan|labour\s+commissioner|gratuity|pf\b)\b/gi,
-  /\b(msme\s+samadhaan|delayed\s+payment\s+to\s+vendor|45\s+days\s+msme|compound\s+interest\s+3\s+times)\b/gi,
-  /\b(traffic\s+challan|e-?challan|virtual\s+court|parivahan|helmet|overspeeding|motor\s+vehicles\s+act)\b/gi,
-  /\b(company\s+incorporation|opc\b|one\s+person\s+company|private\s+limited|llp\b|roc\s+notice|inc-?20a|section\s+10a|strike\s+off|section\s+248)\b/gi,
+  /\b(unpaid\s+salary|forced\s+to\s+resign|forced\s+resignation|non-?compete|notice\s+period|posh|internal\s+committee|relieving\s+letter|full\s+and\s+final|samadhan|labour\s+commissioner|gratuity|pf\b)\b/gi,
+  /\b(msme\s+samadhaan|udyam|msefc|arbitration\s+clause|arbitrator|arbitral\s+award|delayed\s+payment\s+to\s+vendor|45\s+days\s+msme|compound\s+interest\s+3\s+times)\b/gi,
+  /\b(traffic\s+challan|road\s+accident|motor\s+accident|accident\s+claim|mact|hit\s+and\s+run|e-?challan|virtual\s+court|parivahan|helmet|overspeeding|motor\s+vehicles\s+act)\b/gi,
+  /\b(company\s+incorporation|gst\s+notice|show\s+cause\s+notice|drc-?01|section\s+148a\s+notice|income\s+tax\s+notice|reassessment|opc\b|one\s+person\s+company|private\s+limited|llp\b|roc\s+notice|inc-?20a|section\s+10a|strike\s+off|section\s+248)\b/gi,
   /\b(RTI\b|right\s+to\s+information|public\s+authority|pio\b|first\s+appeal)\b/gi,
 
   // 56..63: Evidence, NDPS, Constitutional Writs & Court Procedure
@@ -443,6 +443,102 @@ export const STATUTORY_PROVISIONS_SEED = [
     maxPunishment: 'N/A — Defreeze Application under Section 497/503 BNSS or High Court Writ under Article 226',
     arneshKumarApplies: 1,
     practitionerEscalationNote: 'Practitioner Unfreeze Protocol: (1) Obtain the exact NCRP Acknowledgement Number, Investigating Officer (IO) contact, and disputed Layer amount from your home bank branch; (2) Under High Court precedents, police cannot freeze an entire operational bank account for a small disputed credit—ask the bank/IO to convert a total debit freeze into a "Lien Marked ONLY on the Disputed Amount" upon furnishing KYC and invoice/proof of bona fide sale, or file an application before the jurisdictional Magistrate under Section 497/503 BNSS (or High Court Article 226 Writ).'
+  },
+
+  // === CLUSTER 9: BANKING RECOVERY, SARFAESI, DRT & CREDIT REPORTS ===
+  {
+    id: 'sarfaesi-13-17-34-drt',
+    act: 'SARFAESI Act, 2002 & Recovery of Debts and Bankruptcy Act, 1993',
+    section: 'Sections 13(2), 13(3A), 13(4), 17 & 34 SARFAESI',
+    legacyEquivalent: 'Mardia Chemicals v. Union of India, (2004) 4 SCC 311',
+    chapterCluster: 'banking-sarfaesi-drt',
+    title: 'Bank Possession / Auction of Mortgaged Home or Shop (SARFAESI) & DRT Challenge',
+    ingredients: 'Bank declares the loan NPA and issues a 60-day demand notice under Section 13(2) SARFAESI; the borrower may object under Section 13(3A) and the bank must reply with reasons within 15 days; the bank then takes symbolic/physical possession or auctions under Section 13(4). The challenge lies to the Debts Recovery Tribunal under Section 17 within 45 days; civil courts are barred by Section 34.',
+    cognizable: 'Civil / Tribunal remedy (DRT)',
+    bailable: 'N/A',
+    maxPunishment: 'N/A — Section 17 DRT order can set aside the measure and restore possession',
+    arneshKumarApplies: 0,
+    practitionerEscalationNote: 'Senior counsel checks: (1) was the 13(2) notice properly served and the 13(3A) objection answered with reasons; (2) is the asset agricultural land (excluded by Section 31(i)); (3) count 45 days from the 13(4) step and file in the DRT, not a civil court; (4) for recovery-agent harassment or CIBIL errors, use the RBI Integrated Ombudsman (cms.rbi.org.in) — RBI rules require credit-data complaints to be resolved in 30 days with ₹100/day compensation for delay.'
+  },
+
+  // === CLUSTER 10: EMPLOYMENT, WAGES, GRATUITY, NON-COMPETE & POSH ===
+  {
+    id: 'employment-gratuity-noncompete-posh',
+    act: 'Payment of Gratuity Act 1972, Indian Contract Act 1872, POSH Act 2013, Payment of Wages Act 1936',
+    section: 'Section 7(3A) Gratuity Act · Section 27 Contract Act · Section 9 POSH Act',
+    legacyEquivalent: 'Percept D\'Mark v. Zaheer Khan, (2006) 4 SCC 227; Union Bank of India v. C.G. Ajay Babu, (2018) 9 SCC 529',
+    chapterCluster: 'employment-labour',
+    title: 'Unpaid Salary / Full & Final, Forced Resignation, Gratuity, Non-Compete and Workplace Harassment',
+    ingredients: 'Gratuity is payable after 5 years of continuous service and must be paid within 30 days of becoming payable (Section 7(3A)), with interest for delay; forfeiture needs termination for proved misconduct of the kind in Section 4(6) (C.G. Ajay Babu). Post-employment non-compete restraints are void under Section 27 Contract Act. A resignation can be withdrawn before it takes effect. A POSH complaint goes to the Internal Committee within 3 months (extendable by 3).',
+    cognizable: 'Civil / Statutory authority',
+    bailable: 'N/A',
+    maxPunishment: 'N/A — recovery of dues with interest; POSH inquiry outcomes',
+    arneshKumarApplies: 0,
+    practitionerEscalationNote: 'Before any demand notice, save appraisal letters, handover emails, attendance and asset-return acknowledgements so a retaliatory "absconding" allegation fails. Route gratuity to the Controlling Authority, wages of covered employees to the Labour Commissioner (SAMADHAN portal), and contractual dues of managerial staff to the civil/commercial court.'
+  },
+
+  // === CLUSTER 11: MOTOR ACCIDENT CLAIMS ===
+  {
+    id: 'mact-164-166-claims',
+    act: 'Motor Vehicles Act, 1988 (as amended in 2019)',
+    section: 'Sections 164, 166(3), 161 & 175 MV Act',
+    legacyEquivalent: 'Sarla Verma v. DTC, (2009) 6 SCC 121; National Insurance v. Pranay Sethi, (2017) 16 SCC 680',
+    chapterCluster: 'motor-accident-mact',
+    title: 'Road Accident Death / Injury Compensation (MACT), Hit-and-Run and No-Fault Claims',
+    ingredients: 'A compensation claim for death or injury in a road accident lies exclusively before the Motor Accident Claims Tribunal (Section 175). Section 166(3) requires the claim within 6 months of the accident. Section 164 gives fixed no-fault compensation (₹5 lakh death, ₹2.5 lakh grievous hurt); Section 161 covers hit-and-run (Solatium Scheme). Loss-of-income compensation follows the Sarla Verma multiplier and Pranay Sethi future-prospects method.',
+    cognizable: 'Civil / Tribunal remedy (MACT); rash and negligent driving is separately an offence under Section 106 BNS',
+    bailable: 'N/A',
+    maxPunishment: 'N/A — compensation award paid by the insurer',
+    arneshKumarApplies: 0,
+    practitionerEscalationNote: 'Collect the FIR, the police Detailed Accident Report (DAR), post-mortem / MLC, hospital bills, income proof and the vehicle\'s insurance details. File inside 6 months; some High Courts are testing the 6-month limit, so do not rely on a later filing.'
+  },
+
+  // === CLUSTER 12: SENIOR CITIZENS, PARENTS AND PROPERTY GIFTED TO CHILDREN ===
+  {
+    id: 'senior-citizens-4-5-23',
+    act: 'Maintenance and Welfare of Parents and Senior Citizens Act, 2007',
+    section: 'Sections 4, 5, 23 & 27',
+    legacyEquivalent: 'S. Vanitha v. Deputy Commissioner, (2021) 15 SCC 730; Urmila Dixit v. Sunil Sharan Dixit (SC, 2025)',
+    chapterCluster: 'senior-citizens',
+    title: 'Elderly Parents: Monthly Maintenance from Children and Cancelling a Gift Deed Made on a Promise of Care',
+    ingredients: 'A senior citizen or parent unable to maintain themselves can claim monthly maintenance (up to ₹10,000 as originally enacted, subject to State rules) from children or relatives before the Maintenance Tribunal (SDO) under Sections 4–5. Under Section 23, a property transfer made on the condition that the transferee will provide basic amenities and care can be declared void if that condition is broken. Civil courts are barred (Section 27).',
+    cognizable: 'Summary Tribunal remedy',
+    bailable: 'N/A',
+    maxPunishment: 'N/A — maintenance order; transfer declared void; abandonment is an offence under Section 24',
+    arneshKumarApplies: 0,
+    practitionerEscalationNote: 'For Section 23, prove the care condition (in the deed or by surrounding circumstances) and its breach. Eviction orders must be balanced against a daughter-in-law\'s residence right under PWDVA (S. Vanitha). Apply through the SDO office with proof of age, the deed, and evidence of neglect.'
+  },
+
+  // === CLUSTER 13: MSME DUES & ARBITRATION ===
+  {
+    id: 'msme-15-18-arbitration',
+    act: 'MSMED Act, 2006 & Arbitration and Conciliation Act, 1996',
+    section: 'Sections 15, 16, 18 & 19 MSMED Act · Sections 8, 11 & 34 Arbitration Act',
+    legacyEquivalent: 'Gujarat State Civil Supplies Corp. v. Mahakali Foods, (2023) 6 SCC 401; Perkins Eastman v. HSCC, (2020) 20 SCC 760',
+    chapterCluster: 'msme-arbitration',
+    title: 'Unpaid Invoices to a Registered MSME Supplier & Arbitration Clauses',
+    ingredients: 'A buyer must pay a registered micro/small supplier within the agreed period, capped at 45 days (Section 15); delay attracts compound interest at three times the RBI bank rate (Section 16). The supplier can approach the MSE Facilitation Council (MSME Samadhaan) under Section 18, which overrides a private arbitration clause (Mahakali Foods). A buyer challenging an MSEFC award must deposit 75% (Section 19). A clause letting one party alone appoint the sole arbitrator is invalid (Perkins Eastman; CORE Constitution Bench, 2024).',
+    cognizable: 'Civil / Statutory conciliation & arbitration',
+    bailable: 'N/A',
+    maxPunishment: 'N/A — award with compound interest',
+    arneshKumarApplies: 0,
+    practitionerEscalationNote: 'Confirm Udyam registration existed when the supply contract was made; attach invoices, POs, delivery proof and ledger. A Section 34 challenge to an arbitral award has a hard 3 months + 30 days limit.'
+  },
+
+  // === CLUSTER 14: TAX NOTICES, RTI & WRITS ===
+  {
+    id: 'gst-75-4-it-148a-rti-writ',
+    act: 'CGST Act 2017, Income-tax Act 1961, RTI Act 2005 & Constitution of India',
+    section: 'Section 75(4) CGST · Section 148A Income-tax Act · Sections 6, 7(1) & 19 RTI Act · Article 226',
+    legacyEquivalent: 'Whirlpool Corp. v. Registrar of Trade Marks, (1998) 8 SCC 1',
+    chapterCluster: 'tax-rti-writ',
+    title: 'GST / Income-tax Show-Cause Notices, RTI Requests and High Court Writs',
+    ingredients: 'Before an adverse GST order, a personal hearing must be given where requested or where an adverse decision is contemplated (Section 75(4) CGST). Income-tax reassessment requires the Section 148A procedure before a Section 148 notice. RTI: the public authority must reply within 30 days, or 48 hours where life or liberty is involved (Section 7(1) proviso), with first and second appeals under Section 19. A writ under Article 226 lies despite an alternative remedy where natural justice is breached or the authority lacks jurisdiction (Whirlpool).',
+    cognizable: 'Administrative / Constitutional remedy',
+    bailable: 'N/A',
+    maxPunishment: 'N/A',
+    arneshKumarApplies: 0,
+    practitionerEscalationNote: 'Reply to every tax notice in writing within the stated time, ask for the personal hearing in the reply itself, and keep the acknowledgement. RTI cannot be used against private companies; use it only for public authorities.'
   }
 ];
 
@@ -605,6 +701,14 @@ function seedStatutoryAndLessonsIfEmpty(db) {
   }
 
   const lessonCount = db.prepare(`SELECT COUNT(*) AS cnt FROM practitioner_lessons`).get();
+  if (Number(lessonCount?.cnt || 0) > 0) {
+    // Concept anchors evolve between releases; re-embed stored lessons so taught rules stay retrievable.
+    const reembed = db.prepare(`UPDATE practitioner_lessons SET embedding_json = ?, embedding_blob = ? WHERE id = ?`);
+    for (const r of db.prepare(`SELECT id, domain, topic, lesson_text FROM practitioner_lessons`).all()) {
+      const vec = computeSemanticEmbedding384(`${r.domain} ${r.topic} ${r.lesson_text}`);
+      reembed.run(JSON.stringify(Array.from(vec.slice(0, 64)).map(n => Number(n.toFixed(4)))), float32ToBuffer(vec), r.id);
+    }
+  }
   if (Number(lessonCount?.cnt || 0) === 0) {
     const now = new Date().toISOString();
     const insertLesson = db.prepare(`
