@@ -1570,7 +1570,19 @@ ${effectiveRawInput || '(See attached images and Case State above)'}${imageSumma
         images,
         maxTokens: ADVICE_MAX_TOKENS
       });
-      const verification = verifyDraftAgainstRecord(llmRes.content, inferredCaseState, {
+      const parsedSyncMeta = parseAndStripDynamicIntakeMeta(llmRes.content);
+      const finalSyncMarkdown = parsedSyncMeta.cleanMarkdown;
+      if (parsedSyncMeta.dynamicMeta?.questions?.length > 0 && engineResult.practitionerIntelligence?.factProbing) {
+        const existingQTexts = new Set(
+          (engineResult.practitionerIntelligence.factProbing.clarifyingQuestions || []).map(q => q.question.toLowerCase())
+        );
+        engineResult.practitionerIntelligence.factProbing.clarifyingQuestions = [
+          ...(engineResult.practitionerIntelligence.factProbing.clarifyingQuestions || []),
+          ...parsedSyncMeta.dynamicMeta.questions.filter(q => !existingQTexts.has(q.question.toLowerCase()))
+        ].slice(0, 4);
+      }
+
+      const verification = verifyDraftAgainstRecord(finalSyncMarkdown, inferredCaseState, {
         domain: engineResult.domainInfo?.domain || 'consumer',
         paidAmountInr: engineResult.paidAmountInr
       });
@@ -1588,7 +1600,7 @@ ${effectiveRawInput || '(See attached images and Case State above)'}${imageSumma
         imagesCount: Array.isArray(images) ? images.length : 0,
         folderPath,
         engineResult,
-        assistantMarkdown: llmRes.content,
+        assistantMarkdown: finalSyncMarkdown,
         model: llmRes.model,
         tokens: llmRes.billingEntry?.totalTokens || 0,
         costInr: llmRes.billingEntry?.estimatedInr || 0,
@@ -1602,7 +1614,7 @@ ${effectiveRawInput || '(See attached images and Case State above)'}${imageSumma
         session: updatedSession,
         sessions: listSessionsForUser(userId, 50),
         engineResult,
-        adviceMarkdown: llmRes.content,
+        adviceMarkdown: finalSyncMarkdown,
         model: llmRes.model,
         billingEntry: llmRes.billingEntry,
         billingTotals: scopeBillingForUser(readBillingLedger(), userId).totals
