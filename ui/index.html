@@ -2023,6 +2023,23 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
        */
       const renderLiveThinkingCard = () => {
         if (!loading && thinkingSteps.length === 0) return null;
+        if (!loading) {
+          // Once the answer is ready, keep the processing steps out of the way (one tappable line).
+          return (
+            <details class="mt-4 rounded-xl border border-zinc-200/80 bg-white/70 text-xs">
+              <summary class="cursor-pointer px-3 py-2 text-zinc-500 select-none">
+                {error ? '⚠️ Processing stopped — tap to see the steps' : `✓ How this answer was prepared (${thinkingSteps.filter(s => s.status === 'done').length}/${thinkingSteps.length} steps) — tap to view`}
+              </summary>
+              <div class="px-3 pb-3 space-y-1.5">
+                {thinkingSteps.map(step => (
+                  <div key={step.stepId} class="text-zinc-600">
+                    <span class="font-semibold">{step.status === 'done' ? '✓' : '○'} {step.label}:</span> {step.detail}
+                  </div>
+                ))}
+              </div>
+            </details>
+          );
+        }
         return (
           <div class="mt-6 bg-white rounded-2xl border border-zinc-200/90 p-5 shadow-sm space-y-3">
             <div class="flex items-center justify-between">
@@ -2916,11 +2933,26 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
           )}
 
           {/* Main Content Container */}
-          <main class={`flex-1 w-full max-w-2xl mx-auto px-4 sm:px-6 py-5 sm:py-8 flex flex-col ${!door ? 'justify-center' : ''}`}>
+          <main class={`flex-1 w-full max-w-2xl mx-auto px-4 sm:px-6 py-5 sm:py-8 flex flex-col ${!door && !(result || streamingMarkdown || loading || activeSession?.turns?.length) ? 'justify-center' : ''}`}>
             {door && <button onClick={goHome} class="self-start mb-4 text-sm text-zinc-500 hover:text-zinc-900">← Home</button>}
 
+            {/* Once a conversation is under way, the big home input steps aside so the answer is the first thing on screen */}
+            {!door && Boolean(result || streamingMarkdown || loading || activeSession?.turns?.length) && (
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-xs text-zinc-500 truncate">{caseTitle || activeSession?.title || 'Your question'}</span>
+                <button
+                  type="button"
+                  onClick={() => startNewBlankSession(null)}
+                  disabled={loading}
+                  class="shrink-0 text-xs font-medium px-3 py-1.5 rounded-lg border border-zinc-200 hover:border-zinc-400 text-zinc-700 transition disabled:opacity-50"
+                >
+                  ＋ New question
+                </button>
+              </div>
+            )}
+
             {/* ==================== STEP 1: UNIFIED MULTIMODAL OMNIBOX HOME ==================== */}
-            {!door && (
+            {!door && !(result || streamingMarkdown || loading || activeSession?.turns?.length) && (
               <div class="space-y-5">
                 <section class="text-center space-y-2.5 pt-2 pb-1">
                   <p class="text-xs font-semibold uppercase tracking-widest text-amber-800">Your Indian Legal Co-Pilot</p>
@@ -3747,13 +3779,13 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
             {activeSession?.turns?.length > 1 && (
               <div class="mt-6 space-y-4">
                 <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                  Conversation History in This Case ({activeSession.turns.length - 1} earlier {activeSession.turns.length - 1 === 1 ? 'turn' : 'turns'})
+                  Earlier in this case ({activeSession.turns.length - 1})
                 </div>
                 {activeSession.turns.slice(0, -1).map((t) => (
-                  <details key={t.id} open class="bg-white rounded-2xl border border-zinc-200/80 p-4 shadow-sm">
-                    <summary class="cursor-pointer text-xs font-semibold text-zinc-800 flex items-center justify-between">
-                      <span>Turn #{t.turnIndex} · {new Date(t.createdAt).toLocaleString()}</span>
-                      <span class="text-zinc-400 font-normal">{t.model}</span>
+                  <details key={t.id} class="bg-white rounded-2xl border border-zinc-200/80 p-3 shadow-sm">
+                    <summary class="cursor-pointer text-xs text-zinc-800 select-none">
+                      <span class="text-zinc-500 font-semibold">You: </span>
+                      {stripPromptWrapper(t.userInput.split('ATTACHED FOLDER / TEXT DOCUMENTS:')[0]).slice(0, 90)}…
                     </summary>
                     <div class="mt-3 p-2.5 rounded-xl bg-zinc-100 text-xs text-zinc-800 font-medium">
                       <span class="text-zinc-500 font-semibold">You: </span>
@@ -3770,7 +3802,279 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
 
             {/* Live Streaming Output OR Completed Result */}
             {(streamingMarkdown || result) && (
-              <div class="min-w-0 mt-6 bg-white rounded-2xl border border-zinc-200 p-4 sm:p-6 space-y-5 shadow-sm">
+              <div class="min-w-0 mt-4 bg-white rounded-2xl border border-zinc-200 p-4 sm:p-6 space-y-4 shadow-sm">
+                {result?.engineResult?.responseCompletion?.incomplete && !loading && (
+                  <div role="alert" class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-950">
+                    This answer is incomplete. Ask for the missing part or a shorter complete answer before using a draft or taking action.
+                  </div>
+                )}
+
+                <div
+                  class="markdown-body max-w-none"
+                  dangerouslySetInnerHTML={renderFormattedMarkdown(streamingMarkdown || result?.adviceMarkdown || '')}
+                />
+
+                {!loading && result && !streamingMarkdown && (
+                  <>
+                    <div class="pt-4 border-t border-zinc-200/80 space-y-3">
+                      {result?.engineResult?.practitionerIntelligence?.factProbing?.clarifyingQuestions?.length > 0 && (
+                        <div class="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2.5 text-xs">
+                          <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="font-semibold text-amber-950">
+                              {result?.engineResult?.practitionerIntelligence?.factReadiness?.kind === 'drafting'
+                                ? '📝 A few terms for your document — pick what applies, or type your own below:'
+                                : "💬 A few quick questions — tap what applies (you can pick several):"}
+                            </div>
+                            {Object.keys(selectedQuickReplies).length > 0 && (
+                              <button
+                                type="button"
+                                disabled={loading || voice.busy}
+                                onClick={() => runAnalysis(activeSession?.mode || result?.engineResult?.effectiveMode || 'auto', followUpText.trim())}
+                                class="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs shadow-sm transition disabled:opacity-50"
+                              >
+                                ✓ Confirm Selected Facts ({Object.keys(selectedQuickReplies).length}) & Continue →
+                              </button>
+                            )}
+                            {result?.engineResult?.practitionerIntelligence?.factReadiness?.intakeStage === 'clarify-first' && Object.keys(selectedQuickReplies).length === 0 && (
+                              <button
+                                type="button"
+                                disabled={loading || voice.busy}
+                                onClick={() => runAnalysis(
+                                  activeSession?.mode || result?.engineResult?.effectiveMode || 'auto',
+                                  result.engineResult.practitionerIntelligence.factReadiness.kind === 'drafting'
+                                    ? 'Please prepare the complete document now with the terms shared so far, using clear placeholders for anything not yet given.'
+                                    : 'Please generate the complete legal roadmap, statutory analysis, and ready-to-use draft based on the facts shared so far, using placeholders for any unconfirmed details.',
+                                  null,
+                                  true
+                                )}
+                                class="px-2.5 py-1 rounded-lg bg-zinc-900 text-white font-semibold text-[11px] hover:bg-zinc-800 transition disabled:opacity-50"
+                              >
+                                {result?.engineResult?.practitionerIntelligence?.factReadiness?.kind === 'drafting' ? 'Skip — draft with blanks →' : 'Skip — give full answer →'}
+                              </button>
+                            )}
+                          </div>
+                          {result.engineResult.practitionerIntelligence.factProbing.clarifyingQuestions.map((cq) => (
+                            <div key={cq.id} class="p-2.5 rounded-lg bg-white/80 border border-amber-200/80 space-y-1.5">
+                              <div class="font-medium text-zinc-900">{cq.question}</div>
+                              <div class="text-[11px] text-zinc-600">{cq.whyLawyerAsks}</div>
+                              <div class="flex flex-wrap gap-1.5 pt-0.5">
+                                {(cq.quickReplies || []).map((qr, qIdx) => {
+                                  const isSelected = selectedQuickReplies[cq.id] === qr;
+                                  return (
+                                    <button
+                                      key={qIdx}
+                                      type="button"
+                                      disabled={loading || voice.busy}
+                                      onClick={() => toggleQuickReplyChip(cq.id, qr)}
+                                      class={`text-left text-xs px-2.5 py-1.5 rounded-lg border font-medium transition disabled:opacity-50 ${
+                                        isSelected
+                                          ? 'bg-emerald-700 text-white border-emerald-800 shadow-sm'
+                                          : 'bg-white hover:bg-amber-100 text-zinc-800 border-amber-300'
+                                      }`}
+                                    >
+                                      {isSelected ? `✓ ${qr}` : `+ ${qr}`}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <label htmlFor="follow-up-text" class="text-xs font-semibold text-zinc-700 block">
+                        Ask about anything unclear, or tell us what changed
+                      </label>
+                      <div class="flex flex-col sm:flex-row gap-2">
+                        <input
+                          id="follow-up-text"
+                          type="text"
+                          value={followUpText}
+                          onChange={(e) => setFollowUpText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && followUpText.trim() && !loading && !voice.busy) {
+                              runAnalysis(activeSession?.mode, followUpText.trim());
+                            }
+                          }}
+                          placeholder="e.g., What does that mean for me, and what should I do first?"
+                          class="flex-1 text-xs px-3.5 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 focus:outline-none focus:border-zinc-400"
+                        />
+                        <button
+                          onClick={() => runAnalysis(activeSession?.mode, followUpText.trim())}
+                          disabled={loading || !followUpText.trim() || voice.busy}
+                          class="px-4 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition disabled:opacity-40 whitespace-nowrap"
+                        >
+                          {loading ? 'Preparing your answer...' : 'Ask a follow-up →'}
+                        </button>
+                      </div>
+                      <VoiceInput inputId="follow-up-text" setText={setFollowUpText} voice={voice} disabled={loading || Boolean(ingestProgress)} />
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 text-xs">
+                      <button
+                        onClick={() => copyText(result.adviceMarkdown)}
+                        class="px-3 py-1.5 rounded-lg bg-zinc-900 text-white font-medium hover:bg-zinc-800 transition"
+                      >
+                        {copied ? '✓ Copied' : '📋 Copy'}
+                      </button>
+                      <button
+                        onClick={() => runAnalysis(
+                          activeSession?.mode || result?.engineResult?.effectiveMode || 'auto',
+                          result?.engineResult?.practitionerIntelligence?.bilingualDraftInstruction ||
+                            'Prepare a complete, ready-to-print Bilingual Formal Complaint / Legal Notice / Application in BOTH formal Hindi (देवनागरी) and English based on our case facts, including a complete Prayer clause and clear [PLACEHOLDERS].',
+                          null,
+                          true
+                        )}
+                        disabled={voice.busy}
+                        class="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-950 font-medium border border-emerald-300 transition disabled:opacity-50"
+                        title="Generate ready-to-sign Bilingual (Hindi + English) Thana Complaint / Legal Notice / Court Application"
+                      >
+                        🇮🇳 Draft in Hindi + English
+                      </button>
+                      <details class="relative">
+                        <summary class="list-none cursor-pointer px-3 py-1.5 rounded-lg border border-zinc-200 hover:border-zinc-400 text-zinc-700 font-medium select-none">⋯ More</summary>
+                        <div class="absolute z-20 mt-1 left-0 w-64 max-w-[80vw] p-2 rounded-xl bg-white border border-zinc-200 shadow-lg space-y-1">
+                          <button onClick={() => downloadCourtWordDoc(result.adviceMarkdown, caseTitle || 'Nyaya-Legal-Filing')} class="w-full text-left px-2.5 py-2 rounded-lg hover:bg-zinc-100">📄 Export Word (.doc)</button>
+                          <button onClick={() => printCourtReadyPdf(result.adviceMarkdown, caseTitle || 'Nyaya Legal Filing')} class="w-full text-left px-2.5 py-2 rounded-lg hover:bg-zinc-100">🖨️ Print / Save PDF</button>
+                          {result?.engineResult?.practitionerIntelligence?.crossExaminationInstruction && (
+                            <button
+                              onClick={() => runAnalysis(activeSession?.mode || result?.engineResult?.effectiveMode || 'auto', result.engineResult.practitionerIntelligence.crossExaminationInstruction, null, true)}
+                              disabled={voice.busy}
+                              class="w-full text-left px-2.5 py-2 rounded-lg hover:bg-zinc-100 disabled:opacity-50"
+                              title="Generate a contradiction table and cross-examination questions from the opponent's reply, affidavit or FIR"
+                            >
+                              ⚔️ Cross-Examination & Contradictions
+                            </button>
+                          )}
+                          <div class="pt-1 mt-1 border-t border-zinc-100 space-y-1">
+                            <select
+                              aria-label="Choose model for deeper review"
+                              value={escalationModel}
+                              onChange={(e) => setEscalationModel(e.target.value)}
+                              disabled={voice.busy}
+                              class="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs"
+                            >
+                              <option value="claude-opus-5.5">Claude Opus 5.5</option>
+                              <option value="gemini-4-argon">Gemini 4 Argon</option>
+                              <option value="claude-sonnet-5.5">Claude Sonnet 5.5</option>
+                              <option value="claude-opus-4.6">Claude Opus 4.6</option>
+                              <option value="claude-sonnet-4.6">Claude Sonnet 4.6</option>
+                              <option value="gpt-4.1">GPT-4.1</option>
+                            </select>
+                            <button
+                              onClick={() => runAnalysis(activeSession?.mode, 'Review the advice for this situation in more depth. Re-check assumptions, relevant evidence and legal requirements, explain trade-offs plainly, and improve the requested plan or draft without inventing facts.', escalationModel, true)}
+                              disabled={voice.busy}
+                              class="w-full text-left px-2.5 py-2 rounded-lg hover:bg-zinc-100 disabled:opacity-50"
+                              title={`Review this situation in more depth with ${escalationModel}`}
+                            >
+                              🧠 Review in more depth
+                            </button>
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+                    <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="text-zinc-500">Helpful?</span>
+                        <button
+                          type="button"
+                          onClick={() => submitTurnFeedback(1)}
+                          class={`px-2.5 py-1 rounded-lg border transition ${
+                            turnRating === 1 ? 'bg-emerald-100 border-emerald-300 text-emerald-900 font-semibold' : 'bg-zinc-50 border-zinc-200 text-zinc-700 hover:border-zinc-400'
+                          }`}
+                        >
+                          👍
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => submitTurnFeedback(-1)}
+                          class={`px-2.5 py-1 rounded-lg border transition ${
+                            turnRating === -1 ? 'bg-red-100 border-red-300 text-red-900 font-semibold' : 'bg-zinc-50 border-zinc-200 text-zinc-700 hover:border-zinc-400'
+                          }`}
+                        >
+                          👎
+                        </button>
+                        {feedbackSavedMsg && <span class="text-emerald-700 font-medium">{feedbackSavedMsg}</span>}
+                      </div>
+                      {turnRating === -1 && (
+                        <div class="w-full flex gap-2 mt-1">
+                          <input
+                            type="text"
+                            value={turnFeedbackNote}
+                            onChange={(e) => setTurnFeedbackNote(e.target.value)}
+                            placeholder="Tell us what was missing or confusing so we can fix it..."
+                            class="flex-1 text-xs px-3 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => submitTurnFeedback(-1, turnFeedbackNote)}
+                            class="px-3 py-1.5 rounded-lg bg-zinc-900 text-white text-xs font-medium"
+                          >
+                            Save Note
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <details open={result?.engineResult?.effectiveMode === 'lawyer-research-bench'} class="rounded-2xl border border-zinc-200/90 bg-zinc-50/60 text-xs">
+                      <summary class="cursor-pointer px-3.5 py-2.5 font-semibold text-zinc-700 select-none">
+                        📚 Legal details — sections, deadlines & checks
+                        {result?.engineResult?.domainInfo?.label && (
+                          <span class="block sm:inline sm:ml-2 font-normal text-zinc-500 truncate">{result.engineResult.domainInfo.label.split('(')[0].trim()}</span>
+                        )}
+                      </summary>
+                      <div class="px-3 pb-3 pt-1 space-y-3">
+                {result?.engineResult?.practitionerIntelligence?.factReadiness?.slots?.length > 0 && (
+                  <div class="p-2.5 rounded-xl bg-zinc-50 border border-zinc-200/90 space-y-2 text-xs">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <span class="font-bold text-zinc-900">
+                        {result.engineResult.practitionerIntelligence.factReadiness.kind === 'drafting'
+                          ? `📝 Drafting Checklist — ${result.engineResult.practitionerIntelligence.factReadiness.documentLabel} (${result.engineResult.practitionerIntelligence.factReadiness.factDimensionsConfirmed}/${result.engineResult.practitionerIntelligence.factReadiness.totalSlots} terms confirmed)`
+                          : `📋 Case Fact Sheet (${result.engineResult.practitionerIntelligence.factReadiness.factDimensionsConfirmed}/${result.engineResult.practitionerIntelligence.factReadiness.totalSlots || 6} Senior-Counsel Slots Confirmed)`}
+                      </span>
+                      {result.engineResult.practitionerIntelligence.factReadiness.intakeStage === 'clarify-first' ? (
+                        <button
+                          type="button"
+                          disabled={loading || voice.busy}
+                          onClick={() => runAnalysis(
+                            activeSession?.mode || result?.engineResult?.effectiveMode || 'auto',
+                            result.engineResult.practitionerIntelligence.factReadiness.kind === 'drafting'
+                              ? 'Please prepare the complete document now with the terms shared so far, using clear placeholders for anything not yet given.'
+                              : 'Please generate the complete legal roadmap, statutory analysis, and ready-to-use draft based on the facts shared so far, using placeholders for any unconfirmed details.',
+                            null,
+                            true
+                          )}
+                          class="px-2.5 py-1 rounded-lg bg-zinc-900 text-white font-semibold text-[11px] hover:bg-zinc-800 transition disabled:opacity-50"
+                        >
+                          {result.engineResult.practitionerIntelligence.factReadiness.kind === 'drafting'
+                            ? '⚡ Skip questions & draft with blanks now →'
+                            : '⚡ Skip questions & build full roadmap now →'}
+                        </button>
+                      ) : (
+                        <span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-950 font-semibold text-[10px]">
+                          {result.engineResult.practitionerIntelligence.factReadiness.kind === 'drafting'
+                            ? '✓ Enough terms confirmed — drafting'
+                            : '✓ All Core Facts Confirmed — Full Roadmap Mode'}
+                        </span>
+                      )}
+                    </div>
+                    <div class="flex flex-wrap gap-1.5">
+                      {result.engineResult.practitionerIntelligence.factReadiness.slots.map(sl => (
+                        <span
+                          key={sl.id}
+                          title={sl.summary}
+                          class={`px-2 py-0.5 rounded-lg border text-[11px] font-medium ${
+                            sl.confirmed
+                              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                              : 'bg-amber-50 border-amber-200 text-amber-900'
+                          }`}
+                        >
+                          {sl.confirmed ? '✓' : '⏳'} {sl.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {(result?.engineResult?.domainInfo || result?.engineResult?.disposalPace || result?.engineResult?.niAct138 || result?.engineResult?.criminalRules || result?.engineResult?.verification) && (
                   <div class="flex flex-wrap gap-2 pb-4 border-b border-zinc-100">
                     {result?.engineResult?.domainInfo?.label && (
@@ -3823,12 +4127,6 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                         ✓ Tactic Matched: {t.title}
                       </span>
                     ))}
-                  </div>
-                )}
-
-                {result?.engineResult?.responseCompletion?.incomplete && !loading && (
-                  <div role="alert" class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-950">
-                    This answer is incomplete. Ask for the missing part or a shorter complete answer before using a draft or taking action.
                   </div>
                 )}
 
@@ -3925,63 +4223,6 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                     )}
                   </div>
                 )}
-
-                {result?.engineResult?.practitionerIntelligence?.factReadiness?.slots?.length > 0 && (
-                  <div class="p-2.5 rounded-xl bg-zinc-50 border border-zinc-200/90 space-y-2 text-xs">
-                    <div class="flex flex-wrap items-center justify-between gap-2">
-                      <span class="font-bold text-zinc-900">
-                        {result.engineResult.practitionerIntelligence.factReadiness.kind === 'drafting'
-                          ? `📝 Drafting Checklist — ${result.engineResult.practitionerIntelligence.factReadiness.documentLabel} (${result.engineResult.practitionerIntelligence.factReadiness.factDimensionsConfirmed}/${result.engineResult.practitionerIntelligence.factReadiness.totalSlots} terms confirmed)`
-                          : `📋 Case Fact Sheet (${result.engineResult.practitionerIntelligence.factReadiness.factDimensionsConfirmed}/${result.engineResult.practitionerIntelligence.factReadiness.totalSlots || 6} Senior-Counsel Slots Confirmed)`}
-                      </span>
-                      {result.engineResult.practitionerIntelligence.factReadiness.intakeStage === 'clarify-first' ? (
-                        <button
-                          type="button"
-                          disabled={loading || voice.busy}
-                          onClick={() => runAnalysis(
-                            activeSession?.mode || result?.engineResult?.effectiveMode || 'auto',
-                            result.engineResult.practitionerIntelligence.factReadiness.kind === 'drafting'
-                              ? 'Please prepare the complete document now with the terms shared so far, using clear placeholders for anything not yet given.'
-                              : 'Please generate the complete legal roadmap, statutory analysis, and ready-to-use draft based on the facts shared so far, using placeholders for any unconfirmed details.',
-                            null,
-                            true
-                          )}
-                          class="px-2.5 py-1 rounded-lg bg-zinc-900 text-white font-semibold text-[11px] hover:bg-zinc-800 transition disabled:opacity-50"
-                        >
-                          {result.engineResult.practitionerIntelligence.factReadiness.kind === 'drafting'
-                            ? '⚡ Skip questions & draft with blanks now →'
-                            : '⚡ Skip questions & build full roadmap now →'}
-                        </button>
-                      ) : (
-                        <span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-950 font-semibold text-[10px]">
-                          {result.engineResult.practitionerIntelligence.factReadiness.kind === 'drafting'
-                            ? '✓ Enough terms confirmed — drafting'
-                            : '✓ All Core Facts Confirmed — Full Roadmap Mode'}
-                        </span>
-                      )}
-                    </div>
-                    <div class="flex flex-wrap gap-1.5">
-                      {result.engineResult.practitionerIntelligence.factReadiness.slots.map(sl => (
-                        <span
-                          key={sl.id}
-                          title={sl.summary}
-                          class={`px-2 py-0.5 rounded-lg border text-[11px] font-medium ${
-                            sl.confirmed
-                              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                              : 'bg-amber-50 border-amber-200 text-amber-900'
-                          }`}
-                        >
-                          {sl.confirmed ? '✓' : '⏳'} {sl.label}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div
-                  class="markdown-body max-w-none"
-                  dangerouslySetInnerHTML={renderFormattedMarkdown(streamingMarkdown || result?.adviceMarkdown || '')}
-                />
 
                 {result?.engineResult?.practitionerIntelligence && (
                   <details open={Boolean(loading && !streamingMarkdown)} class="p-3 rounded-2xl bg-zinc-50 border border-zinc-200/90 space-y-3 text-xs">
@@ -4235,210 +4476,13 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                   </details>
                 )}
 
-                {!loading && result && !streamingMarkdown && (
-                  <>
-                    <div class="pt-4 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
-                      <div>
-                        Model: <strong class="text-zinc-800">{result.model}</strong> ·
-                        Tokens: <strong class="text-zinc-800">{result.billingEntry?.totalTokens || 0}</strong> ·
-                        Call Cost: <strong class="text-emerald-700">₹{(result.billingEntry?.estimatedInr || 0).toFixed(3)}</strong> ·
-                        Latency: {((result.billingEntry?.latencyMs || 0) / 1000).toFixed(1)}s
-                      </div>
-                      <div class="flex flex-wrap items-center gap-2">
-                        <div class="flex items-center gap-1.5">
-                          <select
-                            aria-label="Choose model for deeper review"
-                            value={escalationModel}
-                            onChange={(e) => setEscalationModel(e.target.value)}
-                            disabled={voice.busy}
-                            class="px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-950 font-medium border border-amber-300 text-xs focus:outline-none"
-                          >
-                            <option value="claude-opus-5.5">Claude Opus 5.5</option>
-                            <option value="gemini-4-argon">Gemini 4 Argon</option>
-                            <option value="claude-sonnet-5.5">Claude Sonnet 5.5</option>
-                            <option value="claude-opus-4.6">Claude Opus 4.6</option>
-                            <option value="claude-sonnet-4.6">Claude Sonnet 4.6</option>
-                            <option value="gpt-4.1">GPT-4.1</option>
-                          </select>
-                          <button
-                            onClick={() => runAnalysis(
-                              activeSession?.mode || result?.engineResult?.effectiveMode || 'auto',
-                              result?.engineResult?.practitionerIntelligence?.bilingualDraftInstruction ||
-                                'Prepare a complete, ready-to-print Bilingual Formal Complaint / Legal Notice / Application in BOTH formal Hindi (देवनागरी) and English based on our case facts, including a complete Prayer clause and clear [PLACEHOLDERS].',
-                              null,
-                              true
-                            )}
-                            disabled={voice.busy}
-                            class="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-950 font-semibold border border-emerald-300 transition disabled:opacity-50"
-                            title="Generate ready-to-sign Bilingual (Hindi + English) Thana Complaint / Legal Notice / Court Application"
-                          >
-                            🇮🇳 Draft in Hindi + English
-                          </button>
-                          {result?.engineResult?.practitionerIntelligence?.crossExaminationInstruction && (
-                          <button
-                            onClick={() => runAnalysis(
-                              activeSession?.mode || result?.engineResult?.effectiveMode || 'auto',
-                              result?.engineResult?.practitionerIntelligence?.crossExaminationInstruction ||
-                                'Prepare a contradiction table and 10–15 closed, leading cross-examination questions based only on the record in this case, flagging any document still needed.',
-                              null,
-                              true
-                            )}
-                            disabled={voice.busy}
-                            class="px-3 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-950 font-semibold border border-purple-300 transition disabled:opacity-50"
-                            title="Generate a contradiction table and cross-examination questions from the opponent's reply, affidavit or FIR"
-                          >
-                            ⚔️ Cross-Examination & Contradictions
-                          </button>
-                          )}
-                          <button
-                            onClick={() => runAnalysis(activeSession?.mode, 'Review the advice for this situation in more depth. Re-check assumptions, relevant evidence and legal requirements, explain trade-offs plainly, and improve the requested plan or draft without inventing facts.', escalationModel, true)}
-                            disabled={voice.busy}
-                            class="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-950 font-semibold border border-amber-300 transition disabled:opacity-50"
-                            title={`Review this situation in more depth with ${escalationModel}`}
-                          >
-                            🧠 Review in more depth
-                          </button>
-                        </div>
-                        <button
-                          onClick={() => downloadCourtWordDoc(result.adviceMarkdown, caseTitle || 'Nyaya-Legal-Filing')}
-                          class="px-3 py-1.5 rounded-lg border border-zinc-200 hover:border-zinc-400 text-zinc-800 font-medium transition"
-                        >
-                          📄 Export Word (.doc)
-                        </button>
-                        <button
-                          onClick={() => printCourtReadyPdf(result.adviceMarkdown, caseTitle || 'Nyaya Legal Filing')}
-                          class="px-3 py-1.5 rounded-lg border border-zinc-200 hover:border-zinc-400 text-zinc-800 font-medium transition"
-                        >
-                          🖨️ Print / Save PDF
-                        </button>
-                        <button
-                          onClick={() => copyText(result.adviceMarkdown)}
-                          class="px-3.5 py-1.5 rounded-lg bg-zinc-900 text-white font-medium hover:bg-zinc-800 transition"
-                        >
-                          {copied ? '✓ Copied' : 'Copy Markdown'}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div class="pt-3 border-t border-zinc-100 flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <div class="flex flex-wrap items-center gap-2">
-                        <span class="text-zinc-500 font-medium">Was this answer helpful?</span>
-                        <button
-                          type="button"
-                          onClick={() => submitTurnFeedback(1)}
-                          class={`px-2.5 py-1 rounded-lg border transition ${
-                            turnRating === 1 ? 'bg-emerald-100 border-emerald-300 text-emerald-900 font-semibold' : 'bg-zinc-50 border-zinc-200 text-zinc-700 hover:border-zinc-400'
-                          }`}
-                        >
-                          👍 Helpful
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => submitTurnFeedback(-1)}
-                          class={`px-2.5 py-1 rounded-lg border transition ${
-                            turnRating === -1 ? 'bg-red-100 border-red-300 text-red-900 font-semibold' : 'bg-zinc-50 border-zinc-200 text-zinc-700 hover:border-zinc-400'
-                          }`}
-                        >
-                          👎 Needs improvement
-                        </button>
-                        {feedbackSavedMsg && <span class="text-emerald-700 font-medium">{feedbackSavedMsg}</span>}
-                      </div>
-                      {turnRating === -1 && (
-                        <div class="w-full flex gap-2 mt-1">
-                          <input
-                            type="text"
-                            value={turnFeedbackNote}
-                            onChange={(e) => setTurnFeedbackNote(e.target.value)}
-                            placeholder="Tell us what was missing or confusing so we can fix it..."
-                            class="flex-1 text-xs px-3 py-1.5 rounded-lg border border-zinc-200 bg-zinc-50"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => submitTurnFeedback(-1, turnFeedbackNote)}
-                            class="px-3 py-1.5 rounded-lg bg-zinc-900 text-white text-xs font-medium"
-                          >
-                            Save Note
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    <div class="pt-4 border-t border-zinc-200/80 space-y-3">
-                      {result?.engineResult?.practitionerIntelligence?.factProbing?.clarifyingQuestions?.length > 0 && (
-                        <div class="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2.5 text-xs">
-                          <div class="flex flex-wrap items-center justify-between gap-2">
-                            <div class="font-semibold text-amber-950">
-                              {result?.engineResult?.practitionerIntelligence?.factReadiness?.kind === 'drafting'
-                                ? '📝 A few terms for your document — pick what applies, or type your own below:'
-                                : "💬 Lawyer's Clarifying Questions — Select your answers below (multi-select supported):"}
-                            </div>
-                            {Object.keys(selectedQuickReplies).length > 0 && (
-                              <button
-                                type="button"
-                                disabled={loading || voice.busy}
-                                onClick={() => runAnalysis(activeSession?.mode || result?.engineResult?.effectiveMode || 'auto', followUpText.trim())}
-                                class="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs shadow-sm transition disabled:opacity-50"
-                              >
-                                ✓ Confirm Selected Facts ({Object.keys(selectedQuickReplies).length}) & Continue →
-                              </button>
-                            )}
+                        {currentUser?.role === 'superadmin' && (
+                          <div class="text-[11px] text-zinc-500">
+                            Model: <strong class="text-zinc-800">{result.model}</strong> · Tokens: {result.billingEntry?.totalTokens || 0} · ₹{(result.billingEntry?.estimatedInr || 0).toFixed(3)} · {((result.billingEntry?.latencyMs || 0) / 1000).toFixed(1)}s
                           </div>
-                          {result.engineResult.practitionerIntelligence.factProbing.clarifyingQuestions.map((cq) => (
-                            <div key={cq.id} class="p-2.5 rounded-lg bg-white/80 border border-amber-200/80 space-y-1.5">
-                              <div class="font-medium text-zinc-900">{cq.question}</div>
-                              <div class="text-[11px] text-zinc-600">{cq.whyLawyerAsks}</div>
-                              <div class="flex flex-wrap gap-1.5 pt-0.5">
-                                {(cq.quickReplies || []).map((qr, qIdx) => {
-                                  const isSelected = selectedQuickReplies[cq.id] === qr;
-                                  return (
-                                    <button
-                                      key={qIdx}
-                                      type="button"
-                                      disabled={loading || voice.busy}
-                                      onClick={() => toggleQuickReplyChip(cq.id, qr)}
-                                      class={`text-left text-xs px-2.5 py-1.5 rounded-lg border font-medium transition disabled:opacity-50 ${
-                                        isSelected
-                                          ? 'bg-emerald-700 text-white border-emerald-800 shadow-sm'
-                                          : 'bg-white hover:bg-amber-100 text-zinc-800 border-amber-300'
-                                      }`}
-                                    >
-                                      {isSelected ? `✓ ${qr}` : `+ ${qr}`}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <label htmlFor="follow-up-text" class="text-xs font-semibold text-zinc-700 block">
-                        Ask about anything unclear, or tell us what changed
-                      </label>
-                      <div class="flex flex-col sm:flex-row gap-2">
-                        <input
-                          id="follow-up-text"
-                          type="text"
-                          value={followUpText}
-                          onChange={(e) => setFollowUpText(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && followUpText.trim() && !loading && !voice.busy) {
-                              runAnalysis(activeSession?.mode, followUpText.trim());
-                            }
-                          }}
-                          placeholder="e.g., What does that mean for me, and what should I do first?"
-                          class="flex-1 text-xs px-3.5 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 focus:outline-none focus:border-zinc-400"
-                        />
-                        <button
-                          onClick={() => runAnalysis(activeSession?.mode, followUpText.trim())}
-                          disabled={loading || !followUpText.trim() || voice.busy}
-                          class="px-4 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition disabled:opacity-40 whitespace-nowrap"
-                        >
-                          {loading ? 'Preparing your answer...' : 'Ask a follow-up →'}
-                        </button>
+                        )}
                       </div>
-                      <VoiceInput inputId="follow-up-text" setText={setFollowUpText} voice={voice} disabled={loading || Boolean(ingestProgress)} />
-                    </div>
+                    </details>
                   </>
                 )}
               </div>
