@@ -13,6 +13,7 @@ import {
   searchStatutoryProvisionsSemantic,
   searchPractitionerLessonsSemantic
 } from './semantic-statutory-index.mjs';
+import { detectRequestIntent } from './civil-criminal-rules.mjs';
 import {
   detectIndianState,
   evaluateMaintainabilityAndOusters,
@@ -352,12 +353,12 @@ export function evaluateConversationalFactProbing({
         clarifyingQuestions.push({
           id: 'probe-general-facts-and-docs',
           slot: 'authorityAndForumStatus',
-          question: 'Before I give you a final legal roadmap, please confirm: (1) When did this happen and what stage is it at today, (2) What documents or proof do you have in hand, and (3) What exact outcome do you want?',
-          whyLawyerAsks: 'A seasoned lawyer never guesses facts—confirming your stage and available proof first ensures we pick the right section and forum.',
+          question: 'To point you to the right step, tell me: (1) what has happened so far and when, (2) what you have in writing, and (3) what outcome you want.',
+          whyLawyerAsks: 'The stage you are at and the proof you hold decide which law applies and where to go first.',
           quickReplies: [
-            'This is a new issue — no police complaint, notice, or court case has been filed yet',
-            'I have already given a complaint / received a notice and need the exact next move',
-            'A case is already running in court and I need strategy for the next hearing'
+            'Nothing has been sent or filed yet — I want to know my options',
+            'A notice, complaint or report has already been sent or received',
+            'A case is already running in a court or tribunal'
           ]
         });
       }
@@ -395,7 +396,7 @@ export function buildCumulativeCaseFactSheet({
   const detectedState = detectIndianState(`${cumulativeUserText}\n${rawInput}`, caseState);
 
   const hasRoleAndParties = Boolean(
-    caseState.role ||
+    (caseState.role && !caseState.roleInferred) ||
     /\b(i\s+am|my\s+mother|my\s+father|my\s+wife|my\s+husband|complainant|respondent|accused|victim|buyer|tenant|landlord|builder|bank|police|thana|company|employer|employee|client)\b/i.test(cumulativeUserText)
   );
 
@@ -512,6 +513,170 @@ export function evaluateCaseFactReadiness({
     detectedState: sheet.detectedState,
     confirmedSlotIds: Array.from(sheet.confirmedSlotIds),
     missingDimensions: sheet.missingSlots.map(s => s.summary)
+  };
+}
+
+/**
+ * DOCUMENT-DRAFTING INTENT: a transactional document needs deal terms, not dispute facts.
+ * Each document type lists the terms a lawyer confirms before drafting, and the legal checks the draft must respect.
+ */
+const DRAFTING_PROFILES = {
+  'rent-agreement': {
+    label: 'Rent / Lease / Leave & Licence Agreement',
+    slots: [
+      {
+        id: 'draftRole',
+        label: 'Landlord or Tenant',
+        rx: /\b(i\s+am\s+(?:the\s+)?(?:landlord|owner|tenant|licensor|licensee)|(?:as|for)\s+(?:the\s+)?(?:landlord|owner|tenant)|my\s+(?:flat|house|shop|property)|both\s+parties)\b/i,
+        question: {
+          question: 'Are you the landlord or the tenant? (The clauses should protect your side.)',
+          whyLawyerAsks: 'Deposit refund, lock-in, maintenance and termination clauses are written differently depending on whose interests the draft protects.',
+          quickReplies: ['I am the landlord / owner', 'I am the tenant', 'Neutral draft for both parties']
+        }
+      },
+      {
+        id: 'draftState',
+        label: 'State / City',
+        stateBased: true,
+        question: {
+          question: 'Which State and city is the property in?',
+          whyLawyerAsks: 'Stamp duty, registration rules and rent laws differ by State (e.g., Maharashtra requires every leave & licence agreement to be registered; U.P. and Tamil Nadu require informing the Rent Authority).',
+          quickReplies: ['Maharashtra (Mumbai / Pune)', 'Karnataka (Bengaluru)', 'Delhi / NCR', 'Another State — I will type it']
+        }
+      },
+      {
+        id: 'draftTermAndUse',
+        label: 'Duration & Use',
+        rx: /\b(\d+\s*(?:months?|years?)|eleven\s+months|one\s+year|residential|commercial|shop|office|godown|warehouse|flat|house|room|pg\b|paying\s+guest)\b/i,
+        question: {
+          question: 'For how long, and for what use?',
+          whyLawyerAsks: 'A lease of one year or more must be on a registered deed (Section 107 TPA, Section 17 Registration Act); commercial premises need different clauses (fit-outs, GST on rent, signage).',
+          quickReplies: ['11 months, residential (renewable)', 'More than 1 year / multi-year lease', 'Commercial shop or office']
+        }
+      },
+      {
+        id: 'draftMoney',
+        label: 'Rent & Deposit',
+        rx: /(?:rs\.?|inr|₹)\s*[\d,]+|\b\d[\d,]*\s*(?:rupees|per\s+month|\/-|k\b)|\b(rent\s+(?:is|of)|deposit\s+(?:is|of)|advance\s+of)\b/i,
+        question: {
+          question: 'What are the monthly rent and security deposit? Should rent increase yearly?',
+          whyLawyerAsks: 'These are the core commercial terms; some State Acts cap the deposit (for example, the U.P. 2021 Act caps residential deposits at 2 months\' rent).',
+          quickReplies: ['I will type the rent, deposit and start date', 'Add a yearly rent increase (5–10%)', 'Leave amounts as blanks for now']
+        }
+      },
+      {
+        id: 'draftSpecialTerms',
+        label: 'Special Terms',
+        optional: true,
+        rx: /\b(lock-?in|notice\s+period|maintenance|electricity|furnished|semi-?furnished|pets?|sub-?let|painting|repairs?|parking)\b/i,
+        question: {
+          question: 'Any special terms to include?',
+          whyLawyerAsks: 'Lock-in, notice period, maintenance and furnishing lists are where most later rent disputes begin; writing them now prevents them.',
+          quickReplies: ['Lock-in period + 1–2 month notice', 'Furnished — attach an inventory list', 'Tenant pays electricity, water and society maintenance']
+        }
+      }
+    ],
+    legalChecklist: [
+      'A lease from year to year, or for more than one year, can only be made by a registered instrument (Section 107 Transfer of Property Act; Section 17(1)(d) Registration Act). An unregistered long lease is weak evidence of its terms (Section 49 Registration Act).',
+      'This is why 11-month agreements are common; they still need stamp duty as per the State Stamp Act.',
+      'Maharashtra: every leave & licence agreement must be registered (Section 55, Maharashtra Rent Control Act 1999), usually online with e-registration.',
+      'States with Model-Tenancy-style laws (e.g., Tamil Nadu 2017, U.P. 2021) require the agreement to be reported to the Rent Authority and may cap the deposit.',
+      'Most city police require tenant verification; include a clause obliging the tenant to cooperate.',
+      'Attach an inventory list for furnished premises and record the meter readings on the handover date.'
+    ],
+    verifyNote: 'Stamp duty, registration and deposit caps change by State and over time; confirm the current local rate before signing.'
+  }
+};
+
+const GENERIC_DRAFTING_PROFILE = {
+  slots: [
+    {
+      id: 'draftParties',
+      label: 'Parties',
+      rx: /\b(between|i\s+am|my\s+(?:son|daughter|wife|husband|father|mother|brother|sister|partner|client|company)|on\s+behalf\s+of|both\s+parties)\b/i,
+      question: {
+        question: 'Who are the parties to this document, and on whose behalf are you preparing it?',
+        whyLawyerAsks: 'The draft must name the parties correctly and protect the right side.',
+        quickReplies: ['For myself', 'For a family member', 'For my business / client']
+      }
+    },
+    {
+      id: 'draftState',
+      label: 'State / City',
+      stateBased: true,
+      question: {
+        question: 'Which State will the document be signed or used in?',
+        whyLawyerAsks: 'Stamp duty, registration and witness requirements depend on the State.',
+        quickReplies: ['Maharashtra', 'Karnataka', 'Delhi / NCR', 'Another State — I will type it']
+      }
+    },
+    {
+      id: 'draftKeyTerms',
+      label: 'Key Terms',
+      rx: /(?:rs\.?|inr|₹)\s*[\d,]+|\b(\d+\s*(?:months?|years?)|property|amount|share|bank\s+account|address|purpose|scope|payment|salary|duration)\b/i,
+      question: {
+        question: 'What are the main terms (property/asset, amounts, duration or purpose)?',
+        whyLawyerAsks: 'These details are the heart of the document; anything missing will be left as a clear blank.',
+        quickReplies: ['I will type the key details', 'Leave blanks — give me the format first']
+      }
+    }
+  ],
+  legalChecklist: [
+    'Check whether the document needs stamp duty and registration in your State (documents transferring or creating rights in immovable property usually need registration under Section 17 Registration Act).',
+    'Sign before two witnesses where the law requires attestation (for example, a will or a gift deed).'
+  ],
+  verifyNote: 'Stamp duty and registration requirements vary by State.'
+};
+
+export function buildDraftingFactSheet({ documentType = '', priorTurns = [], rawInput = '', caseState = {}, hasAttachments = false, forceFullRoadmap = false } = {}) {
+  const profile = DRAFTING_PROFILES[documentType] || GENERIC_DRAFTING_PROFILE;
+  const priorUserText = Array.isArray(priorTurns)
+    ? priorTurns.map(t => String(t.userInput || '').split('ATTACHED FOLDER / TEXT DOCUMENTS:')[0]).join('\n')
+    : '';
+  const cumulative = `${priorUserText}\n${String(rawInput || '').split('ATTACHED FOLDER / TEXT DOCUMENTS:')[0]}`;
+  const detectedState = detectIndianState(cumulative, caseState);
+
+  const slots = profile.slots.map(s => {
+    const confirmed = s.stateBased ? Boolean(detectedState) : s.rx.test(cumulative);
+    return {
+      id: s.id,
+      label: s.label,
+      optional: Boolean(s.optional),
+      confirmed,
+      summary: confirmed ? `${s.label} noted${s.stateBased && detectedState ? ` · ${detectedState.state}` : ''}` : s.question.question
+    };
+  });
+  const required = slots.filter(s => !s.optional);
+  const confirmedRequired = required.filter(s => s.confirmed).length;
+  const userSaysUseBlanks = /\b(leave\s+(?:amounts?\s+as\s+)?blanks?|placeholders?|skip\s+questions|just\s+give\s+(?:me\s+)?(?:the\s+)?format|full\s+roadmap|generate\s+the\s+complete)\b/i.test(rawInput);
+  const shouldClarifyFirst = !hasAttachments && !forceFullRoadmap && !userSaysUseBlanks && confirmedRequired < required.length - 1;
+
+  const questions = profile.slots
+    .filter(s => !slots.find(x => x.id === s.id).confirmed && !s.optional)
+    .slice(0, 3)
+    .map(s => ({ id: `draft-${s.id}`, slot: s.id, ...s.question }));
+
+  return {
+    factReadiness: {
+      kind: 'drafting',
+      documentType: documentType || 'generic',
+      documentLabel: profile.label || 'Legal Document',
+      intakeStage: shouldClarifyFirst ? 'clarify-first' : 'full-roadmap',
+      shouldClarifyFirst,
+      wordCount: cumulative.split(/\s+/).filter(Boolean).length,
+      factDimensionsConfirmed: slots.filter(s => s.confirmed).length,
+      totalSlots: slots.length,
+      slots,
+      detectedState,
+      confirmedSlotIds: slots.filter(s => s.confirmed).map(s => s.id),
+      missingDimensions: slots.filter(s => !s.confirmed && !s.optional).map(s => s.summary)
+    },
+    clarifyingQuestions: shouldClarifyFirst ? questions : [],
+    draftingGuide: {
+      documentType: documentType || 'generic',
+      legalChecklist: profile.legalChecklist,
+      verifyNote: profile.verifyNote
+    }
   };
 }
 
@@ -845,6 +1010,48 @@ export function runPractitionerIntelligence({
     : '';
   const cumulativeInput = priorUserText ? `${priorUserText}\n${rawInput}` : rawInput;
 
+  if (mode === 'document-drafting' || caseState.requestIntent === 'document-drafting') {
+    const documentType = caseState.documentType || detectRequestIntent(cumulativeInput).documentType || 'generic';
+    const drafting = buildDraftingFactSheet({
+      documentType,
+      priorTurns,
+      rawInput,
+      caseState,
+      hasAttachments,
+      forceFullRoadmap: Boolean(forceFullRoadmap || caseState.forceFullRoadmap)
+    });
+    const searchText = documentType === 'rent-agreement'
+      ? 'rent agreement lease leave and licence tenancy landlord tenant registration stamp duty security deposit'
+      : `${cumulativeInput} ${drafting.factReadiness.documentLabel}`;
+    return {
+      requestIntent: 'document-drafting',
+      factReadiness: drafting.factReadiness,
+      draftingGuide: drafting.draftingGuide,
+      ingredientTranslations: [],
+      factProbing: { firCognizabilityAnalysis: null, clarifyingQuestions: drafting.clarifyingQuestions },
+      foresightAndPrayer: null,
+      matchedTrajectories: [],
+      maintainabilityAudit: null,
+      paperTrailAudit: null,
+      forumElection: null,
+      flankRisks: [],
+      jurisdictionState: drafting.factReadiness.detectedState,
+      semanticStatutoryCluster: searchStatutoryProvisionsSemantic(searchText, { topK: 2, expandCluster: false }),
+      semanticPractitionerLessons: searchPractitionerLessonsSemantic(cumulativeInput, domainInfo.domain || '', 2),
+      bilingualDraftInstruction: `Prepare the complete ${drafting.factReadiness.documentLabel} in BOTH formal Hindi (देवनागरी) and English, using the confirmed terms and clear [PLACEHOLDERS] for anything not yet given, followed by a short signing, stamping and registration checklist for the State.`,
+      crossExaminationInstruction: null,
+      instantTriage: {
+        generatedAtMs: Date.now(),
+        headline: `📝 Drafting: ${drafting.factReadiness.documentLabel}`,
+        immediateReassurance: 'I will confirm the few terms that change the document, then prepare a ready-to-sign draft.',
+        firstMoveNow: drafting.draftingGuide.legalChecklist[0],
+        keyIngredientTranslation: null,
+        topClarifyingQuestion: drafting.clarifyingQuestions[0]?.question || null,
+        quickReplies: drafting.clarifyingQuestions[0]?.quickReplies || []
+      }
+    };
+  }
+
   const factReadiness = evaluateCaseFactReadiness({
     rawInput,
     priorTurns,
@@ -874,7 +1081,8 @@ export function runPractitionerIntelligence({
     adaptiveQuestions = rawFactProbing.clarifyingQuestions.slice(0, 1);
   }
   // If >= 4 slots are confirmed (full-roadmap ready), 0 clarifying questions are needed unless 1 slot remains open
-  if (!factReadiness.shouldClarifyFirst && factReadiness.factDimensionsConfirmed >= 5) {
+  // Once the gate decides a full answer is due, no question card is shown: the gate and the card must agree.
+  if (!factReadiness.shouldClarifyFirst) {
     adaptiveQuestions = [];
   }
 

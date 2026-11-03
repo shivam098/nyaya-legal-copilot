@@ -258,6 +258,40 @@ export function detectLegalDomain({ door = '', mode = '', caseState = {}, rawInp
   };
 }
 
+/**
+ * Request intent: is the user fighting/defending a dispute, or asking us to prepare a transactional document?
+ * Transactional documents (rent agreement, will, power of attorney...) need deal terms, not dispute facts.
+ * Dispute documents (legal notice, police complaint, written statement) stay on the dispute route because they
+ * depend on what happened.
+ */
+export const TRANSACTIONAL_DOCUMENT_TYPES = [
+  { documentType: 'rent-agreement', documentLabel: 'Rent / Lease / Leave & Licence Agreement', rx: /\b(rent(?:al)?\s+agreement|lease\s+(?:agreement|deed)|leave\s+(?:and|&)\s+licen[cs]e|tenancy\s+agreement|kiraya\s*nama|kirayanama)\b|किरायानामा|किराया\s+अनुबंध/i },
+  { documentType: 'will', documentLabel: 'Will (Wasiyat)', rx: /\b(?:make|draft|write|prepare|create)\s+(?:a\s+|my\s+|the\s+)?will\b|\bwill\s+deed\b|\bwasiyat\b|वसीयत/i },
+  { documentType: 'power-of-attorney', documentLabel: 'Power of Attorney', rx: /\b(power\s+of\s+attorney|\bg?poa\b|mukhtar\s*nama)\b/i },
+  { documentType: 'gift-deed', documentLabel: 'Gift Deed', rx: /\bgift\s+deed\b|दान\s*पत्र/i },
+  { documentType: 'sale-agreement', documentLabel: 'Agreement to Sell / Sale Deed', rx: /\b(agreement\s+(?:to|for)\s+sale|agreement\s+to\s+sell|sale\s+(?:agreement|deed)|bayana|baina)\b/i },
+  { documentType: 'partnership-deed', documentLabel: 'Partnership Deed', rx: /\bpartnership\s+deed\b/i },
+  { documentType: 'service-contract', documentLabel: 'Service / Freelance / Vendor Agreement', rx: /\b(service\s+agreement|freelance\s+(?:agreement|contract)|vendor\s+agreement|consultancy\s+agreement|nda|non-?disclosure\s+agreement|mou|memorandum\s+of\s+understanding)\b/i },
+  { documentType: 'employment-contract', documentLabel: 'Employment Contract / Offer Letter', rx: /\b(employment\s+(?:agreement|contract)|appointment\s+letter|offer\s+letter)\b/i },
+  { documentType: 'loan-agreement', documentLabel: 'Loan Agreement / Promissory Note', rx: /\b(loan\s+agreement|promissory\s+note|friendly\s+loan\s+agreement)\b/i },
+  { documentType: 'affidavit', documentLabel: 'Affidavit / Self-Declaration', rx: /\b(?:name\s+change|address\s+proof|income|gap\s+year|general|self[-\s]?declaration)?\s*affidavit\b/i }
+];
+
+export function detectRequestIntent(rawInput = '') {
+  const text = String(rawInput || '').split('ATTACHED FOLDER / TEXT DOCUMENTS:')[0];
+  const wantsDocument = /\b(draft|drafting|prepare|make|create|write|format|template|sample|model|need\s+(?:a|an)|want\s+(?:a|an)|bana(?:na|o|\s+do)?|likh(?:na|o|\s+do)?)\b|बनाना|बना\s+दो|लिख\s+दो/i.test(text);
+  // A dispute about an existing document ("landlord not returning deposit under the rent agreement") is not a drafting request.
+  const describesDispute = /\b(not\s+return(?:ing)?|refus(?:ed|ing)|evict|vacate|harass|threat|cheat|fraud|breach|violat|police|fir\b|court|case\s+(?:filed|against)|legal\s+notice\s+(?:from|received)|received\s+(?:a\s+)?notice|dispute|withheld|deducted)\b/i.test(text);
+  if (/\bevidence\s+affidavit\b/i.test(text)) {
+    return { intent: 'dispute', documentType: null, documentLabel: null };
+  }
+  const doc = TRANSACTIONAL_DOCUMENT_TYPES.find(d => d.rx.test(text));
+  if (doc && wantsDocument && !describesDispute) {
+    return { intent: 'document-drafting', documentType: doc.documentType, documentLabel: doc.documentLabel };
+  }
+  return { intent: 'dispute', documentType: null, documentLabel: null };
+}
+
 function parseFlexibleDateToIso(dateStr = '') {
   const s = String(dateStr || '').trim();
   const isoMatch = s.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
@@ -319,9 +353,12 @@ export function autoSenseIntakeFromText({ door = '', mode = '', caseState = {}, 
   if (!nextCaseState.role) {
     const isDefender = /\b(received\s+a\s+notice|summoned\s+to\s+caw|caw\s+cell\s+asking\s+me|police\s+called\s+me|threaten(?:ed|ing)\s+to\s+file\s+498a|demanding\s+(?:an\s+unfair\s+)?refund\s+from\s+us|filed\s+a\s+case\s+against\s+me|eviction\s+case\s+against\s+me)\b/i.test(lower);
     nextCaseState.role = isDefender ? 'defender' : 'complainant';
+    // A defaulted role is not a fact the user gave; the fact sheet must not count it as confirmed.
+    nextCaseState.roleInferred = !isDefender;
   }
 
   const domainInfo = detectLegalDomain({ door, mode, caseState: nextCaseState, rawInput: text });
+  const requestIntent = detectRequestIntent(text);
 
   // Only override door/mode when the caller uses unified/auto routing (preserving explicit door/mode contracts!)
   let resolvedDoor = door || 'start';
@@ -345,6 +382,12 @@ export function autoSenseIntakeFromText({ door = '', mode = '', caseState = {}, 
         ? 'roc-hiccup'
         : 'choose-entity';
       autoDetectedCategoryLabel = 'Company & Startup Advisory (MCA / RoC)';
+    } else if (requestIntent.intent === 'document-drafting' && !isOngoingCaseQuery) {
+      resolvedDoor = 'start';
+      resolvedMode = 'document-drafting';
+      nextCaseState.requestIntent = 'document-drafting';
+      nextCaseState.documentType = requestIntent.documentType;
+      autoDetectedCategoryLabel = `Document Drafting — ${requestIntent.documentLabel}`;
     } else if (isOngoingCaseQuery) {
       resolvedDoor = 'midcase';
       resolvedMode = 'midcase-battle-card';
