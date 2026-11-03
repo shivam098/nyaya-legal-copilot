@@ -7,6 +7,42 @@
 
 export const VERIFIED_LANDMARK_JUDGMENTS = [
   {
+    id: 'pramod-suryabhan-pawar-bns-s69-false-promise',
+    keywords: ['pramod suryabhan pawar', 'section 69 bns', 'bns 69', 'false promise to marry', 'deceitful means', 'breach of promise', 'consensual relationship', 'marital rape', 'exception 2 section 63', 'sonu @ subhash', 'naim ahamed', '376 ipc'],
+    caseTitle: 'Pramod Suryabhan Pawar v. State of Maharashtra (read with Sonu @ Subhash Kumar v. State of UP & Naim Ahamed v. State (NCT of Delhi))',
+    citation: '(2019) 9 SCC 608 | 2019 INSC 938 · 2021 SCC OnLine SC 181 · 2023 SCC OnLine SC 89',
+    courtAndBench: 'Supreme Court of India — 2-Judge Bench (D.Y. Chandrachud & Indira Banerjee, JJ.)',
+    dateOfJudgment: '21 August 2019',
+    domain: 'Criminal Defence — Section 69 BNS (False Promise to Marry) vs. Consensual Breakup & Section 63 Exception 2 BNS (Marital Context)',
+    bareActProvisions: [
+      {
+        act: 'Bharatiya Nyaya Sanhita (BNS), 2023',
+        sections: 'Section 69 BNS (Sexual intercourse by employing deceitful means / false promise to marry — up to 10 years) & Section 63 Exception 2 BNS (Marital exception where wife is not under 18 years)',
+        bareActSummary: 'Section 69 BNS penalises sexual intercourse (not amounting to rape) by employing deceitful means or by making a promise to marry without any intention of fulfilling the same (Cognizable, Non-Bailable, up to 10 years). Under Exception 2 to Section 63 BNS (read with Independent Thought v. Union of India, (2017) 10 SCC 800), sexual intercourse by a man with his own wife, the wife not being under 18 years of age, is not rape under Section 63/64 BNS (though physical/mental cruelty or hurt remains actionable under Section 85/115 BNS and Section 12 PWDVA).',
+        indiaCodeUrl: 'https://www.indiacode.nic.in/handle/123456789/20062'
+      },
+      {
+        act: 'Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023',
+        sections: 'Section 482 BNSS (Anticipatory Bail — old s.438 CrPC) & Section 528 BNSS (High Court Quashing of FIR — old s.482 CrPC)',
+        bareActSummary: 'Because Section 69 BNS carries up to 10 years (> 7 years), automatic Section 35(3) BNSS (Arnesh Kumar) notice protection does NOT apply—immediate Anticipatory Bail under Section 482 BNSS and High Court Quashing under Section 528 BNSS are the primary remedies.',
+        indiaCodeUrl: 'https://www.indiacode.nic.in/handle/123456789/20099'
+      }
+    ],
+    ratioDecidendi: [
+      '1. "False Promise to Marry" vs. "Breach of Promise to Marry": There is a fundamental legal distinction between a promise to marry that was false from the very inception (given in bad faith with zero intention to abide by it when made) and a subsequent breach of a genuine promise to marry due to unforeseen family opposition, caste/horoscope differences, or breakdown of a consensual relationship.',
+      '2. Two Mandatory Ingredients for Offence: To sustain an FIR under Section 69 BNS (or old s.376/90 IPC), the prosecution must establish prima facie that: (a) the maker of the promise had NO intention to uphold his word AT THE TIME OF MAKING IT (deceit from Day 1), and (b) the false promise was of immediate relevance and the direct proximate cause of the woman\'s consent.',
+      '3. Long-Standing Consensual Relationship & Existing Marriage Bar (Naim Ahamed v. State, 2023 SCC OnLine SC 89): Where educated adults continue a consensual physical relationship over a long period knowing the practical hurdles (or where one party was already married and no divorce had taken place), a subsequent breakup cannot be weaponized into a criminal prosecution—the FIR is an abuse of process liable to be quashed under Section 528 BNSS (s.482 CrPC).'
+    ],
+    keyParagraphs: 'Paragraphs 16, 18 & 21 of Pramod Suryabhan Pawar, (2019) 9 SCC 608.',
+    whenToCiteInCourt: 'Cite in Section 482 BNSS (s.438 CrPC) Anticipatory Bail petitions, Section 528 BNSS (s.482 CrPC) High Court FIR Quashing petitions, and Section 250 BNSS Discharge applications when a consensual relationship breakup or marital dispute is falsely given the colour of Section 69 / 64 BNS.',
+    howToDistinguishIfOpposing: 'The prosecution/complainant can defeat Pramod Suryabhan Pawar only by showing fraudulent concealment at inception—e.g., the accused was already secretly married and hid that fact from Day 1, used a fake identity, or conducted a sham/fraudulent marriage ceremony.',
+    links: {
+      indianKanoonDocUrl: 'https://indiankanoon.org/doc/147241625/',
+      indianKanoonSearchUrl: 'https://indiankanoon.org/search/?formInput=Pramod+Suryabhan+Pawar+v.+State+of+Maharashtra+2019+9+SCC+608',
+      eScrUrl: 'https://digiscr.sci.gov.in/'
+    }
+  },
+  {
     id: 'tofan-singh-ndps-s67',
     keywords: ['tofan singh', 'tufan singh', 'ndps', 'section 67', 's. 67', 's.67', 'section 53', 'confessional statement', 'ncb', 'narcotic', 'section 25 evidence', 'section 23 bsa', 'pallulabid'],
     caseTitle: 'Tofan Singh v. State of Tamil Nadu',

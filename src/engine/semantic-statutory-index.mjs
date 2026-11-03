@@ -415,7 +415,21 @@ export const STATUTORY_PROVISIONS_SEED = [
     practitionerEscalationNote: 'If the 30-day demand notice window from the Return Memo is missed and the cheque is still within its 3-month validity, the payee can re-present the cheque to generate a fresh Return Memo and fresh 30-day clock; if validity expired, pursue a Summary Suit under Order 37 CPC / MSME Samadhaan / Section 318 BNS if dishonest from inception.'
   },
 
-  // === CLUSTER 8: CYBER ACCOUNT FREEZE (BNSS s.106), EMPLOYMENT FORCED RESIGNATION & HOSPITAL DETENTION ===
+  // === CLUSTER 8: CYBER ACCOUNT FREEZE (BNSS s.106), SECTION 69 BNS FALSE PROMISE DEFENCE & MARITAL EXCEPTION ===
+  {
+    id: 'bns-69-false-promise-and-s63-marital-exception',
+    act: 'Bharatiya Nyaya Sanhita (BNS), 2023 & BNSS, 2023',
+    section: 'Section 69 BNS (Deceitful Means / False Promise to Marry) · Section 63 Exception 2 BNS (Marital Exception) · Sections 482 & 528 BNSS',
+    legacyEquivalent: 'Sections 376 / 90 IPC & Exception 2 to Section 375 IPC (Pramod Suryabhan Pawar v. State of Maharashtra, (2019) 9 SCC 608)',
+    chapterCluster: 'bns-69-false-promise-and-marital-defence',
+    title: 'Defence Against False Section 69 BNS (False Promise to Marry) & Section 63 Exception 2 Marital Context',
+    ingredients: '(1) Section 69 BNS penalises sexual intercourse (not amounting to rape) by deceitful means or making a promise to marry WITHOUT ANY INTENTION OF FULFILLING IT AT INCEPTION (Cognizable, Non-Bailable, up to 10 years—so Section 35(3) BNSS Arnesh Kumar notice does NOT automatically apply; immediate Section 482 BNSS Anticipatory Bail is critical); (2) Under Supreme Court law (Pramod Suryabhan Pawar (2019) 9 SCC 608, Sonu @ Subhash Kumar 2021, Naim Ahamed 2023), a "breach of a genuine promise to marry" after a consensual relationship (due to family/caste opposition or incompatibility) is NOT a "false promise to marry from Day 1" and is liable to be quashed under Section 528 BNSS; (3) If the parties are legally married and the wife is >= 18 years of age, Exception 2 to Section 63 BNS bars a charge of rape under s.63/64 BNS, and Section 69 BNS (promise to marry) is legally inapplicable once marriage has already taken place!',
+    cognizable: 'Cognizable (Up to 10 years — Immediate Section 482 BNSS Anticipatory Bail required)',
+    bailable: 'Non-Bailable',
+    maxPunishment: 'Up to 10 years imprisonment + fine',
+    arneshKumarApplies: 0,
+    practitionerEscalationNote: 'SENIOR DEFENCE COUNSEL PROTOCOL: (1) Distinguish whether the parties are already married (where neither s.69 BNS "promise to marry" nor s.63 BNS rape applies if the wife is >=18 yrs per Exception 2 to s.63 BNS) vs. an unmarried couple after a breakup; (2) Because s.69 BNS carries 10 years (> 7 yrs), do NOT wait for a Section 35(3) BNSS notice—move immediately for Section 482 BNSS Anticipatory Bail before the Sessions/High Court; (3) Preserve all WhatsApp chats, photos, travel/hotel records, family-talk messages, and any extortion/blackmail threats with a Section 63 BSA certificate; (4) File a Section 528 BNSS High Court Quashing Petition citing Pramod Suryabhan Pawar v. State of Maharashtra, (2019) 9 SCC 608.'
+  },
   {
     id: 'bnss-106-cyber-bank-account-freeze',
     act: 'Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023',

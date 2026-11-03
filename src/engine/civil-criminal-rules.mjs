@@ -74,15 +74,15 @@ export const VERIFIED_CRIMINAL_OFFENCE_MAP = [
   },
   {
     id: 'deceitful-promise-bns69',
-    matchRegex: /\b(bns\s*69|false\s+promise\s+to\s+marry|deceitful\s+means)\b/i,
-    ipcSection: 'Previously prosecuted under Section 376 / 90 IPC',
-    bnsSection: 'Section 69 BNS, 2023',
-    offenceName: 'Sexual intercourse by employing deceitful means / false promise to marry',
+    matchRegex: /\b(bns\s*69|section\s+69\b|s\.?\s*69\s+bns|false\s+promise\s+to\s+marry|deceitful\s+means|marital\s+rape)\b/i,
+    ipcSection: 'Previously prosecuted under Section 376 / 90 IPC (Marital Exception: Exception 2 to Section 375 IPC)',
+    bnsSection: 'Section 69 BNS, 2023 & Exception 2 to Section 63 BNS, 2023',
+    offenceName: 'Sexual intercourse by employing deceitful means / false promise to marry (vs. Marital Exception under s.63 Exception 2 BNS)',
     cognizable: true,
     bailable: false,
     maxPunishmentYears: 10,
     arneshKumarNoticeApplies: false,
-    statutoryNote: 'Cognizable and NON-BAILABLE, carrying up to 10 years imprisonment. Because maximum punishment exceeds 7 years, Section 35(3) BNSS / Arnesh Kumar notice protection does NOT automatically apply; immediate Anticipatory Bail under Section 482 BNSS is essential.'
+    statutoryNote: 'Cognizable and NON-BAILABLE, carrying up to 10 years imprisonment. Because maximum punishment exceeds 7 years, Section 35(3) BNSS / Arnesh Kumar notice protection does NOT automatically apply; immediate Anticipatory Bail under Section 482 BNSS is essential. CRITICAL DEFENCE DISTINCTIONS: (1) If the parties are already legally married and the wife is >= 18 years of age, Section 69 BNS ("promise to marry") cannot legally apply at all, and Exception 2 to Section 63 BNS excludes marital intercourse with an adult wife from Section 63/64 BNS rape (though cruelty/hurt under s.85/115 BNS and PWDVA s.12 remain actionable); (2) For unmarried couples after a breakup, under Pramod Suryabhan Pawar v. State of Maharashtra ((2019) 9 SCC 608), Sonu @ Subhash Kumar (2021), and Naim Ahamed (2023), a subsequent breach/failure of a genuine promise to marry due to family opposition or incompatibility is NOT a "false promise to marry from inception" and the FIR is liable to be quashed under Section 528 BNSS (old s.482 CrPC).'
   }
 ];
 

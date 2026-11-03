@@ -163,6 +163,43 @@ export function evaluateConversationalFactProbing({
       };
     }
 
+    // False Section 69 BNS / False Promise to Marry / Marital Context Defence Probing
+    if (/\b(section\s+69|s\.?\s*69\b|bns\s*69|false\s+promise\s+to\s+marry|deceitful\s+means|marital\s+rape|376|breakup\s+case|false\s+rape)\b/i.test(text)) {
+      clarifyingQuestions.push({
+        id: 'probe-bns69-marital-or-relationship-status',
+        slot: 'aggravatingOrIngredientFacts',
+        question: '1. Are the parties already legally married (or was it a consensual relationship/engagement that later broke off)?',
+        whyLawyerAsks: 'CRITICAL DISTINCTION: If already legally married (wife >= 18 yrs), Section 69 BNS ("false promise to marry") cannot legally apply at all, and Exception 2 to Section 63 BNS excludes marital intercourse from s.63/64 BNS! If it was a consensual relationship breakup, Pramod Suryabhan Pawar ((2019) 9 SCC 608) holds that subsequent inability to marry is NOT an offence under s.69 BNS unless the promise was fake from Day 1.',
+        quickReplies: [
+          'We are already legally married — wife is threatening/filing a false case during marital dispute',
+          'Long consensual relationship — marriage could not happen later due to family/mutual differences',
+          'She is threatening to file a Section 69 BNS / rape FIR unless I pay money or marry immediately'
+        ]
+      });
+      clarifyingQuestions.push({
+        id: 'probe-bns69-fir-and-bail-status',
+        slot: 'authorityOrStageStatus',
+        question: '2. Has an FIR already been registered at the Thana, or is it currently at the threat / police-call stage?',
+        whyLawyerAsks: 'Because Section 69 BNS carries up to 10 years (> 7 years), automatic Section 35(3) BNSS (Arnesh Kumar) notice protection does NOT apply—if an FIR is registered or imminent, moving for Section 482 BNSS Anticipatory Bail is the #1 priority.',
+        quickReplies: [
+          'Only threats / police station call so far — no FIR registered yet',
+          'FIR is already registered under Section 69 / 64 BNS — I need immediate Anticipatory Bail (s.482 BNSS)',
+          'I am the complainant/woman and he deceived me from Day 1 (e.g., hid his existing marriage)'
+        ]
+      });
+      clarifyingQuestions.push({
+        id: 'probe-bns69-digital-evidence',
+        slot: 'availableEvidence',
+        question: '3. Do you have WhatsApp chats, call recordings, family-introduction messages, or proof of any monetary/blackmail threat?',
+        whyLawyerAsks: 'WhatsApp chats showing mutual consent, genuine marriage efforts/family talks, or extortion demands (certified under Section 63 BSA) are the exact evidence High Courts use to grant Anticipatory Bail (s.482 BNSS) and quash the FIR (s.528 BNSS).',
+        quickReplies: [
+          'Yes — I have WhatsApp chats showing mutual consent / family talks / monetary threats',
+          'Some chats were deleted or on my old phone — need to know what to preserve today',
+          'We have marriage certificate / Roka / ceremony photos'
+        ]
+      });
+    }
+
     // Chain snatching / mobile snatching specific probing (s.304 Snatching [3 yrs] vs s.309(4)/(6) Robbery [10 yrs / Life] + Jimmanama)
     if (/(\bsnatch(?:ed|ing)?\b|\bchain\s+snatch(?:ed|ing)?\b|\bmobile\s+snatch(?:ed|ing)?\b|झपटमारी|चेन\s+स्नैचिंग)/i.test(text)) {
       clarifyingQuestions.push({
