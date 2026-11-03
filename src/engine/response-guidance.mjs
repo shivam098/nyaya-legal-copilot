@@ -1,4 +1,10 @@
 export const ADVICE_MAX_TOKENS = 4096;
+// Complete transactional documents (agreement + signing checklist) need more room than an advice answer.
+export const DRAFTING_MAX_TOKENS = 8192;
+
+export function resolveAdviceMaxTokens(mode = '') {
+  return mode === 'document-drafting' ? DRAFTING_MAX_TOKENS : ADVICE_MAX_TOKENS;
+}
 
 export const CONTEXT_FIRST_GUIDANCE = `HOW TO HELP THE PERSON READING THIS (applies to every answer):
 - Start with a brief, calm explanation of what their situation means and the decision or problem in front of them, in ordinary language. Answer the actual question before listing legal machinery. For immediate danger, put the safe urgent action first. Do not promise success or say "don't worry" when a real risk remains.

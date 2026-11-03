@@ -28,6 +28,7 @@ import {
 } from '../src/engine/copilot-llm.mjs';
 import {
   ADVICE_MAX_TOKENS,
+  resolveAdviceMaxTokens,
   buildAnalysisSystemPrompt,
   buildDigestSystemPrompt
 } from '../src/engine/response-guidance.mjs';
@@ -1396,7 +1397,7 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
           userPrompt,
           images: sendImagesToSenior,
           isComplexCase,
-          maxTokens: ADVICE_MAX_TOKENS,
+          maxTokens: resolveAdviceMaxTokens(effectiveMode),
           onChunk: (deltaText) => {
             sendEvent('delta', { delta: deltaText });
           }
@@ -1572,7 +1573,7 @@ ${effectiveRawInput || '(See attached images and Case State above)'}${imageSumma
         systemPrompt,
         userPrompt,
         images,
-        maxTokens: ADVICE_MAX_TOKENS
+        maxTokens: resolveAdviceMaxTokens(effectiveMode)
       });
       const parsedSyncMeta = parseAndStripDynamicIntakeMeta(llmRes.content);
       const finalSyncMarkdown = parsedSyncMeta.cleanMarkdown;
