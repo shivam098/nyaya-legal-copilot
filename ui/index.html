@@ -725,6 +725,11 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
         if (/\b(opc|one\s+person\s+company|pvt\s+ltd|private\s+limited|llp|sole\s+proprietorship|solo\s+founder|what\s+kind\s+of\s+company|incorporation|mca|roc|inc-?20a|adt-?1|aoc-?4|mgt-?7|dir-?3|strike-?off)\b/i.test(t)) {
           return '🏢 Company & Startup Advisory (MCA / RoC)';
         }
+        if (/\b(draft|prepare|make|create|write|format|template|sample)\b/i.test(t) &&
+            /\b(rent(?:al)?\s+agreement|lease|leave\s+(?:and|&)\s+licen[cs]e|will\s+deed|power\s+of\s+attorney|gift\s+deed|agreement\s+to\s+sell|sale\s+deed|partnership\s+deed|service\s+agreement|nda|affidavit|offer\s+letter|loan\s+agreement)\b/i.test(t) &&
+            !/\b(not\s+return|refus|evict|vacate|harass|threat|cheat|police|court|dispute)\b/i.test(t)) {
+          return '📝 Document Drafting — asks only the terms the document needs';
+        }
         if (/\b(next\s+hearing|order\s+sheet|daily\s+order|written\s+version|written\s+statement|rejoinder|evidence\s+affidavit|adjournment|ex-?parte|o\.?\s*s\.?\s*no|c\.?\s*c\.?\s*no|i\.?\s*a\.?\s*no|framing\s+of\s+issues|execution)\b/i.test(t)) {
           return '🏛️ Ongoing Court Case — Hearing Battle-Card & Script';
         }
@@ -3925,7 +3930,9 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                   <div class="p-2.5 rounded-xl bg-zinc-50 border border-zinc-200/90 space-y-2 text-xs">
                     <div class="flex flex-wrap items-center justify-between gap-2">
                       <span class="font-bold text-zinc-900">
-                        📋 Case Fact Sheet ({result.engineResult.practitionerIntelligence.factReadiness.factDimensionsConfirmed}/{result.engineResult.practitionerIntelligence.factReadiness.totalSlots || 6} Senior-Counsel Slots Confirmed)
+                        {result.engineResult.practitionerIntelligence.factReadiness.kind === 'drafting'
+                          ? `📝 Drafting Checklist — ${result.engineResult.practitionerIntelligence.factReadiness.documentLabel} (${result.engineResult.practitionerIntelligence.factReadiness.factDimensionsConfirmed}/${result.engineResult.practitionerIntelligence.factReadiness.totalSlots} terms confirmed)`
+                          : `📋 Case Fact Sheet (${result.engineResult.practitionerIntelligence.factReadiness.factDimensionsConfirmed}/${result.engineResult.practitionerIntelligence.factReadiness.totalSlots || 6} Senior-Counsel Slots Confirmed)`}
                       </span>
                       {result.engineResult.practitionerIntelligence.factReadiness.intakeStage === 'clarify-first' ? (
                         <button
@@ -3933,17 +3940,23 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                           disabled={loading || voice.busy}
                           onClick={() => runAnalysis(
                             activeSession?.mode || result?.engineResult?.effectiveMode || 'auto',
-                            'Please generate the complete legal roadmap, statutory analysis, and ready-to-use draft based on the facts shared so far, using placeholders for any unconfirmed details.',
+                            result.engineResult.practitionerIntelligence.factReadiness.kind === 'drafting'
+                              ? 'Please prepare the complete document now with the terms shared so far, using clear placeholders for anything not yet given.'
+                              : 'Please generate the complete legal roadmap, statutory analysis, and ready-to-use draft based on the facts shared so far, using placeholders for any unconfirmed details.',
                             null,
                             true
                           )}
                           class="px-2.5 py-1 rounded-lg bg-zinc-900 text-white font-semibold text-[11px] hover:bg-zinc-800 transition disabled:opacity-50"
                         >
-                          ⚡ Skip questions & build full roadmap now →
+                          {result.engineResult.practitionerIntelligence.factReadiness.kind === 'drafting'
+                            ? '⚡ Skip questions & draft with blanks now →'
+                            : '⚡ Skip questions & build full roadmap now →'}
                         </button>
                       ) : (
                         <span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-950 font-semibold text-[10px]">
-                          ✓ All Core Facts Confirmed — Full Roadmap Mode
+                          {result.engineResult.practitionerIntelligence.factReadiness.kind === 'drafting'
+                            ? '✓ Enough terms confirmed — drafting'
+                            : '✓ All Core Facts Confirmed — Full Roadmap Mode'}
                         </span>
                       )}
                     </div>
@@ -4261,6 +4274,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                           >
                             🇮🇳 Draft in Hindi + English
                           </button>
+                          {result?.engineResult?.practitionerIntelligence?.crossExaminationInstruction && (
                           <button
                             onClick={() => runAnalysis(
                               activeSession?.mode || result?.engineResult?.effectiveMode || 'auto',
@@ -4275,6 +4289,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                           >
                             ⚔️ Cross-Examination & Contradictions
                           </button>
+                          )}
                           <button
                             onClick={() => runAnalysis(activeSession?.mode, 'Review the advice for this situation in more depth. Re-check assumptions, relevant evidence and legal requirements, explain trade-offs plainly, and improve the requested plan or draft without inventing facts.', escalationModel, true)}
                             disabled={voice.busy}
@@ -4353,7 +4368,9 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                         <div class="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 space-y-2.5 text-xs">
                           <div class="flex flex-wrap items-center justify-between gap-2">
                             <div class="font-semibold text-amber-950">
-                              💬 Lawyer's Clarifying Questions — Select your answers below (multi-select supported):
+                              {result?.engineResult?.practitionerIntelligence?.factReadiness?.kind === 'drafting'
+                                ? '📝 A few terms for your document — pick what applies, or type your own below:'
+                                : "💬 Lawyer's Clarifying Questions — Select your answers below (multi-select supported):"}
                             </div>
                             {Object.keys(selectedQuickReplies).length > 0 && (
                               <button

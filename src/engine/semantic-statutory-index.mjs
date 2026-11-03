@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -445,6 +446,22 @@ export const STATUTORY_PROVISIONS_SEED = [
     practitionerEscalationNote: 'Practitioner Unfreeze Protocol: (1) Obtain the exact NCRP Acknowledgement Number, Investigating Officer (IO) contact, and disputed Layer amount from your home bank branch; (2) Under High Court precedents, police cannot freeze an entire operational bank account for a small disputed credit—ask the bank/IO to convert a total debit freeze into a "Lien Marked ONLY on the Disputed Amount" upon furnishing KYC and invoice/proof of bona fide sale, or file an application before the jurisdictional Magistrate under Section 497/503 BNSS (or High Court Article 226 Writ).'
   },
 
+  // === CLUSTER 15: RENT AGREEMENTS, LEASES & LEAVE AND LICENCE ===
+  {
+    id: 'tenancy-rent-agreement-registration',
+    act: 'Transfer of Property Act 1882, Registration Act 1908, Indian Stamp Act 1899 / State Stamp Acts & State Rent Acts',
+    section: 'Sections 105–107 TPA · Sections 17(1)(d) & 49 Registration Act · State Stamp Act · Section 55 Maharashtra Rent Control Act',
+    legacyEquivalent: 'Model Tenancy Act 2021 (adopted in modified form by some States, e.g., U.P. 2021, Tamil Nadu 2017)',
+    chapterCluster: 'tenancy-rent-agreement',
+    title: 'Drafting a Rent Agreement / Lease / Leave & Licence: Registration, Stamp Duty and Key Clauses',
+    ingredients: 'A lease transfers a right to enjoy immovable property for rent (Section 105 TPA). A lease from year to year or for more than one year can be made only by a registered instrument (Section 107 TPA; Section 17(1)(d) Registration Act); an unregistered one cannot be relied on to prove its terms (Section 49 Registration Act), which is why 11-month rent agreements are common. Stamp duty is payable under the State Stamp Act. In Maharashtra every leave and licence agreement must be registered (Section 55 Maharashtra Rent Control Act). Key clauses: parties, property description, term, rent and escalation, security deposit and refund timeline, lock-in and notice period, maintenance and utilities, repairs, sub-letting, inventory, police verification, and termination.',
+    cognizable: 'Civil / Documentation',
+    bailable: 'N/A',
+    maxPunishment: 'N/A',
+    arneshKumarApplies: 0,
+    practitionerEscalationNote: 'Confirm the State first (stamp duty, registration and any deposit cap), whether the term crosses one year, and whether the premises are residential or commercial. Write deposit-refund timing and deduction rules precisely; that clause causes most later disputes.'
+  },
+
   // === CLUSTER 9: BANKING RECOVERY, SARFAESI, DRT & CREDIT REPORTS ===
   {
     id: 'sarfaesi-13-17-34-drt',
@@ -594,6 +611,7 @@ export function getSemanticIndexDb() {
     return indexDbInstance;
   }
   const db = new DatabaseSync(targetPath);
+  db.exec('PRAGMA busy_timeout = 10000; PRAGMA journal_mode = WAL;');
   db.exec(`
     CREATE TABLE IF NOT EXISTS statutory_provisions (
       id TEXT PRIMARY KEY,
@@ -636,14 +654,47 @@ export function getSemanticIndexDb() {
     );
   `);
 
-  seedStatutoryAndLessonsIfEmpty(db);
+  seedIndexWhenSeedChanges(db);
   indexDbInstance = db;
   indexDbPathActive = targetPath;
   return db;
 }
 
-function seedStatutoryAndLessonsIfEmpty(db) {
+/**
+ * Re-seeds the statutory index (and re-embeds stored lessons) only when the seed catalogue or the concept
+ * anchors change, inside one IMMEDIATE transaction. Several processes (server, tests) can share this file,
+ * so startup must not rewrite it every time.
+ */
+function seedIndexWhenSeedChanges(db) {
+  db.exec(`CREATE TABLE IF NOT EXISTS index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
+  const seedVersion = crypto
+    .createHash('sha256')
+    .update(JSON.stringify(STATUTORY_PROVISIONS_SEED))
+    .update(MULTILINGUAL_LEGAL_CONCEPT_ANCHORS.map(rx => rx.source).join('|'))
+    .update(JSON.stringify(DEFAULT_PRACTITIONER_LESSONS_SEED))
+    .digest('hex');
+  const current = db.prepare(`SELECT value FROM index_meta WHERE key = 'seed_version'`).get();
+  if (current?.value === seedVersion) return;
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    // Another process may have finished seeding while we waited for the lock.
+    const recheck = db.prepare(`SELECT value FROM index_meta WHERE key = 'seed_version'`).get();
+    if (recheck?.value !== seedVersion) {
+      seedStatutoryAndLessons(db);
+      db.prepare(`INSERT INTO index_meta (key, value) VALUES ('seed_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(seedVersion);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+function seedStatutoryAndLessons(db) {
   const now = new Date().toISOString();
+  const seedIds = STATUTORY_PROVISIONS_SEED.map(s => s.id);
+  db.prepare(`DELETE FROM statutory_provisions WHERE id NOT IN (${seedIds.map(() => '?').join(',')})`).run(...seedIds);
   const upsertProv = db.prepare(`
       INSERT INTO statutory_provisions (
         id, act, section, legacy_equivalent, chapter_cluster, title, ingredients,
