@@ -77,7 +77,7 @@ const MULTILINGUAL_LEGAL_CONCEPT_ANCHORS = [
   /\b(wrongful\s+restraint|blocked\s+way|locked\s+in\s+room|confinement|रास्ता\s+रोका|बंधक|bns\s*126|bns\s*127|341\s*ipc|342\s*ipc)\b/gi,
   /\b(criminal\s+intimidation|death\s+threat|jaan\s+se\s+marne|जान\s+से\s+मारने\s+की\s+धमकी|धमकी|bns\s*351|506\s*ipc)\b/gi,
   /\b(stalking|outRaging\s+modesty|harassment\s+of\s+woman|छेड़छाड़|पीछा\s+करना|bns\s*74|bns\s*78|354\s*ipc)\b/gi,
-  /\b(false\s+promise\s+to\s+marry|deceitful\s+intercourse|शादी\s+का\s+झांसा|bns\s*69|376\s*ipc)\b/gi,
+  /(\b(?:false\s+promise\s+to\s+marry|breach\s+of\s+promise|deceitful\s+means|deceitful\s+intercourse|marital\s+rape|section\s+69\b|s\.?\s*69\b|bns\s*69|376\s*ipc|pramod\s+suryabhan|consensual\s+relationship|breakup)\b|शादी\s+का\s+झांसा)/gi,
 
   // 16..23: Police Station, FIR, Preliminary Inquiry, Bail & Property Release (BNSS 2023)
   /\b(fir|zero\s+fir|e-?fir|173\s*bnss|154\s*crpc|police\s+station|thana|थाना|प्राथमिकी|एफआईआर)\b/gi,
