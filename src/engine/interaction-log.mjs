@@ -361,3 +361,64 @@ export function pruneInteractionLogs(retentionDays = Number(process.env.NYAYA_LO
     return 0;
   }
 }
+
+/** Interaction-log ids for the given turns (turn id -> log id), newest log row per turn. */
+export function findInteractionLogIdsForTurns(turnIds = []) {
+  const ids = turnIds.map(Number).filter(n => Number.isFinite(n));
+  if (ids.length === 0) return {};
+  const rows = db.prepare(`SELECT id, turn_id, review_status FROM interaction_logs WHERE turn_id IN (${ids.map(() => '?').join(',')}) ORDER BY created_at ASC`).all(...ids);
+  const out = {};
+  for (const r of rows) out[r.turn_id] = { logId: r.id, reviewStatus: r.review_status };
+  return out;
+}
+
+/**
+ * Returns the log entry for a saved turn, creating one from the turn if it predates the interaction log,
+ * so any past answer can be audited the same way as new ones.
+ */
+export function ensureInteractionLogForTurn(turnId) {
+  const existing = db.prepare('SELECT id FROM interaction_logs WHERE turn_id = ? ORDER BY created_at DESC LIMIT 1').get(Number(turnId));
+  if (existing) return getInteractionLog(existing.id);
+  const t = db.prepare(`
+    SELECT t.*, s.user_id, s.mode AS session_mode, s.door AS session_door, u.email AS user_email, u.role AS user_role
+    FROM turns t JOIN sessions s ON s.id = t.session_id LEFT JOIN users u ON u.id = s.user_id
+    WHERE t.id = ?
+  `).get(Number(turnId));
+  if (!t) return null;
+  let engineResult = null;
+  try {
+    engineResult = JSON.parse(t.engine_result_json || 'null');
+  } catch {
+    engineResult = null;
+  }
+  const id = `ilog-turn-${t.id}`;
+  logInteraction({
+    id,
+    createdAt: t.created_at,
+    endpoint: 'history',
+    status: engineResult?.responseCompletion?.incomplete ? 'incomplete' : 'ok',
+    userId: t.user_id,
+    authenticated: Boolean(t.user_email),
+    userEmail: t.user_email || '',
+    userRole: t.user_role || 'user',
+    sessionId: t.session_id,
+    turnId: t.id,
+    turnIndex: t.turn_index,
+    requestedDoor: t.session_door,
+    requestedMode: t.session_mode,
+    effectiveMode: engineResult?.effectiveMode || t.session_mode,
+    engineResult,
+    requestText: t.user_input,
+    imagesCount: t.images_count,
+    hasDocuments: String(t.user_input || '').includes('ATTACHED FOLDER / TEXT DOCUMENTS:'),
+    responseText: t.assistant_markdown,
+    modelUsed: t.model,
+    tokens: t.tokens,
+    costInr: t.cost_inr,
+    latencyMs: t.latency_ms,
+    deviceId: t.device_id,
+    ipHash: t.ip_hash
+  });
+  syncInteractionRating(t.id, t.user_rating, t.user_feedback_note);
+  return getInteractionLog(id);
+}
