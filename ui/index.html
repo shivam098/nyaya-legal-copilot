@@ -590,12 +590,874 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
       }
     };
 
+    const SHARE_DOC_LIMIT = 6000;
+
+    function formatShareDate(iso) {
+      if (!iso) return '';
+      try {
+        return new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      } catch {
+        return iso;
+      }
+    }
+
+    /**
+     * Read-only page a user's lawyer sees when opening a share link (/share/<token>). No sign-in needed.
+     */
+    function SharedConversationView({ token }) {
+      const [state, setState] = useState({ loading: true, error: '', shared: null });
+      const [copied, setCopied] = useState(false);
+
+      useEffect(() => {
+        let cancelled = false;
+        (async () => {
+          try {
+            const res = await fetch(`/api/shared/${encodeURIComponent(token)}`);
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'This link is not available.');
+            if (!cancelled) setState({ loading: false, error: '', shared: data.shared });
+          } catch (err) {
+            if (!cancelled) setState({ loading: false, error: err.message, shared: null });
+          }
+        })();
+        return () => { cancelled = true; };
+      }, [token]);
+
+      const shared = state.shared;
+      useEffect(() => {
+        if (shared?.title) document.title = `${shared.title} — shared from Nyaya`;
+      }, [shared?.title]);
+
+      const plainText = shared
+        ? [
+            `${shared.title}`,
+            shared.areaOfLaw ? `Area of law: ${shared.areaOfLaw}` : '',
+            `Shared from Nyaya on ${formatShareDate(shared.sharedAt)}`,
+            '',
+            ...shared.turns.map(t => `--- Question ${t.turnIndex} (${formatShareDate(t.createdAt)}) ---\n${t.question}${t.documentText ? `\n\n[Document text]\n${t.documentText}` : ''}\n\n--- Nyaya's answer ---\n${t.answer}\n`)
+          ].filter(Boolean).join('\n')
+        : '';
+
+      const copyAll = async () => {
+        try {
+          await navigator.clipboard.writeText(plainText);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        } catch {
+          // clipboard unavailable
+        }
+      };
+
+      return (
+        <div class="min-h-screen bg-[#f7f5f0] text-zinc-900">
+          <header class="border-b border-zinc-200 bg-white/90 backdrop-blur sticky top-0 z-10 print:static">
+            <div class="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="w-8 h-8 rounded-lg bg-zinc-900 text-white flex items-center justify-center font-semibold shrink-0">N</span>
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold leading-tight">Nyaya</div>
+                  <div class="text-[11px] text-zinc-500 leading-tight">Shared conversation · read-only</div>
+                </div>
+              </div>
+              {shared && (
+                <div class="flex items-center gap-1.5 print:hidden">
+                  <button type="button" onClick={copyAll} class="text-xs font-medium px-3 py-2 rounded-full border border-zinc-200 hover:border-zinc-400">{copied ? '✓ Copied' : '📋 Copy all'}</button>
+                  <button type="button" onClick={() => window.print()} class="text-xs font-medium px-3 py-2 rounded-full bg-zinc-900 text-white hover:bg-zinc-800">🖨️ Print / PDF</button>
+                </div>
+              )}
+            </div>
+          </header>
+
+          <main class="max-w-3xl mx-auto px-4 py-6 space-y-5">
+            {state.loading && <p class="text-sm text-zinc-500 text-center py-16">Opening the shared conversation…</p>}
+            {state.error && (
+              <div class="bg-white rounded-2xl border border-zinc-200 p-6 text-center space-y-2 mt-10">
+                <div class="text-3xl">🔒</div>
+                <h1 class="serif-heading text-xl">This link isn't available</h1>
+                <p class="text-sm text-zinc-500">{state.error}</p>
+                <p class="text-xs text-zinc-400">Ask the person who shared it to send a new link.</p>
+              </div>
+            )}
+            {shared && (
+              <>
+                <section class="space-y-2">
+                  <h1 class="serif-heading text-2xl sm:text-3xl leading-tight">{shared.title}</h1>
+                  <div class="flex flex-wrap gap-1.5 text-[11px]">
+                    {shared.areaOfLaw && <span class="px-2.5 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200">⚖️ {shared.areaOfLaw}</span>}
+                    <span class="px-2.5 py-1 rounded-full bg-white border border-zinc-200 text-zinc-600">{shared.turns.length} question{shared.turns.length === 1 ? '' : 's'}</span>
+                    <span class="px-2.5 py-1 rounded-full bg-white border border-zinc-200 text-zinc-600">Shared {formatShareDate(shared.sharedAt)}</span>
+                    <span class="px-2.5 py-1 rounded-full bg-white border border-zinc-200 text-zinc-600 print:hidden">Link expires {formatShareDate(shared.expiresAt)}</span>
+                  </div>
+                  <p class="text-xs text-zinc-500 leading-relaxed bg-white/70 border border-zinc-200 rounded-xl px-3 py-2">
+                    The answers below were generated by Nyaya, an AI legal assistant, from what the person told it. They are general guidance, not a lawyer's opinion — please verify the facts, sections and deadlines before relying on them.
+                    {!shared.includeDocuments && shared.turns.some(t => t.hadDocuments) && ' Text from uploaded documents was not included in this link.'}
+                  </p>
+                </section>
+
+                {shared.turns.map(t => (
+                  <article key={t.turnIndex} class="space-y-2 break-inside-avoid">
+                    <div class="flex justify-end">
+                      <div class="max-w-[92%] bg-zinc-900 text-white rounded-2xl rounded-br-md px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap">
+                        <div class="text-[10px] uppercase tracking-wider text-zinc-400 mb-1">Question {t.turnIndex} · {formatShareDate(t.createdAt)}</div>
+                        {t.question || '(Shared documents only)'}
+                        {(t.imagesCount > 0 || t.hadDocuments) && (
+                          <div class="text-[11px] text-zinc-400 mt-2">📎 {t.imagesCount > 0 ? `${t.imagesCount} image(s)` : ''}{t.imagesCount > 0 && t.hadDocuments ? ' · ' : ''}{t.hadDocuments ? 'documents attached' : ''}</div>
+                        )}
+                      </div>
+                    </div>
+                    {t.documentText && (
+                      <details class="bg-white rounded-xl border border-zinc-200 px-3 py-2 text-xs">
+                        <summary class="cursor-pointer font-medium text-zinc-600">📄 Document text shared with this question</summary>
+                        <pre class="whitespace-pre-wrap text-[11px] text-zinc-700 mt-2 max-h-96 overflow-y-auto">{t.documentText.length > SHARE_DOC_LIMIT ? `${t.documentText.slice(0, SHARE_DOC_LIMIT)}\n…` : t.documentText}</pre>
+                      </details>
+                    )}
+                    <div class="bg-white rounded-2xl rounded-bl-md border border-zinc-200 px-4 sm:px-5 py-4 shadow-sm">
+                      <div class="text-[10px] uppercase tracking-wider text-amber-800 font-semibold mb-2">Nyaya's answer</div>
+                      <div class="markdown-body text-sm" dangerouslySetInnerHTML={renderFormattedMarkdown(t.answer)} />
+                    </div>
+                  </article>
+                ))}
+
+                <footer class="text-center text-[11px] text-zinc-400 py-6 space-y-1">
+                  <div>Shared read-only from Nyaya · Indian legal co-pilot</div>
+                  <a href="/" class="underline hover:text-zinc-700 print:hidden">Ask Nyaya your own question</a>
+                </footer>
+              </>
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    /**
+     * Owner-side panel to create, copy and revoke read-only share links for the current conversation.
+     */
+    function ShareConversationSheet({ sessionId, buildAuthHeaders, onClose }) {
+      const [expiresInDays, setExpiresInDays] = useState(7);
+      const [includeDocuments, setIncludeDocuments] = useState(false);
+      const [recipientLabel, setRecipientLabel] = useState('');
+      const [link, setLink] = useState('');
+      const [shares, setShares] = useState([]);
+      const [busy, setBusy] = useState(false);
+      const [message, setMessage] = useState('');
+
+      const loadShares = async () => {
+        try {
+          const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/shares`, { headers: buildAuthHeaders() });
+          const data = await res.json();
+          if (res.ok) setShares(data.shares || []);
+        } catch {
+          // ignore
+        }
+      };
+      useEffect(() => { loadShares(); }, [sessionId]);
+
+      const createLink = async () => {
+        setBusy(true);
+        setMessage('');
+        try {
+          const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/shares`, {
+            method: 'POST',
+            headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ expiresInDays, includeDocuments, recipientLabel })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not create the link');
+          setLink(`${window.location.origin}${data.sharePath}`);
+          setShares(data.shares || []);
+        } catch (err) {
+          setMessage(err.message);
+        } finally {
+          setBusy(false);
+        }
+      };
+
+      const revoke = async (shareId) => {
+        try {
+          const res = await fetch(`/api/shares/${encodeURIComponent(shareId)}`, { method: 'DELETE', headers: buildAuthHeaders() });
+          const data = await res.json();
+          if (res.ok) setShares(data.shares || []);
+        } catch {
+          // ignore
+        }
+      };
+
+      const shareText = `I'd like your view on my legal matter. Here is my conversation with Nyaya (read-only): ${link}`;
+      const copyLink = async () => {
+        try {
+          await navigator.clipboard.writeText(link);
+          setMessage('✓ Link copied');
+          setTimeout(() => setMessage(''), 2000);
+        } catch {
+          setMessage('Copy failed — select the link and copy it manually.');
+        }
+      };
+      const nativeShare = async () => {
+        try {
+          await navigator.share({ title: 'My Nyaya conversation', text: shareText, url: link });
+        } catch {
+          // user cancelled
+        }
+      };
+
+      return (
+        <div class="rounded-2xl border border-zinc-200 bg-white p-4 space-y-3 text-sm shadow-sm">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <div class="font-semibold text-zinc-900">🔗 Share with your lawyer</div>
+              <div class="text-xs text-zinc-500">They get a read-only copy of this conversation so far. They can't edit it or see your later messages.</div>
+            </div>
+            <button type="button" onClick={onClose} aria-label="Close share" class="w-8 h-8 rounded-full text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 shrink-0">✕</button>
+          </div>
+
+          {!link && (
+            <div class="space-y-2.5">
+              <input
+                type="text"
+                value={recipientLabel}
+                onChange={(e) => setRecipientLabel(e.target.value)}
+                placeholder="Who is this for? (optional, e.g. Adv. Sharma)"
+                class="w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 focus:outline-none focus:border-zinc-400"
+              />
+              <div class="flex flex-wrap items-center gap-2 text-xs">
+                <span class="text-zinc-500">Link works for</span>
+                {[1, 7, 30].map(d => (
+                  <button key={d} type="button" onClick={() => setExpiresInDays(d)}
+                    class={`px-3 py-1.5 rounded-full border ${expiresInDays === d ? 'bg-zinc-900 text-white border-zinc-900' : 'border-zinc-200 text-zinc-700 hover:border-zinc-400'}`}>
+                    {d === 1 ? '1 day' : `${d} days`}
+                  </button>
+                ))}
+              </div>
+              <label class="flex items-start gap-2 text-xs text-zinc-600 cursor-pointer">
+                <input type="checkbox" checked={includeDocuments} onChange={(e) => setIncludeDocuments(e.target.checked)} class="mt-0.5" />
+                <span>Also include text from documents I uploaded (orders, notices, chats). Leave off if they contain private details you don't want to share.</span>
+              </label>
+              <button type="button" onClick={createLink} disabled={busy}
+                class="w-full h-11 rounded-full bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 disabled:opacity-50">
+                {busy ? 'Creating link…' : 'Create share link'}
+              </button>
+            </div>
+          )}
+
+          {link && (
+            <div class="space-y-2.5">
+              <input readOnly value={link} onFocus={(e) => e.target.select()} aria-label="Share link"
+                class="w-full text-xs px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-700" />
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-medium">
+                <button type="button" onClick={copyLink} class="h-10 rounded-full bg-zinc-900 text-white hover:bg-zinc-800">📋 Copy link</button>
+                <a href={`https://wa.me/?text=${encodeURIComponent(shareText)}`} target="_blank" rel="noopener noreferrer"
+                  class="h-10 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-900 flex items-center justify-center hover:bg-emerald-100">WhatsApp</a>
+                <a href={`mailto:?subject=${encodeURIComponent('My legal matter — Nyaya conversation')}&body=${encodeURIComponent(shareText)}`}
+                  class="h-10 rounded-full border border-zinc-200 flex items-center justify-center hover:border-zinc-400">✉️ Email</a>
+                {typeof navigator !== 'undefined' && navigator.share
+                  ? <button type="button" onClick={nativeShare} class="h-10 rounded-full border border-zinc-200 hover:border-zinc-400">⋯ More apps</button>
+                  : <button type="button" onClick={() => setLink('')} class="h-10 rounded-full border border-zinc-200 hover:border-zinc-400">＋ New link</button>}
+              </div>
+              <p class="text-[11px] text-zinc-500">Anyone with this link can read the conversation until it expires. You can turn it off below at any time.</p>
+            </div>
+          )}
+
+          {message && <p class="text-xs text-zinc-600">{message}</p>}
+
+          {shares.length > 0 && (
+            <details class="text-xs" open={shares.some(s => s.active) && !link}>
+              <summary class="cursor-pointer font-medium text-zinc-500">Your links for this conversation ({shares.filter(s => s.active).length} active)</summary>
+              <ul class="mt-2 divide-y divide-zinc-100 border border-zinc-100 rounded-xl">
+                {shares.map(s => (
+                  <li key={s.id} class="flex items-center justify-between gap-2 px-3 py-2">
+                    <div class="min-w-0">
+                      <div class="text-zinc-800 truncate">{s.recipientLabel || 'Share link'} · up to question {s.uptoTurnIndex}</div>
+                      <div class="text-[11px] text-zinc-500">
+                        {s.active ? `Expires ${formatShareDate(s.expiresAt)}` : s.revokedAt ? 'Turned off' : 'Expired'}
+                        {' · '}{s.viewCount ? `opened ${s.viewCount}×, last ${formatShareDate(s.lastViewedAt)}` : 'not opened yet'}
+                        {s.includeDocuments ? ' · with documents' : ''}
+                      </div>
+                    </div>
+                    {s.active && <button type="button" onClick={() => revoke(s.id)} class="shrink-0 px-3 py-1.5 rounded-full border border-red-200 text-red-700 hover:bg-red-50">Turn off</button>}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      );
+    }
+
+    const LOG_STATUS_STYLE = {
+      ok: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+      incomplete: 'bg-amber-50 text-amber-900 border-amber-200',
+      error: 'bg-red-50 text-red-800 border-red-200',
+      rate_limited: 'bg-red-50 text-red-800 border-red-200',
+      quota_exceeded: 'bg-amber-50 text-amber-900 border-amber-200',
+      client_aborted: 'bg-zinc-100 text-zinc-700 border-zinc-200'
+    };
+    const LOG_REVIEW_LABEL = { unreviewed: 'Not reviewed', good: '✅ Good', 'needs-fix': '⚠️ Needs fix', fixed: '🔧 Fixed' };
+
+    /**
+     * Super-Admin interaction log: every question asked (signed-in or guest), Nyaya's answer, routing and
+     * outcome, with a review workflow for improving answers.
+     */
+    function AdminInteractionLog({ buildAuthHeaders }) {
+      const [filters, setFilters] = useState({ q: '', authState: '', status: '', reviewStatus: '', rating: '', domain: '' });
+      const [data, setData] = useState(null);
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState('');
+      const [offset, setOffset] = useState(0);
+      const [detail, setDetail] = useState(null);
+      const [review, setReview] = useState({ reviewStatus: 'unreviewed', tags: [], note: '' });
+      const [saving, setSaving] = useState(false);
+      const PAGE = 25;
+
+      const queryString = (extra = {}) => {
+        const p = new URLSearchParams();
+        Object.entries({ ...filters, ...extra }).forEach(([k, v]) => {
+          if (v !== '' && v !== null && v !== undefined) p.set(k, v);
+        });
+        return p.toString();
+      };
+
+      const load = async (nextOffset = 0) => {
+        setLoading(true);
+        setError('');
+        try {
+          const res = await fetch(`/api/admin/logs?${queryString({ limit: PAGE, offset: nextOffset })}`, { headers: buildAuthHeaders() });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'Could not load the interaction log');
+          setData(json);
+          setOffset(nextOffset);
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setLoading(false);
+        }
+      };
+      useEffect(() => { load(0); }, [filters.authState, filters.status, filters.reviewStatus, filters.rating, filters.domain]);
+
+      const openDetail = async (id) => {
+        try {
+          const res = await fetch(`/api/admin/logs/${encodeURIComponent(id)}`, { headers: buildAuthHeaders() });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'Could not open this interaction');
+          setDetail(json.entry);
+          setReview({ reviewStatus: json.entry.reviewStatus, tags: json.entry.reviewTags || [], note: json.entry.reviewNote || '' });
+        } catch (err) {
+          setError(err.message);
+        }
+      };
+
+      const saveReview = async () => {
+        if (!detail) return;
+        setSaving(true);
+        try {
+          const res = await fetch(`/api/admin/logs/${encodeURIComponent(detail.id)}`, {
+            method: 'PATCH',
+            headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(review)
+          });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'Could not save the review');
+          setDetail(json.entry);
+          setReview({ reviewStatus: json.entry.reviewStatus, tags: json.entry.reviewTags || [], note: json.entry.reviewNote || '' });
+          setData(prev => prev ? { ...prev, entries: prev.entries.map(e => e.id === json.entry.id ? { ...e, reviewStatus: json.entry.reviewStatus, reviewTags: json.entry.reviewTags } : e) } : prev);
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setSaving(false);
+        }
+      };
+
+      const exportJsonl = async () => {
+        try {
+          const res = await fetch(`/api/admin/logs/export?${queryString()}`, { headers: buildAuthHeaders() });
+          if (!res.ok) throw new Error('Export failed');
+          const blob = await res.blob();
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = `nyaya-interactions-${new Date().toISOString().slice(0, 10)}.jsonl`;
+          a.click();
+          URL.revokeObjectURL(a.href);
+        } catch (err) {
+          setError(err.message);
+        }
+      };
+
+      const sel = 'text-xs rounded-lg border border-zinc-200 bg-white px-2 py-1.5';
+      const summary = data?.summary;
+
+      return (
+        <section class="space-y-3" aria-label="Interaction log">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 class="text-sm font-bold text-zinc-900">📜 Interaction log — every question & answer</h3>
+              <p class="text-[11px] text-zinc-500">Signed-in users and guests, including failed requests. Review answers to find what to fix.</p>
+            </div>
+            <button type="button" onClick={exportJsonl} class="text-xs font-medium px-3 py-1.5 rounded-lg border border-zinc-200 hover:border-zinc-400">⬇ Export (JSONL)</button>
+          </div>
+
+          {summary && (
+            <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
+              {[
+                ['Total', summary.total],
+                ['Signed in', summary.signedIn],
+                ['Guests', summary.guest],
+                ['Failures', summary.failures],
+                ['To review', summary.unreviewed],
+                ['Needs fix', summary.needsFix]
+              ].map(([label, n]) => (
+                <div key={label} class="rounded-xl bg-zinc-50 border border-zinc-200 py-2">
+                  <div class="text-[10px] uppercase tracking-wider text-zinc-500">{label}</div>
+                  <div class="text-base font-bold text-zinc-900">{n}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <form class="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); load(0); }}>
+            <input value={filters.q} onChange={(e) => setFilters(f => ({ ...f, q: e.target.value }))} placeholder="Search questions, answers, emails, notes…"
+              class="flex-1 min-w-[12rem] text-xs rounded-lg border border-zinc-200 px-2.5 py-1.5" />
+            <select class={sel} value={filters.authState} onChange={(e) => setFilters(f => ({ ...f, authState: e.target.value }))} aria-label="Signed in or guest">
+              <option value="">Everyone</option><option value="signed-in">Signed in</option><option value="guest">Guests</option>
+            </select>
+            <select class={sel} value={filters.status} onChange={(e) => setFilters(f => ({ ...f, status: e.target.value }))} aria-label="Outcome">
+              <option value="">Any outcome</option>
+              {Object.keys(LOG_STATUS_STYLE).map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+            </select>
+            <select class={sel} value={filters.reviewStatus} onChange={(e) => setFilters(f => ({ ...f, reviewStatus: e.target.value }))} aria-label="Review status">
+              <option value="">Any review</option>
+              {Object.entries(LOG_REVIEW_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <select class={sel} value={filters.rating} onChange={(e) => setFilters(f => ({ ...f, rating: e.target.value }))} aria-label="User rating">
+              <option value="">Any rating</option><option value="-1">👎 by user</option><option value="1">👍 by user</option><option value="0">Not rated</option>
+            </select>
+            <select class={sel} value={filters.domain} onChange={(e) => setFilters(f => ({ ...f, domain: e.target.value }))} aria-label="Area of law">
+              <option value="">All areas</option>
+              {(data?.domains || []).map(d => <option key={d.domain} value={d.domain}>{d.domain} ({d.count})</option>)}
+            </select>
+            <button type="submit" class="text-xs font-medium px-3 py-1.5 rounded-lg bg-zinc-900 text-white">{loading ? '…' : 'Search'}</button>
+          </form>
+
+          {error && <p class="text-xs text-red-700">{error}</p>}
+
+          <div class="divide-y divide-zinc-100 border border-zinc-200 rounded-xl bg-white max-h-[28rem] overflow-y-auto">
+            {(data?.entries || []).length === 0 && !loading && <p class="p-4 text-xs text-zinc-500">No interactions match these filters.</p>}
+            {(data?.entries || []).map(e => (
+              <button key={e.id} type="button" onClick={() => openDetail(e.id)}
+                class={`w-full text-left p-3 hover:bg-zinc-50 space-y-1 text-xs ${detail?.id === e.id ? 'bg-amber-50/60' : ''}`}>
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <span class={`px-2 py-0.5 rounded-full border text-[10px] font-medium ${LOG_STATUS_STYLE[e.status] || ''}`}>{e.status.replace('_', ' ')}</span>
+                  <span class={`px-2 py-0.5 rounded-full text-[10px] font-medium ${e.authState === 'signed-in' ? 'bg-sky-50 text-sky-900 border border-sky-200' : 'bg-zinc-100 text-zinc-600 border border-zinc-200'}`}>
+                    {e.authState === 'signed-in' ? `🔐 ${e.userEmail || e.userId}` : `👤 Guest ${String(e.userId || '').slice(0, 14)}`}
+                  </span>
+                  {e.userRole === 'superadmin' && <span class="px-2 py-0.5 rounded-full text-[10px] bg-amber-100 text-amber-900">admin</span>}
+                  {e.domain && <span class="px-2 py-0.5 rounded-full text-[10px] bg-amber-50 text-amber-900 border border-amber-200">{e.domain}</span>}
+                  {e.intakeKind && <span class="px-2 py-0.5 rounded-full text-[10px] bg-zinc-50 text-zinc-600 border border-zinc-200">{e.intakeKind}{e.intakeStage ? ` · ${e.intakeStage}` : ''}</span>}
+                  {e.userRating === -1 && <span class="text-[10px] text-red-700">👎</span>}
+                  {e.userRating === 1 && <span class="text-[10px] text-emerald-700">👍</span>}
+                  {e.reviewStatus !== 'unreviewed' && <span class="text-[10px] text-zinc-600">{LOG_REVIEW_LABEL[e.reviewStatus]}</span>}
+                  <span class="ml-auto text-[10px] text-zinc-400">{formatShareDate(e.createdAt)}</span>
+                </div>
+                <div class="text-zinc-800 line-clamp-2"><strong>Q{e.isFollowUp ? ' (follow-up)' : ''}:</strong> {e.questionPreview || '(no text)'}</div>
+                {e.errorMessage
+                  ? <div class="text-red-700 truncate">⚠ {e.errorMessage}</div>
+                  : <div class="text-zinc-500 truncate"><strong>A:</strong> {e.answerPreview}</div>}
+                <div class="text-[10px] text-zinc-400">{e.modelUsed || '—'} · {e.latencyMs ? `${(e.latencyMs / 1000).toFixed(1)}s` : '—'} · ₹{Number(e.costInr || 0).toFixed(3)}{e.appVersion ? ` · v${e.appVersion}` : ''}</div>
+              </button>
+            ))}
+          </div>
+
+          {data && data.total > PAGE && (
+            <div class="flex items-center justify-between text-xs text-zinc-500">
+              <span>{offset + 1}–{Math.min(offset + PAGE, data.total)} of {data.total}</span>
+              <div class="flex gap-2">
+                <button type="button" disabled={offset === 0} onClick={() => load(Math.max(0, offset - PAGE))} class="px-3 py-1 rounded-lg border border-zinc-200 disabled:opacity-40">← Newer</button>
+                <button type="button" disabled={offset + PAGE >= data.total} onClick={() => load(offset + PAGE)} class="px-3 py-1 rounded-lg border border-zinc-200 disabled:opacity-40">Older →</button>
+              </div>
+            </div>
+          )}
+
+          {detail && (
+            <div class="rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:p-4 space-y-3 text-xs">
+              <div class="flex items-start justify-between gap-2">
+                <div class="space-y-0.5">
+                  <div class="font-bold text-sm text-zinc-900">{detail.authState === 'signed-in' ? `🔐 ${detail.userEmail || detail.userId}` : `👤 Guest (${detail.userId})`}</div>
+                  <div class="text-zinc-500">
+                    {formatShareDate(detail.createdAt)} · {detail.endpoint} · HTTP {detail.httpStatus} · session {detail.sessionId || '—'}{detail.turnIndex ? ` · turn ${detail.turnIndex}` : ''}
+                  </div>
+                </div>
+                <button type="button" onClick={() => setDetail(null)} class="text-zinc-400 hover:text-zinc-900">Close ✕</button>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div class="rounded-lg bg-white border border-zinc-200 p-2.5 space-y-0.5">
+                  <div class="font-semibold text-zinc-700">How Nyaya routed it</div>
+                  <div>Category: {detail.categoryLabel || '—'}</div>
+                  <div>Area: {detail.domain || '—'} · Mode: {detail.effectiveMode || '—'} (asked: {detail.requestedMode || '—'})</div>
+                  <div>Intake: {detail.intakeKind || '—'} · {detail.intakeStage || '—'}</div>
+                </div>
+                <div class="rounded-lg bg-white border border-zinc-200 p-2.5 space-y-0.5">
+                  <div class="font-semibold text-zinc-700">Performance</div>
+                  <div>Model: {detail.modelUsed || '—'} (asked: {detail.requestedModel || '—'})</div>
+                  <div>{detail.latencyMs ? `${(detail.latencyMs / 1000).toFixed(1)}s` : '—'} · {detail.tokens} tokens · ₹{Number(detail.costInr || 0).toFixed(3)}</div>
+                  <div>Cut off: {detail.completionIncomplete ? 'yes' : 'no'} · Record checks: {detail.verificationPassed === null ? '—' : detail.verificationPassed ? 'passed' : 'flagged'}</div>
+                  <div>User rating: {detail.userRating === 1 ? '👍' : detail.userRating === -1 ? '👎' : '—'}{detail.userFeedbackNote ? ` “${detail.userFeedbackNote}”` : ''}</div>
+                </div>
+              </div>
+
+              {detail.errorMessage && <div class="rounded-lg bg-red-50 border border-red-200 p-2.5 text-red-800 whitespace-pre-wrap">⚠ {detail.errorMessage}</div>}
+
+              <div class="rounded-lg bg-white border border-zinc-200 p-2.5">
+                <div class="font-semibold text-zinc-700 mb-1">Request (PII-redacted, as sent to the model)</div>
+                <pre class="whitespace-pre-wrap text-[11px] text-zinc-800 max-h-64 overflow-y-auto">{detail.requestText || '(empty)'}</pre>
+              </div>
+
+              {detail.clarifyingQuestions?.length > 0 && (
+                <div class="rounded-lg bg-white border border-zinc-200 p-2.5">
+                  <div class="font-semibold text-zinc-700 mb-1">Follow-up questions shown to the user</div>
+                  <ol class="list-decimal pl-4 space-y-0.5">{detail.clarifyingQuestions.map((q, i) => <li key={i}>{q}</li>)}</ol>
+                </div>
+              )}
+
+              <div class="rounded-lg bg-white border border-zinc-200 p-2.5">
+                <div class="font-semibold text-zinc-700 mb-1">Response</div>
+                {detail.responseText
+                  ? <div class="markdown-body max-h-96 overflow-y-auto" dangerouslySetInnerHTML={renderFormattedMarkdown(detail.responseText)} />
+                  : <div class="text-zinc-400">(no response)</div>}
+              </div>
+
+              <div class="rounded-lg bg-white border border-amber-200 p-2.5 space-y-2">
+                <div class="font-semibold text-amber-900">Your review</div>
+                <div class="flex flex-wrap gap-1.5">
+                  {Object.entries(LOG_REVIEW_LABEL).map(([k, v]) => (
+                    <button key={k} type="button" onClick={() => setReview(r => ({ ...r, reviewStatus: k }))}
+                      class={`px-2.5 py-1 rounded-full border text-[11px] ${review.reviewStatus === k ? 'bg-zinc-900 text-white border-zinc-900' : 'border-zinc-200 hover:border-zinc-400'}`}>{v}</button>
+                  ))}
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                  {(data?.reviewTags || []).map(tag => {
+                    const on = review.tags.includes(tag);
+                    return (
+                      <button key={tag} type="button"
+                        onClick={() => setReview(r => ({ ...r, tags: on ? r.tags.filter(t => t !== tag) : [...r.tags, tag] }))}
+                        class={`px-2 py-0.5 rounded-full border text-[10px] ${on ? 'bg-amber-100 border-amber-300 text-amber-950' : 'border-zinc-200 text-zinc-600'}`}>{tag}</button>
+                    );
+                  })}
+                </div>
+                <textarea rows="3" value={review.note} onChange={(e) => setReview(r => ({ ...r, note: e.target.value }))}
+                  placeholder="What was wrong and what the right answer or behaviour should be…"
+                  class="w-full text-xs rounded-lg border border-zinc-200 px-2.5 py-2" />
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-[10px] text-zinc-400">{detail.reviewedAt ? `Last reviewed by ${detail.reviewedBy} · ${formatShareDate(detail.reviewedAt)}` : ''}</span>
+                  <button type="button" disabled={saving} onClick={saveReview} class="px-3 py-1.5 rounded-lg bg-zinc-900 text-white font-medium disabled:opacity-50">{saving ? 'Saving…' : 'Save review'}</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+      );
+    }
+
+    const SUGGESTION_DOMAIN_OPTIONS = [
+      ['general', 'General / not sure'],
+      ['consumer', 'Consumer dispute'],
+      ['property-rera', 'Property / builder / RERA'],
+      ['tenancy-civil', 'Tenancy / rent / civil'],
+      ['matrimonial-family', 'Matrimony / DV / family'],
+      ['inheritance-partition', 'Inheritance / partition / will'],
+      ['criminal-bns-bnss', 'Criminal (BNS / BNSS / BSA)'],
+      ['cheque-bounce-138', 'Cheque bounce (s.138 NI Act)'],
+      ['corporate-roc', 'Company / RoC / startup'],
+      ['employment-labour', 'Employment / labour / POSH'],
+      ['banking-sarfaesi', 'Banking / SARFAESI / DRT'],
+      ['motor-accident', 'Motor accident (MACT)'],
+      ['tax-rti-writ', 'Tax / RTI / writ'],
+      ['msme-arbitration', 'MSME dues / arbitration']
+    ];
+    const SUGGESTION_STATUS_LABEL = {
+      pending: '⏳ Waiting for review',
+      'needs-changes': '✏️ Sent back for changes',
+      approved: '✅ Approved — Nyaya now follows it',
+      rejected: '✖ Not accepted',
+      retired: '🗄️ Retired'
+    };
+
+    /**
+     * Lets anyone (advocates especially) suggest how Nyaya should handle a kind of question.
+     * Shows the submitter's earlier suggestions and their review status.
+     */
+    function SuggestImprovementPanel({ buildAuthHeaders, onClose, prefill = {} }) {
+      const [form, setForm] = useState({
+        expertise: 'advocate',
+        domain: prefill.domain && SUGGESTION_DOMAIN_OPTIONS.some(([d]) => d === prefill.domain) ? prefill.domain : 'general',
+        situation: '',
+        expectedBehaviour: '',
+        exampleQuestion: prefill.exampleQuestion || ''
+      });
+      const [mine, setMine] = useState([]);
+      const [busy, setBusy] = useState(false);
+      const [message, setMessage] = useState('');
+      const [editingId, setEditingId] = useState('');
+
+      const loadMine = async () => {
+        try {
+          const res = await fetch('/api/suggestions/mine', { headers: buildAuthHeaders() });
+          const data = await res.json();
+          if (res.ok) setMine(data.mine || []);
+        } catch {
+          // ignore
+        }
+      };
+      useEffect(() => { loadMine(); }, []);
+
+      const submit = async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        setMessage('');
+        try {
+          const res = await fetch(editingId ? `/api/suggestions/${encodeURIComponent(editingId)}` : '/api/suggestions', {
+            method: editingId ? 'PATCH' : 'POST',
+            headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ ...form, sessionId: prefill.sessionId || '', turnId: prefill.turnId || null })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not send your suggestion');
+          setMine(data.mine || []);
+          setForm(f => ({ ...f, situation: '', expectedBehaviour: '', exampleQuestion: '' }));
+          setEditingId('');
+          setMessage('✓ Thank you — an expert will review it. Once approved, Nyaya will follow it for similar questions.');
+        } catch (err) {
+          setMessage(err.message);
+        } finally {
+          setBusy(false);
+        }
+      };
+
+      const startEdit = (s) => {
+        setEditingId(s.id);
+        setForm({ expertise: s.submitterExpertise, domain: s.domain, situation: s.situation, expectedBehaviour: s.expectedBehaviour, exampleQuestion: s.exampleQuestion });
+        setMessage('');
+      };
+
+      const field = 'w-full text-sm px-3 py-2 rounded-xl border border-zinc-200 bg-zinc-50 focus:outline-none focus:border-zinc-400';
+
+      return (
+        <div class="rounded-2xl border border-zinc-200 bg-white p-4 space-y-3 text-sm shadow-sm">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <div class="font-semibold text-zinc-900">💡 Suggest how Nyaya should respond</div>
+              <div class="text-xs text-zinc-500">Tell us how a good lawyer would handle this kind of question. An expert reviews every suggestion before Nyaya starts following it.</div>
+            </div>
+            <button type="button" onClick={onClose} aria-label="Close suggestion" class="w-8 h-8 rounded-full text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 shrink-0">✕</button>
+          </div>
+
+          <form onSubmit={submit} class="space-y-2.5">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <label class="text-xs text-zinc-600 space-y-1">
+                <span>I am a</span>
+                <select value={form.expertise} onChange={(e) => setForm(f => ({ ...f, expertise: e.target.value }))} class={field}>
+                  <option value="advocate">Practising advocate</option>
+                  <option value="legal-professional">Legal professional</option>
+                  <option value="law-student">Law student</option>
+                  <option value="user">User</option>
+                </select>
+              </label>
+              <label class="text-xs text-zinc-600 space-y-1">
+                <span>Area of law</span>
+                <select value={form.domain} onChange={(e) => setForm(f => ({ ...f, domain: e.target.value }))} class={field}>
+                  {SUGGESTION_DOMAIN_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </label>
+            </div>
+            <label class="block text-xs text-zinc-600 space-y-1">
+              <span>When someone asks about… <span class="text-zinc-400">(the kind of question or situation)</span></span>
+              <input value={form.situation} onChange={(e) => setForm(f => ({ ...f, situation: e.target.value }))} required minLength={10} maxLength={600}
+                placeholder="e.g. A wife accused under s.69 BNS where the relationship started as a promise to marry" class={field} />
+            </label>
+            <label class="block text-xs text-zinc-600 space-y-1">
+              <span>Nyaya should… <span class="text-zinc-400">(what to ask, which law/case to apply, what to avoid)</span></span>
+              <textarea value={form.expectedBehaviour} onChange={(e) => setForm(f => ({ ...f, expectedBehaviour: e.target.value }))} required minLength={20} maxLength={4000} rows="4"
+                placeholder="e.g. First ask whether consent was given on a false promise from the start; cite Pramod Suryabhan Pawar (2019) 9 SCC 608; never call a consensual relationship that later broke down an offence by itself…" class={field} />
+            </label>
+            <label class="block text-xs text-zinc-600 space-y-1">
+              <span>Example question <span class="text-zinc-400">(optional)</span></span>
+              <textarea value={form.exampleQuestion} onChange={(e) => setForm(f => ({ ...f, exampleQuestion: e.target.value }))} maxLength={2000} rows="2" class={field} />
+            </label>
+            <p class="text-[11px] text-zinc-400">Please don't include names, phone numbers or other personal details.</p>
+            <div class="flex items-center gap-2">
+              <button type="submit" disabled={busy} class="h-10 px-5 rounded-full bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 disabled:opacity-50">
+                {busy ? 'Sending…' : editingId ? 'Resubmit for review' : 'Send suggestion'}
+              </button>
+              {editingId && <button type="button" onClick={() => { setEditingId(''); setForm(f => ({ ...f, situation: '', expectedBehaviour: '', exampleQuestion: '' })); }} class="text-xs text-zinc-500">Cancel edit</button>}
+            </div>
+          </form>
+
+          {message && <p class="text-xs text-zinc-700">{message}</p>}
+
+          {mine.length > 0 && (
+            <details class="text-xs" open>
+              <summary class="cursor-pointer font-medium text-zinc-500">Your suggestions ({mine.length})</summary>
+              <ul class="mt-2 space-y-2">
+                {mine.map(s => (
+                  <li key={s.id} class="rounded-xl border border-zinc-200 p-2.5 space-y-1">
+                    <div class="flex flex-wrap items-center justify-between gap-1">
+                      <span class="font-medium text-zinc-800">{s.situation}</span>
+                      <span class="text-[11px] text-zinc-600">{SUGGESTION_STATUS_LABEL[s.status] || s.status}</span>
+                    </div>
+                    {s.reviewerNote && <div class="text-[11px] text-zinc-600 bg-zinc-50 rounded-lg px-2 py-1">Reviewer: {s.reviewerNote}</div>}
+                    {['pending', 'needs-changes'].includes(s.status) && (
+                      <button type="button" onClick={() => startEdit(s)} class="text-[11px] font-medium text-zinc-700 underline">Edit</button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      );
+    }
+
+    /**
+     * Review queue for experts and the Super-Admin. Approving teaches Nyaya the (edited) rule immediately.
+     */
+    function SuggestionReviewPanel({ buildAuthHeaders, onClose }) {
+      const [statusFilter, setStatusFilter] = useState('pending');
+      const [data, setData] = useState({ suggestions: [], counts: {} });
+      const [drafts, setDrafts] = useState({});
+      const [busyId, setBusyId] = useState('');
+      const [error, setError] = useState('');
+
+      const load = async (status = statusFilter) => {
+        setError('');
+        try {
+          const res = await fetch(`/api/review/suggestions?status=${encodeURIComponent(status)}`, { headers: buildAuthHeaders() });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'Could not load suggestions');
+          setData(json);
+        } catch (err) {
+          setError(err.message);
+        }
+      };
+      useEffect(() => { load(statusFilter); }, [statusFilter]);
+
+      const draftFor = (s) => drafts[s.id] || {
+        domain: s.domain,
+        lessonTopic: s.lessonTopic || s.situation,
+        lessonText: s.lessonText || s.expectedBehaviour,
+        note: s.reviewerNote || ''
+      };
+      const setDraft = (s, patch) => setDrafts(d => ({ ...d, [s.id]: { ...draftFor(s), ...patch } }));
+
+      const act = async (s, action) => {
+        const d = draftFor(s);
+        if (['reject', 'needs-changes'].includes(action) && !d.note.trim()) {
+          setError('Add a short note so the person knows why.');
+          return;
+        }
+        setBusyId(s.id);
+        setError('');
+        try {
+          const res = await fetch(`/api/review/suggestions/${encodeURIComponent(s.id)}`, {
+            method: 'PATCH',
+            headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ action, ...d, listStatus: statusFilter })
+          });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'Could not save the decision');
+          setData({ suggestions: json.suggestions, counts: json.counts });
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          setBusyId('');
+        }
+      };
+
+      const field = 'w-full text-xs px-2.5 py-2 rounded-lg border border-zinc-200 bg-white focus:outline-none focus:border-zinc-400';
+
+      return (
+        <section class="rounded-2xl border-2 border-emerald-200 bg-white p-4 space-y-3 text-sm shadow-sm" aria-label="Review improvement suggestions">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <div class="font-semibold text-zinc-900">🧑‍⚖️ Review improvement suggestions</div>
+              <div class="text-xs text-zinc-500">Approve to teach Nyaya the rule (it is used for similar questions right away). Edit the wording first if needed.</div>
+            </div>
+            <button type="button" onClick={onClose} aria-label="Close review" class="w-8 h-8 rounded-full text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 shrink-0">✕</button>
+          </div>
+
+          <div class="flex flex-wrap gap-1.5 text-xs">
+            {['pending', 'needs-changes', 'approved', 'rejected', 'retired'].map(st => (
+              <button key={st} type="button" onClick={() => setStatusFilter(st)}
+                class={`px-3 py-1.5 rounded-full border ${statusFilter === st ? 'bg-zinc-900 text-white border-zinc-900' : 'border-zinc-200 hover:border-zinc-400'}`}>
+                {SUGGESTION_STATUS_LABEL[st].replace(/ — .*/, '')} ({data.counts?.[st] || 0})
+              </button>
+            ))}
+          </div>
+
+          {error && <p class="text-xs text-red-700">{error}</p>}
+          {data.suggestions.length === 0 && <p class="text-xs text-zinc-500 py-4 text-center">Nothing here.</p>}
+
+          <div class="space-y-3">
+            {data.suggestions.map(s => {
+              const d = draftFor(s);
+              const editable = ['pending', 'needs-changes'].includes(s.status);
+              return (
+                <article key={s.id} class="rounded-xl border border-zinc-200 p-3 space-y-2 text-xs">
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <span class="px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-700">{s.submitterExpertise}</span>
+                    <span class={`px-2 py-0.5 rounded-full ${s.submitterAuth === 'signed-in' ? 'bg-sky-50 text-sky-900 border border-sky-200' : 'bg-zinc-100 text-zinc-600'}`}>
+                      {s.submitterAuth === 'signed-in' ? `🔐 ${s.submitterEmail || s.submitterName}` : '👤 Guest'}
+                    </span>
+                    <span class="px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200">{s.domain}</span>
+                    {s.linkedSessionId && <span class="text-zinc-400">from conversation {s.linkedSessionId}</span>}
+                    <span class="ml-auto text-zinc-400">{formatShareDate(s.createdAt)}</span>
+                  </div>
+                  <div><strong>When:</strong> {s.situation}</div>
+                  <div class="whitespace-pre-wrap"><strong>Nyaya should:</strong> {s.expectedBehaviour}</div>
+                  {s.exampleQuestion && <div class="whitespace-pre-wrap text-zinc-600"><strong>Example:</strong> {s.exampleQuestion}</div>}
+
+                  {editable ? (
+                    <div class="rounded-lg bg-emerald-50/50 border border-emerald-200 p-2.5 space-y-2">
+                      <div class="font-semibold text-emerald-900">Rule Nyaya will learn (edit before approving)</div>
+                      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <select value={d.domain} onChange={(e) => setDraft(s, { domain: e.target.value })} class={field} aria-label="Area of law">
+                          {SUGGESTION_DOMAIN_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        </select>
+                        <input value={d.lessonTopic} onChange={(e) => setDraft(s, { lessonTopic: e.target.value })} class={`${field} sm:col-span-2`} aria-label="Topic" placeholder="Topic" />
+                      </div>
+                      <textarea rows="4" value={d.lessonText} onChange={(e) => setDraft(s, { lessonText: e.target.value })} class={field} aria-label="Lesson text" />
+                      <input value={d.note} onChange={(e) => setDraft(s, { note: e.target.value })} class={field} placeholder="Note to the person who suggested it (required to send back or decline)" />
+                      <div class="flex flex-wrap gap-2">
+                        <button type="button" disabled={busyId === s.id} onClick={() => act(s, 'approve')} class="px-3 py-1.5 rounded-full bg-emerald-700 text-white font-medium hover:bg-emerald-800 disabled:opacity-50">✅ Approve & teach Nyaya</button>
+                        <button type="button" disabled={busyId === s.id} onClick={() => act(s, 'needs-changes')} class="px-3 py-1.5 rounded-full border border-amber-300 text-amber-900 hover:bg-amber-50 disabled:opacity-50">✏️ Send back</button>
+                        <button type="button" disabled={busyId === s.id} onClick={() => act(s, 'reject')} class="px-3 py-1.5 rounded-full border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-50">✖ Decline</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div class="rounded-lg bg-zinc-50 border border-zinc-200 p-2.5 space-y-1">
+                      <div>{SUGGESTION_STATUS_LABEL[s.status]}{s.reviewerName ? ` · by ${s.reviewerName}` : ''}{s.reviewedAt ? ` · ${formatShareDate(s.reviewedAt)}` : ''}</div>
+                      {s.lessonText && <div class="whitespace-pre-wrap text-zinc-700"><strong>Lesson:</strong> {s.lessonText}</div>}
+                      {s.reviewerNote && <div class="text-zinc-600">Note: {s.reviewerNote}</div>}
+                      {s.status === 'approved' && (
+                        <button type="button" disabled={busyId === s.id} onClick={() => act(s, 'retire')} class="px-3 py-1 rounded-full border border-zinc-300 text-zinc-700 hover:bg-white disabled:opacity-50">🗄️ Retire (stop using it)</button>
+                      )}
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      );
+    }
+
     function App() {
       const voice = useVoiceInput();
       const [door, setDoor] = useState(null); // null | 'start' | 'midcase' | 'company'
       const [showDoorPicker, setShowDoorPicker] = useState(false);
       const [showSettings, setShowSettings] = useState(false);
       const [showMenu, setShowMenu] = useState(false);
+      const [showSharePanel, setShowSharePanel] = useState(false);
+      // null | { placement: 'top' | 'result', prefill }
+      const [suggestPanel, setSuggestPanel] = useState(null);
+      const [showReviewPanel, setShowReviewPanel] = useState(false);
       const [showGuide, setShowGuide] = useState(false);
       const [guideTab, setGuideTab] = useState('start');
       const doorPickerHeading = useRef(null);
@@ -1034,6 +1896,21 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
           setError(err.message);
         } finally {
           setAdminLoading(false);
+        }
+      };
+
+      const setUserExpertRole = async (targetUserId, role) => {
+        try {
+          const res = await fetch(`/api/admin/users/${encodeURIComponent(targetUserId)}/role`, {
+            method: 'PATCH',
+            headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ role })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not change the role');
+          setAdminOverview(prev => prev ? { ...prev, users: (prev.users || []).map(u => u.id === targetUserId ? { ...u, role: data.role } : u) } : prev);
+        } catch (err) {
+          setError(err.message);
         }
       };
 
@@ -2301,10 +3178,47 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                       <div class="text-[11px] text-zinc-500">Resume an earlier conversation</div>
                     </div>
                   </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setSuggestPanel({ placement: 'top', prefill: {} }); setShowReviewPanel(false); setShowMenu(false); }}
+                    class="w-full text-left px-3 py-2.5 rounded-xl hover:bg-zinc-100 flex items-start gap-2.5 transition"
+                  >
+                    <span class="text-base leading-none mt-0.5">💡</span>
+                    <div>
+                      <div class="font-semibold text-zinc-900">Suggest an improvement</div>
+                      <div class="text-[11px] text-zinc-500">Lawyers: tell Nyaya how to handle a kind of case</div>
+                    </div>
+                  </button>
+                  {(currentUser?.role === 'expert' || currentUser?.role === 'superadmin') && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { setShowReviewPanel(true); setSuggestPanel(null); setShowMenu(false); }}
+                      class="w-full text-left px-3 py-2.5 rounded-xl hover:bg-zinc-100 flex items-start gap-2.5 transition"
+                    >
+                      <span class="text-base leading-none mt-0.5">🧑‍⚖️</span>
+                      <div>
+                        <div class="font-semibold text-zinc-900">Review suggestions</div>
+                        <div class="text-[11px] text-zinc-500">Approve rules Nyaya should follow</div>
+                      </div>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
           </header>
+
+          {(suggestPanel?.placement === 'top' || showReviewPanel) && (
+            <div class="w-full max-w-2xl mx-auto px-4 sm:px-6 mb-5 space-y-4">
+              {suggestPanel?.placement === 'top' && (
+                <SuggestImprovementPanel buildAuthHeaders={buildAuthHeaders} prefill={suggestPanel.prefill} onClose={() => setSuggestPanel(null)} />
+              )}
+              {showReviewPanel && (currentUser?.role === 'expert' || currentUser?.role === 'superadmin') && (
+                <SuggestionReviewPanel buildAuthHeaders={buildAuthHeaders} onClose={() => setShowReviewPanel(false)} />
+              )}
+            </div>
+          )}
 
           {showAuthModal && (
             <section id="auth-modal" aria-label="Sign up or log in to Nyaya" class="w-full max-w-md mx-auto px-4 sm:px-6 mb-5">
@@ -2456,6 +3370,8 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                   </div>
                 </div>
 
+                <AdminInteractionLog buildAuthHeaders={buildAuthHeaders} />
+
                 {adminOverview && (
                   <>
                     <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs">
@@ -2504,7 +3420,18 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                                 <td class="py-1.5 pr-3 font-medium text-zinc-900">
                                   {u.displayName} {u.email ? <span class="text-zinc-400">({u.email})</span> : ''}
                                 </td>
-                                <td class="py-1.5 pr-3 text-zinc-600">{u.role} · {u.authProvider}</td>
+                                <td class="py-1.5 pr-3 text-zinc-600">
+                                  {u.role} · {u.authProvider}
+                                  {u.role !== 'superadmin' && u.email && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setUserExpertRole(u.id, u.role === 'expert' ? 'user' : 'expert')}
+                                      class="ml-2 px-2 py-0.5 rounded-full border border-zinc-300 text-[10px] hover:bg-white"
+                                    >
+                                      {u.role === 'expert' ? 'Remove expert' : 'Make expert'}
+                                    </button>
+                                  )}
+                                </td>
                                 <td class="py-1.5 pr-3">{u.sessionCount}</td>
                                 <td class="py-1.5 pr-3">{u.turnCount}</td>
                                 <td class="py-1.5 pr-3">
@@ -3112,6 +4039,10 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                       ))}
                   </div>
                 </div>
+
+                <p class="text-[11px] text-zinc-400 text-center leading-relaxed px-2">
+                  Your questions and Nyaya's answers are saved so you can come back to them, and the Nyaya team may review them to improve answers. Please avoid sharing Aadhaar, bank or other ID numbers.
+                </p>
 
                 <details class="text-xs">
                   <summary class="cursor-pointer text-center font-medium text-zinc-400 hover:text-zinc-700 py-2">
@@ -3956,6 +4887,16 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                       >
                         {copied ? '✓ Copied' : '📋 Copy'}
                       </button>
+                      {activeSession?.id && (
+                        <button
+                          type="button"
+                          onClick={() => { setShowSharePanel(v => !v); setSuggestPanel(null); }}
+                          class={`px-3 py-1.5 rounded-lg font-medium border transition ${showSharePanel ? 'bg-zinc-900 text-white border-zinc-900' : 'border-zinc-200 hover:border-zinc-400 text-zinc-700'}`}
+                          title="Share a read-only copy of this conversation with your lawyer"
+                        >
+                          🔗 Share
+                        </button>
+                      )}
                       <button
                         onClick={() => runAnalysis(
                           activeSession?.mode || result?.engineResult?.effectiveMode || 'auto',
@@ -3975,6 +4916,25 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                         <div class="absolute z-20 mt-1 left-0 w-64 max-w-[80vw] p-2 rounded-xl bg-white border border-zinc-200 shadow-lg space-y-1">
                           <button onClick={() => downloadCourtWordDoc(result.adviceMarkdown, caseTitle || 'Nyaya-Legal-Filing')} class="w-full text-left px-2.5 py-2 rounded-lg hover:bg-zinc-100">📄 Export Word (.doc)</button>
                           <button onClick={() => printCourtReadyPdf(result.adviceMarkdown, caseTitle || 'Nyaya Legal Filing')} class="w-full text-left px-2.5 py-2 rounded-lg hover:bg-zinc-100">🖨️ Print / Save PDF</button>
+                          <button
+                            onClick={(e) => {
+                              const lastTurn = activeSession?.turns?.[activeSession.turns.length - 1];
+                              setSuggestPanel({
+                                placement: 'result',
+                                prefill: {
+                                  sessionId: activeSession?.id || '',
+                                  turnId: lastTurn?.id || null,
+                                  domain: result?.engineResult?.domainInfo?.domain || 'general',
+                                  exampleQuestion: String(lastTurn?.userInput || '').split('ATTACHED FOLDER / TEXT DOCUMENTS:')[0].trim().slice(0, 600)
+                                }
+                              });
+                              setShowSharePanel(false);
+                              e.currentTarget.closest('details')?.removeAttribute('open');
+                            }}
+                            class="w-full text-left px-2.5 py-2 rounded-lg hover:bg-zinc-100"
+                          >
+                            💡 Suggest how Nyaya should handle this
+                          </button>
                           {result?.engineResult?.practitionerIntelligence?.crossExaminationInstruction && (
                             <button
                               onClick={() => runAnalysis(activeSession?.mode || result?.engineResult?.effectiveMode || 'auto', result.engineResult.practitionerIntelligence.crossExaminationInstruction, null, true)}
@@ -4012,6 +4972,12 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                         </div>
                       </details>
                     </div>
+                    {showSharePanel && activeSession?.id && (
+                      <ShareConversationSheet sessionId={activeSession.id} buildAuthHeaders={buildAuthHeaders} onClose={() => setShowSharePanel(false)} />
+                    )}
+                    {suggestPanel?.placement === 'result' && (
+                      <SuggestImprovementPanel buildAuthHeaders={buildAuthHeaders} prefill={suggestPanel.prefill} onClose={() => setSuggestPanel(null)} />
+                    )}
                     <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
                       <div class="flex flex-wrap items-center gap-2">
                         <span class="text-zinc-500">Helpful?</span>
@@ -4534,7 +5500,8 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
     }
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
+    const sharedPathMatch = window.location.pathname.match(/^\/share\/([A-Za-z0-9_-]{20,})$/);
+    root.render(sharedPathMatch ? <SharedConversationView token={sharedPathMatch[1]} /> : <App />);
   </script>
 </body>
 </html>

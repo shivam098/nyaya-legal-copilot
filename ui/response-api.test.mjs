@@ -411,3 +411,114 @@ test('profile signup/login, Gmail quick login, Rs 500 monthly trial cap, user is
   assert.equal(audioExtractRes.docs.length, 1);
   assert.match(audioExtractRes.docs[0].name, /Transcribed Audio · Whisper large-v3-turbo/);
 });
+
+test('interaction log, share links and expert suggestions work end-to-end with the right access', async () => {
+  const json = async (res) => ({ status: res.status, body: await res.json() });
+  const bearer = token => ({ Authorization: ['Bearer', token].join(' ') });
+  const login = async (email, password, path = 'login') => (await fetch(`${baseUrl}/api/auth/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, displayName: email.split('@')[0] })
+  })).json();
+
+  // Guest asks via the streaming endpoint; a signed-in user asks via the sync endpoint.
+  const guestId = 'synthetic-log-guest';
+  const guest = await analyze('analyze-stream', { userId: guestId, door: 'unified', mode: 'auto', rawInput: 'Guest question about an unpaid salary for the logging test.' });
+  const member = await login('log-member@example.com', 'password123', 'signup');
+  const memberRes = await fetch(`${baseUrl}/api/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...bearer(member.token) },
+    body: JSON.stringify({ door: 'unified', mode: 'auto', model: 'test-model', rawInput: 'Signed-in question about OPC vs Pvt Ltd for the logging test.' })
+  });
+  assert.equal(memberRes.status, 200);
+
+  // Logs are Super-Admin only.
+  assert.equal((await fetch(`${baseUrl}/api/admin/logs`, { headers: bearer(member.token) })).status, 403);
+  assert.equal((await fetch(`${baseUrl}/api/admin/logs`)).status, 403);
+  const admin = await login('admin@nyaya.ai', 'nyaya-admin-2026');
+  const logs = await json(await fetch(`${baseUrl}/api/admin/logs?q=${encodeURIComponent('for the logging test')}&limit=10`, { headers: bearer(admin.token) }));
+  assert.equal(logs.status, 200);
+  const guestEntry = logs.body.entries.find(e => e.userId === guestId);
+  const memberEntry = logs.body.entries.find(e => e.userEmail === 'log-member@example.com');
+  assert.ok(guestEntry, JSON.stringify(logs.body.entries));
+  assert.equal(guestEntry.authState, 'guest');
+  assert.equal(guestEntry.endpoint, 'analyze-stream');
+  assert.equal(guestEntry.status, 'ok');
+  assert.ok(guestEntry.turnId);
+  assert.equal(memberEntry.authState, 'signed-in');
+  assert.equal(memberEntry.endpoint, 'analyze');
+  const detail = await json(await fetch(`${baseUrl}/api/admin/logs/${guestEntry.id}`, { headers: bearer(admin.token) }));
+  assert.equal(detail.body.entry.responseText, reply.content);
+  const reviewed = await json(await fetch(`${baseUrl}/api/admin/logs/${guestEntry.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...bearer(admin.token) },
+    body: JSON.stringify({ reviewStatus: 'needs-fix', tags: ['missed-facts'], note: 'Ask for the appointment letter' })
+  }));
+  assert.equal(reviewed.body.entry.reviewStatus, 'needs-fix');
+  const exported = await fetch(`${baseUrl}/api/admin/logs/export?authState=guest`, { headers: bearer(admin.token) });
+  assert.equal(exported.status, 200);
+  assert.ok((await exported.text()).includes(guestEntry.id));
+
+  // Share: only the owner can create a link; the lawyer reads it without signing in; revoke stops it.
+  const sessionId = guest.result.session.id;
+  const notOwner = await fetch(`${baseUrl}/api/sessions/${sessionId}/shares`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...bearer(member.token) },
+    body: JSON.stringify({ expiresInDays: 7 })
+  });
+  assert.equal(notOwner.status, 404);
+  const created = await json(await fetch(`${baseUrl}/api/sessions/${sessionId}/shares`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-nyaya-user-id': guestId },
+    body: JSON.stringify({ expiresInDays: 7, recipientLabel: 'Adv. Test' })
+  }));
+  assert.equal(created.status, 200);
+  const sharePage = await fetch(`${baseUrl}${created.body.sharePath}`);
+  assert.equal(sharePage.status, 200);
+  assert.match(sharePage.headers.get('x-robots-tag') || '', /noindex/);
+  const token = created.body.sharePath.split('/').pop();
+  const shared = await json(await fetch(`${baseUrl}/api/shared/${token}`));
+  assert.equal(shared.status, 200);
+  assert.equal(shared.body.shared.turns.length, 1);
+  assert.match(shared.body.shared.turns[0].question, /unpaid salary/);
+  assert.equal(shared.body.shared.turns[0].answer, reply.content);
+  const revoked = await fetch(`${baseUrl}/api/shares/${created.body.share.id}`, { method: 'DELETE', headers: { 'x-nyaya-user-id': guestId } });
+  assert.equal(revoked.status, 200);
+  assert.equal((await fetch(`${baseUrl}/api/shared/${token}`)).status, 404);
+
+  // Suggestions: anyone submits; only experts / Super-Admin review; approval becomes a lesson.
+  const submitted = await json(await fetch(`${baseUrl}/api/suggestions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...bearer(member.token) },
+    body: JSON.stringify({
+      expertise: 'advocate',
+      domain: 'employment-labour',
+      situation: 'Unpaid salary after resignation in a private company',
+      expectedBehaviour: 'Ask for the appointment letter and last payslip, then point to the Payment of Wages Act / Labour Commissioner before civil suit.'
+    })
+  }));
+  assert.equal(submitted.status, 200);
+  assert.equal(submitted.body.suggestion.submitterAuth, 'signed-in');
+  assert.equal((await fetch(`${baseUrl}/api/review/suggestions`, { headers: bearer(member.token) })).status, 403);
+
+  const expertSignup = await login('log-expert@example.com', 'password123', 'signup');
+  const promoted = await fetch(`${baseUrl}/api/admin/users/${expertSignup.userId}/role`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...bearer(admin.token) },
+    body: JSON.stringify({ role: 'expert' })
+  });
+  assert.equal(promoted.status, 200);
+  const queue = await json(await fetch(`${baseUrl}/api/review/suggestions?status=pending`, { headers: bearer(expertSignup.token) }));
+  assert.equal(queue.status, 200);
+  assert.ok(queue.body.suggestions.some(s => s.id === submitted.body.suggestion.id));
+  const approved = await json(await fetch(`${baseUrl}/api/review/suggestions/${submitted.body.suggestion.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...bearer(expertSignup.token) },
+    body: JSON.stringify({ action: 'approve' })
+  }));
+  assert.equal(approved.body.suggestion.status, 'approved');
+  const lessonList = await json(await fetch(`${baseUrl}/api/admin/lessons`, { headers: bearer(admin.token) }));
+  assert.ok(lessonList.body.lessons.some(l => l.id === approved.body.suggestion.lessonId));
+  const mine = await json(await fetch(`${baseUrl}/api/suggestions/mine`, { headers: bearer(member.token) }));
+  assert.equal(mine.body.mine[0].status, 'approved');
+});

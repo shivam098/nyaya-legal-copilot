@@ -16,6 +16,11 @@ fs.mkdirSync(dataDir, { recursive: true });
 
 const db = new DatabaseSync(dbPath);
 
+/** Shared connection for modules that keep their tables in the same database (e.g. the interaction log). */
+export function getSessionDatabase() {
+  return db;
+}
+
 db.exec(`
   PRAGMA journal_mode = WAL;
 
@@ -969,4 +974,18 @@ export function getAnySessionWithTurnsForAdmin(sessionId) {
       createdAt: t.created_at
     }))
   };
+}
+
+/**
+ * Super-Admin grants or removes the "expert" reviewer role. Only signed-up accounts (with an email) can be
+ * experts, and a Super-Admin account can never be changed through this path.
+ */
+export function setUserReviewerRole(userId, role) {
+  if (!['expert', 'user'].includes(role)) throw new Error('Role must be "expert" or "user"');
+  const row = db.prepare('SELECT id, email, role FROM users WHERE id = ?').get(String(userId || ''));
+  if (!row) throw new Error('User not found');
+  if (row.role === 'superadmin') throw new Error('Super-Admin accounts cannot be changed here');
+  if (role === 'expert' && !row.email) throw new Error('Only signed-up accounts can be made experts');
+  db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, row.id);
+  return { id: row.id, role };
 }

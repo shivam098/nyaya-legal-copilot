@@ -68,6 +68,7 @@ import {
   saveTurnFeedbackForUser,
   getSuperAdminOverview,
   getAnySessionWithTurnsForAdmin,
+  setUserReviewerRole,
   DEFAULT_MONTHLY_TRIAL_LIMIT_INR
 } from '../src/engine/session-db.mjs';
 import {
@@ -81,6 +82,30 @@ import {
   extractDocxBufferText,
   extractZipBufferTexts
 } from '../src/engine/folder-case-extractor.mjs';
+import {
+  createSessionShare,
+  listSessionShares,
+  revokeSessionShare,
+  readSharedConversation
+} from '../src/engine/share-links.mjs';
+import {
+  isSuggestionReviewer,
+  submitImprovementSuggestion,
+  listMySuggestions,
+  reviseMySuggestion,
+  listSuggestionsForReview,
+  reviewImprovementSuggestion
+} from '../src/engine/improvement-suggestions.mjs';
+import {
+  newInteractionId,
+  logInteraction,
+  listInteractionLogs,
+  getInteractionLog,
+  updateInteractionReview,
+  syncInteractionRating,
+  exportInteractionLogs,
+  pruneInteractionLogs
+} from '../src/engine/interaction-log.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, '..');
@@ -206,6 +231,83 @@ function buildPriorTurnsContext(turns = [], maxUserChars = 1200, maxAssistantCha
 function sendJson(res, status, payload) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(payload));
+}
+
+/**
+ * Common fields for an interaction-log row. Works before auth is resolved (e.g. rate-limited requests),
+ * in which case the user is identified only from a valid sign-in token, without creating guest records.
+ */
+function buildInteractionLogBase(req, endpoint, { auth = null, body = null } = {}) {
+  const signals = auth?.signals || extractClientDeviceSignals(req, body);
+  let user = auth?.user || null;
+  let authenticated = Boolean(auth?.authenticated);
+  if (!auth) {
+    const token = extractAuthTokenFromRequest(req);
+    const tokenUser = token ? getUserFromAuthToken(token) : null;
+    if (tokenUser) {
+      user = tokenUser;
+      authenticated = true;
+    }
+  }
+  const rawInput = String(body?.rawInput || '');
+  return {
+    id: newInteractionId(),
+    endpoint,
+    userId: auth?.userId || user?.id || '',
+    authenticated,
+    userEmail: authenticated ? (user?.email || '') : '',
+    userRole: user?.role || 'user',
+    sessionId: body?.sessionId || '',
+    requestedDoor: body?.door || '',
+    requestedMode: body?.mode || '',
+    requestedModel: body?.model || '',
+    requestText: redactPiiForCloud(rawInput),
+    imagesCount: Array.isArray(body?.images) ? body.images.length : 0,
+    hasDocuments: rawInput.includes('ATTACHED FOLDER / TEXT DOCUMENTS:'),
+    deviceId: signals.deviceId,
+    ipHash: signals.ipHash,
+    userAgent: String(req.headers['user-agent'] || '')
+  };
+}
+
+function readLogFilters(url) {
+  const p = url.searchParams;
+  return {
+    q: p.get('q') || '',
+    authState: p.get('authState') || '',
+    status: p.get('status') || '',
+    failuresOnly: p.get('failuresOnly') === '1',
+    reviewStatus: p.get('reviewStatus') || '',
+    domain: p.get('domain') || '',
+    rating: p.get('rating') ?? '',
+    userId: p.get('userId') || '',
+    sessionId: p.get('sessionId') || '',
+    from: p.get('from') || '',
+    to: p.get('to') || '',
+    limit: p.get('limit') || 50,
+    offset: p.get('offset') || 0
+  };
+}
+
+function logCompletedInteraction(base, { engineResult, session, responseText, llmRes, isFollowUp, clientAborted = false }) {
+  const lastTurn = session?.turns?.[session.turns.length - 1] || null;
+  const incomplete = Boolean(engineResult?.responseCompletion?.incomplete);
+  logInteraction({
+    ...base,
+    status: clientAborted ? 'client_aborted' : incomplete ? 'incomplete' : 'ok',
+    httpStatus: 200,
+    sessionId: session?.id || base.sessionId,
+    turnId: lastTurn?.id,
+    turnIndex: lastTurn?.turnIndex,
+    engineResult,
+    effectiveMode: engineResult?.effectiveMode,
+    responseText,
+    modelUsed: llmRes?.model,
+    tokens: llmRes?.billingEntry?.totalTokens || 0,
+    costInr: llmRes?.billingEntry?.estimatedInr || 0,
+    latencyMs: llmRes?.billingEntry?.latencyMs || 0,
+    isFollowUp
+  });
 }
 
 function extractAuthTokenFromRequest(req) {
@@ -634,13 +736,198 @@ function computeCaseEngine(
 const port = process.env.PORT === undefined ? 4173 : Number(process.env.PORT);
 const host = process.env.HOST || '0.0.0.0';
 
+// Interaction-log retention (NYAYA_LOG_RETENTION_DAYS, default 180; 0 keeps everything).
+pruneInteractionLogs();
+setInterval(() => pruneInteractionLogs(), 24 * 60 * 60 * 1000).unref();
+
 const server = http.createServer(async (req, res) => {
+  let pendingLog = null;
   try {
     const url = new URL(req.url, `http://127.0.0.1:${port}`);
 
     if (req.method === 'GET' && url.pathname === '/') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(fs.readFileSync(htmlPath, 'utf8'));
+      return;
+    }
+
+    // Read-only shared conversation page (the SPA renders the shared view for /share/<token>).
+    if (req.method === 'GET' && /^\/share\/[A-Za-z0-9_-]{20,}$/.test(url.pathname)) {
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'X-Robots-Tag': 'noindex, nofollow',
+        'Referrer-Policy': 'no-referrer'
+      });
+      res.end(fs.readFileSync(htmlPath, 'utf8'));
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname.startsWith('/api/shared/')) {
+      const rateCheck = checkIpRateLimit(req, 60);
+      if (!rateCheck.allowed) {
+        sendJson(res, 429, { error: 'Too many requests. Please wait a moment.' });
+        return;
+      }
+      const token = decodeURIComponent(url.pathname.replace('/api/shared/', ''));
+      const shared = readSharedConversation(token);
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      if (!shared) {
+        sendJson(res, 404, { error: 'This link has expired, was turned off by the person who shared it, or is not valid.' });
+        return;
+      }
+      sendJson(res, 200, { shared });
+      return;
+    }
+
+    const shareCollectionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/shares$/);
+    if (shareCollectionMatch && (req.method === 'GET' || req.method === 'POST')) {
+      const body = req.method === 'POST' ? await readJsonBody(req) : null;
+      const userId = resolveRequestUserId(req, url, body);
+      const sessionId = decodeURIComponent(shareCollectionMatch[1]);
+      if (req.method === 'GET') {
+        sendJson(res, 200, { shares: listSessionShares({ ownerUserId: userId, sessionId }) });
+        return;
+      }
+      try {
+        const created = createSessionShare({
+          ownerUserId: userId,
+          sessionId,
+          expiresInDays: body.expiresInDays,
+          includeDocuments: Boolean(body.includeDocuments),
+          recipientLabel: body.recipientLabel || ''
+        });
+        sendJson(res, 200, {
+          share: created.share,
+          sharePath: `/share/${created.token}`,
+          shares: listSessionShares({ ownerUserId: userId, sessionId })
+        });
+      } catch (shareErr) {
+        sendJson(res, 404, { error: shareErr.message || 'Could not create share link' });
+      }
+      return;
+    }
+
+    if (req.method === 'DELETE' && url.pathname.startsWith('/api/shares/')) {
+      const userId = resolveRequestUserId(req, url);
+      const shareId = decodeURIComponent(url.pathname.replace('/api/shares/', ''));
+      const revoked = revokeSessionShare({ ownerUserId: userId, shareId });
+      if (!revoked) {
+        sendJson(res, 404, { error: 'Share link not found' });
+        return;
+      }
+      sendJson(res, 200, { share: revoked, shares: listSessionShares({ ownerUserId: userId, sessionId: revoked.sessionId }) });
+      return;
+    }
+
+    // ---- Expert improvement suggestions ----
+    if (req.method === 'POST' && url.pathname === '/api/suggestions') {
+      const rateCheck = checkIpRateLimit(req, 10);
+      if (!rateCheck.allowed) {
+        sendJson(res, 429, { error: 'Too many suggestions in a short time. Please wait a minute.' });
+        return;
+      }
+      const body = await readJsonBody(req, 64 * 1024);
+      const auth = resolveRequestAuth(req, url, body, res);
+      try {
+        const suggestion = submitImprovementSuggestion({
+          auth,
+          domain: body.domain,
+          situation: body.situation,
+          expectedBehaviour: body.expectedBehaviour,
+          exampleQuestion: body.exampleQuestion,
+          expertise: body.expertise,
+          sessionId: body.sessionId,
+          turnId: body.turnId
+        });
+        sendJson(res, 200, { suggestion, mine: listMySuggestions(auth.userId) });
+      } catch (sErr) {
+        sendJson(res, 400, { error: sErr.message });
+      }
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/suggestions/mine') {
+      const auth = resolveRequestAuth(req, url, null, res);
+      sendJson(res, 200, { mine: listMySuggestions(auth.userId), isReviewer: isSuggestionReviewer(auth) });
+      return;
+    }
+
+    if (req.method === 'PATCH' && url.pathname.startsWith('/api/suggestions/')) {
+      const body = await readJsonBody(req, 64 * 1024);
+      const auth = resolveRequestAuth(req, url, body, res);
+      try {
+        const revised = reviseMySuggestion({
+          id: decodeURIComponent(url.pathname.replace('/api/suggestions/', '')),
+          userId: auth.userId,
+          situation: body.situation,
+          expectedBehaviour: body.expectedBehaviour,
+          exampleQuestion: body.exampleQuestion,
+          domain: body.domain
+        });
+        if (!revised) {
+          sendJson(res, 404, { error: 'Suggestion not found' });
+          return;
+        }
+        sendJson(res, 200, { suggestion: revised, mine: listMySuggestions(auth.userId) });
+      } catch (sErr) {
+        sendJson(res, 400, { error: sErr.message });
+      }
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/review/suggestions') {
+      const auth = resolveRequestAuth(req, url);
+      if (!isSuggestionReviewer(auth)) {
+        sendJson(res, 403, { error: 'Forbidden: only Nyaya experts and the Super-Admin can review suggestions.' });
+        return;
+      }
+      sendJson(res, 200, listSuggestionsForReview({ status: url.searchParams.get('status') || '' }));
+      return;
+    }
+
+    if (req.method === 'PATCH' && url.pathname.startsWith('/api/review/suggestions/')) {
+      const auth = resolveRequestAuth(req, url);
+      if (!isSuggestionReviewer(auth)) {
+        sendJson(res, 403, { error: 'Forbidden: only Nyaya experts and the Super-Admin can review suggestions.' });
+        return;
+      }
+      const body = await readJsonBody(req, 64 * 1024);
+      try {
+        const reviewed = reviewImprovementSuggestion({
+          id: decodeURIComponent(url.pathname.replace('/api/review/suggestions/', '')),
+          action: body.action,
+          reviewerAuth: auth,
+          note: body.note,
+          lessonTopic: body.lessonTopic,
+          lessonText: body.lessonText,
+          domain: body.domain
+        });
+        if (!reviewed) {
+          sendJson(res, 404, { error: 'Suggestion not found' });
+          return;
+        }
+        sendJson(res, 200, { suggestion: reviewed, ...listSuggestionsForReview({ status: body.listStatus || '' }) });
+      } catch (sErr) {
+        sendJson(res, 400, { error: sErr.message });
+      }
+      return;
+    }
+
+    const roleMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/role$/);
+    if (req.method === 'PATCH' && roleMatch) {
+      const auth = resolveRequestAuth(req, url);
+      if (!auth.isSuperAdmin) {
+        sendJson(res, 403, { error: 'Forbidden: Super-Admin access is required to change roles.' });
+        return;
+      }
+      const body = await readJsonBody(req, 4096);
+      try {
+        sendJson(res, 200, setUserReviewerRole(decodeURIComponent(roleMatch[1]), body.role));
+      } catch (rErr) {
+        sendJson(res, 400, { error: rErr.message });
+      }
       return;
     }
 
@@ -807,6 +1094,7 @@ const server = http.createServer(async (req, res) => {
           rating: body.rating,
           note: body.note
         });
+        syncInteractionRating(turnId, saved.userRating, saved.userFeedbackNote);
         sendJson(res, 200, saved);
       } catch (fbErr) {
         sendJson(res, 403, { error: fbErr.message || 'Could not save feedback' });
@@ -826,6 +1114,63 @@ const server = http.createServer(async (req, res) => {
         practitionerLessons: listAllPractitionerLessons(),
         globalBilling: readBillingLedger()
       });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/admin/logs/export') {
+      const auth = resolveRequestAuth(req, url);
+      if (!auth.isSuperAdmin) {
+        sendJson(res, 403, { error: 'Forbidden: Super-Admin access is required to export interaction logs.' });
+        return;
+      }
+      const jsonl = exportInteractionLogs(readLogFilters(url));
+      res.writeHead(200, {
+        'Content-Type': 'application/x-ndjson; charset=utf-8',
+        'Content-Disposition': `attachment; filename="nyaya-interactions-${new Date().toISOString().slice(0, 10)}.jsonl"`,
+        'Cache-Control': 'no-store'
+      });
+      res.end(jsonl);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/admin/logs') {
+      const auth = resolveRequestAuth(req, url);
+      if (!auth.isSuperAdmin) {
+        sendJson(res, 403, { error: 'Forbidden: Super-Admin access is required to view interaction logs.' });
+        return;
+      }
+      sendJson(res, 200, listInteractionLogs(readLogFilters(url)));
+      return;
+    }
+
+    if ((req.method === 'GET' || req.method === 'PATCH') && url.pathname.startsWith('/api/admin/logs/')) {
+      const auth = resolveRequestAuth(req, url);
+      if (!auth.isSuperAdmin) {
+        sendJson(res, 403, { error: 'Forbidden: Super-Admin access is required to view interaction logs.' });
+        return;
+      }
+      const logId = decodeURIComponent(url.pathname.replace('/api/admin/logs/', ''));
+      if (req.method === 'GET') {
+        const entry = getInteractionLog(logId);
+        if (!entry) {
+          sendJson(res, 404, { error: `Interaction not found: ${logId}` });
+          return;
+        }
+        sendJson(res, 200, { entry });
+        return;
+      }
+      const body = await readJsonBody(req);
+      const updated = updateInteractionReview(logId, {
+        reviewStatus: body.reviewStatus,
+        tags: body.tags,
+        note: body.note,
+        reviewer: auth.user?.email || auth.user?.displayName || auth.userId
+      });
+      if (!updated) {
+        sendJson(res, 404, { error: `Interaction not found: ${logId}` });
+        return;
+      }
+      sendJson(res, 200, { entry: updated });
       return;
     }
 
@@ -996,13 +1341,16 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/analyze-stream') {
       const rateCheck = checkIpRateLimit(req, 20);
       if (!rateCheck.allowed) {
+        logInteraction({ ...buildInteractionLogBase(req, 'analyze-stream'), status: 'rate_limited', httpStatus: 429, errorMessage: 'IP rate limit (20/min)' });
         sendJson(res, 429, { error: 'Rate limit exceeded (max 20 analyses/minute per IP). Please wait a moment.' });
         return;
       }
       const body = await readJsonBody(req);
       const auth = resolveRequestAuth(req, url, body, res);
       const userId = auth.userId;
+      const logBase = buildInteractionLogBase(req, 'analyze-stream', { auth, body });
       if (auth.quota.quotaExceeded) {
+        logInteraction({ ...logBase, status: 'quota_exceeded', httpStatus: 402, errorMessage: 'Monthly trial limit reached' });
         sendJson(res, 402, {
           error: `Monthly Free Trial limit of ₹${auth.quota.monthlyLimitInr.toFixed(0)} reached (₹${auth.quota.monthlySpendInr.toFixed(2)} used this month). Contact the Nyaya team to extend your trial.`,
           userQuota: auth.quota
@@ -1030,6 +1378,13 @@ const server = http.createServer(async (req, res) => {
       const sendEvent = (type, payload) => {
         res.write(`data: ${JSON.stringify({ type, ...payload })}\n\n`);
       };
+      let clientAborted = false;
+      res.on('close', () => {
+        if (!res.writableEnded) clientAborted = true;
+      });
+      let streamedSoFar = '';
+      let streamEngineResult = null;
+      let streamIsFollowUp = false;
 
       try {
         const hasImages = Array.isArray(images) && images.length > 0;
@@ -1042,6 +1397,7 @@ const server = http.createServer(async (req, res) => {
 
         const existingSession = sessionId ? getSessionWithTurnsForUser(userId, sessionId) : null;
         const isFollowUpTurn = Boolean(existingSession?.turns?.length > 0);
+        streamIsFollowUp = isFollowUpTurn;
 
         let inheritedFolderCorpus = '';
         if (existingSession?.turns?.length) {
@@ -1148,6 +1504,7 @@ const server = http.createServer(async (req, res) => {
         engineResult.effectiveDoor = effectiveDoor;
         engineResult.effectiveMode = effectiveMode;
         engineResult.inferredCaseState = inferredCaseState;
+        streamEngineResult = engineResult;
         engineResult.inferredReasons = inferredReasons;
         engineResult.isComplexCase = isComplexCase;
         engineResult.turnIntent = turnIntent;
@@ -1399,6 +1756,7 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
           isComplexCase,
           maxTokens: resolveAdviceMaxTokens(effectiveMode),
           onChunk: (deltaText) => {
+            streamedSoFar += deltaText;
             sendEvent('delta', { delta: deltaText });
           }
         });
@@ -1458,7 +1816,25 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
           billingTotals: scopeBillingForUser(readBillingLedger(), userId).totals
         });
         res.end();
+        logCompletedInteraction(logBase, {
+          engineResult,
+          session: updatedSession,
+          responseText: finalAdviceMarkdown,
+          llmRes,
+          isFollowUp: isFollowUpTurn,
+          clientAborted
+        });
       } catch (streamErr) {
+        logInteraction({
+          ...logBase,
+          status: 'error',
+          httpStatus: 500,
+          errorMessage: streamErr.message || String(streamErr),
+          engineResult: streamEngineResult,
+          effectiveMode: streamEngineResult?.effectiveMode,
+          responseText: streamedSoFar,
+          isFollowUp: streamIsFollowUp
+        });
         sendEvent('error', { error: streamErr.message || String(streamErr) });
         res.end();
       }
@@ -1468,13 +1844,16 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
     if (req.method === 'POST' && url.pathname === '/api/analyze') {
       const rateCheck = checkIpRateLimit(req, 20);
       if (!rateCheck.allowed) {
+        logInteraction({ ...buildInteractionLogBase(req, 'analyze'), status: 'rate_limited', httpStatus: 429, errorMessage: 'IP rate limit (20/min)' });
         sendJson(res, 429, { error: 'Rate limit exceeded (max 20 analyses/minute per IP). Please wait a moment.' });
         return;
       }
       const body = await readJsonBody(req);
       const auth = resolveRequestAuth(req, url, body);
       const userId = auth.userId;
+      const logBase = buildInteractionLogBase(req, 'analyze', { auth, body });
       if (auth.quota.quotaExceeded) {
+        logInteraction({ ...logBase, status: 'quota_exceeded', httpStatus: 402, errorMessage: 'Monthly trial limit reached' });
         sendJson(res, 402, {
           error: `Monthly Free Trial limit of ₹${auth.quota.monthlyLimitInr.toFixed(0)} reached (₹${auth.quota.monthlySpendInr.toFixed(2)} used this month). Contact the Nyaya team to extend your trial.`,
           userQuota: auth.quota
@@ -1494,6 +1873,7 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
       } = body;
 
       const existingSession = sessionId ? getSessionWithTurnsForUser(userId, sessionId) : null;
+      pendingLog = { ...logBase };
       const priorTurnsContext = buildPriorTurnsContext(existingSession?.turns || [], 600, 900);
       const effectiveRawInput = redactPiiForCloud(rawInput);
 
@@ -1524,6 +1904,7 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
       engineResult.autoDetectedCategoryLabel = autoSensed.autoDetectedCategoryLabel;
       engineResult.effectiveDoor = effectiveDoor;
       engineResult.effectiveMode = effectiveMode;
+      pendingLog = { ...logBase, engineResult, effectiveMode, isFollowUp: Boolean(existingSession?.turns?.length) };
       const groundedLegal = await buildGroundedLegalContext(effectiveRawInput, effectiveMode);
       const shouldRunAdvocateBench = (
         effectiveDoor === 'lawyer-workbench' ||
@@ -1616,11 +1997,22 @@ ${effectiveRawInput || '(See attached images and Case State above)'}${imageSumma
         billingEntry: llmRes.billingEntry,
         billingTotals: scopeBillingForUser(readBillingLedger(), userId).totals
       });
+      pendingLog = null;
+      logCompletedInteraction(logBase, {
+        engineResult,
+        session: updatedSession,
+        responseText: finalSyncMarkdown,
+        llmRes,
+        isFollowUp: Boolean(existingSession?.turns?.length)
+      });
       return;
     }
 
     sendJson(res, 404, { error: 'Not found' });
   } catch (err) {
+    if (pendingLog) {
+      logInteraction({ ...pendingLog, status: 'error', httpStatus: 500, errorMessage: err.message || String(err) });
+    }
     sendJson(res, 500, { error: err.message || String(err) });
   }
 }).listen(port, host, () => {
