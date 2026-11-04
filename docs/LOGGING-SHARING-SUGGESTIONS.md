@@ -48,3 +48,15 @@ Code: `src/engine/improvement-suggestions.mjs`.
 3. Reviewers open **Menu → 🧑‍⚖️ Review suggestions**. They can edit the rule, then approve it, send it back, or decline it.
 4. **Approve** writes the rule as a practitioner lesson in the semantic index. The engine retrieves lessons for similar questions and passes them to the model, so behaviour changes without a release.
 5. **Retire** removes the lesson again. Submitters see the status of their suggestions, and can edit any that were sent back.
+
+## All users' cases and automatic case names
+
+- **All users' cases:** Super-Admins see an **All users** tab in **My cases**, and it is the default for them. It lists every conversation, signed-in and guest, and is searchable by case name, question text, email or user id.
+  - Opening a case is read-only.
+  - Each answer has **📝 Audit this answer**. Answers that predate the log get an entry created on first audit.
+  - Each answer also has **💡 Turn into a rule**, which opens a pre-filled improvement suggestion.
+  - API: `GET /api/admin/cases` and `POST /api/admin/turns/:turnId/audit`.
+- **Automatic names:** `src/engine/case-naming.mjs` names each conversation as *area · short subject*, with greetings and filler removed. Examples: `Draft · Rent agreement (Maharashtra)`, `Tenancy · My landlord is not returning my security deposit`.
+  - Auto names refresh as Nyaya learns more about the matter.
+  - A name the user typed (`sessions.title_source = 'user'`) is never replaced.
+  - On startup, old automatic names such as `[Dispute] User Role: …` are upgraded once. They are re-routed with today's rules.

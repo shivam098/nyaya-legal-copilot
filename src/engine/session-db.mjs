@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { generateCaseTitle, isLegacyAutoTitle } from './case-naming.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, '../..');
@@ -73,6 +74,14 @@ try {
   }
   if (!cols.some(c => c.name === 'folder_digest')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN folder_digest TEXT DEFAULT ''`);
+  }
+  if (!cols.some(c => c.name === 'title_source')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN title_source TEXT DEFAULT 'auto'`);
+    // Keep names people typed: anything that doesn't look like an old automatic name is treated as user-chosen.
+    const markUser = db.prepare(`UPDATE sessions SET title_source = 'user' WHERE id = ?`);
+    for (const row of db.prepare('SELECT id, title FROM sessions').all()) {
+      if (!isLegacyAutoTitle(row.title)) markUser.run(row.id);
+    }
   }
 
   const userCols = db.prepare(`PRAGMA table_info(users)`).all();
@@ -404,18 +413,33 @@ export function saveOrAppendSessionTurn({
     ? db.prepare('SELECT * FROM sessions WHERE id = ? AND user_id = ?').get(sessionId, cleanUserId)
     : null;
   const finalSessionId = existing ? existing.id : `session-${crypto.randomUUID().slice(0, 12)}`;
-  const finalTitle = deriveSessionTitle({
-    title: title || existing?.title,
-    door,
-    caseState,
-    rawInput: userInput
-  });
+  // A name the person typed is kept forever; otherwise the name is generated from the kind of matter and
+  // the first question, and refreshed as Nyaya learns more (e.g. the area of law becomes clear).
+  const providedTitle = String(title || '').trim();
+  const userTyped = existing
+    ? existing.title_source === 'user' || (providedTitle && providedTitle !== existing.title && !isLegacyAutoTitle(providedTitle))
+    : Boolean(providedTitle);
+  let titleSource = userTyped ? 'user' : 'auto';
+  let finalTitle;
+  if (userTyped) {
+    finalTitle = existing?.title_source === 'user' ? existing.title : providedTitle;
+  } else {
+    const firstTurn = existing
+      ? db.prepare('SELECT user_input FROM turns WHERE session_id = ? ORDER BY turn_index ASC LIMIT 1').get(finalSessionId)
+      : null;
+    finalTitle = generateCaseTitle({
+      firstQuestion: firstTurn?.user_input || userInput,
+      engineResult,
+      door,
+      mode
+    }) || deriveSessionTitle({ title: '', door, caseState, rawInput: userInput });
+  }
   const finalDigest = folderDigest || existing?.folder_digest || '';
 
   if (!existing) {
     db.prepare(`
-      INSERT INTO sessions (id, user_id, title, door, mode, case_state_json, folder_digest, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, user_id, title, door, mode, case_state_json, folder_digest, created_at, updated_at, title_source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       finalSessionId,
       cleanUserId,
@@ -425,15 +449,17 @@ export function saveOrAppendSessionTurn({
       JSON.stringify(caseState || {}),
       finalDigest,
       now,
-      now
+      now,
+      titleSource
     );
   } else {
     db.prepare(`
       UPDATE sessions
-      SET title = ?, door = ?, mode = ?, case_state_json = ?, folder_digest = ?, updated_at = ?
+      SET title = ?, title_source = ?, door = ?, mode = ?, case_state_json = ?, folder_digest = ?, updated_at = ?
       WHERE id = ? AND user_id = ?
     `).run(
       finalTitle,
+      titleSource,
       door || existing.door,
       mode || existing.mode,
       JSON.stringify(caseState || {}),
@@ -477,7 +503,7 @@ export function saveOrAppendSessionTurn({
 export function renameSessionForUser(userId, sessionId, newTitle) {
   const cleanUserId = String(userId || 'founder-local').trim();
   const now = new Date().toISOString();
-  db.prepare('UPDATE sessions SET title = ?, updated_at = ? WHERE id = ? AND user_id = ?')
+  db.prepare(`UPDATE sessions SET title = ?, title_source = 'user', updated_at = ? WHERE id = ? AND user_id = ?`)
     .run(newTitle.trim(), now, sessionId, cleanUserId);
   return getSessionWithTurnsForUser(cleanUserId, sessionId);
 }
@@ -988,4 +1014,83 @@ export function setUserReviewerRole(userId, role) {
   if (role === 'expert' && !row.email) throw new Error('Only signed-up accounts can be made experts');
   db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, row.id);
   return { id: row.id, role };
+}
+
+/**
+ * Upgrades old automatic names ("[Dispute] User Role: …") to the readable kind-aware names.
+ * Names people typed (title_source = 'user') are never touched. Idempotent: new names are not "legacy".
+ */
+export function upgradeLegacyAutoTitles() {
+  const rows = db.prepare(`SELECT id, title, door, mode FROM sessions WHERE COALESCE(title_source, 'auto') = 'auto'`).all();
+  const firstTurn = db.prepare('SELECT user_input FROM turns WHERE session_id = ? ORDER BY turn_index ASC LIMIT 1');
+  const update = db.prepare('UPDATE sessions SET title = ? WHERE id = ?');
+  let changed = 0;
+  for (const row of rows) {
+    if (!isLegacyAutoTitle(row.title)) continue;
+    const first = firstTurn.get(row.id);
+    if (!first) continue;
+    // Re-route from the first question with today's rules: stored engine results can carry old routing mistakes.
+    const next = generateCaseTitle({ firstQuestion: first.user_input, engineResult: null, door: row.door, mode: row.mode });
+    if (next && next !== row.title) {
+      update.run(next, row.id);
+      changed++;
+    }
+  }
+  return changed;
+}
+
+try {
+  upgradeLegacyAutoTitles();
+} catch (err) {
+  console.error(`[session-db] title upgrade skipped: ${err.message}`);
+}
+
+/**
+ * Super-Admin: every conversation from every user (signed-in and guest), newest first, with search.
+ */
+export function listAllSessionsForAdmin({ q = '', limit = 50, offset = 0 } = {}) {
+  const lim = Math.min(Math.max(Number(limit) || 50, 1), 200);
+  const off = Math.max(Number(offset) || 0, 0);
+  const where = [];
+  const params = [];
+  if (String(q || '').trim()) {
+    const like = `%${String(q).trim().replace(/[%_]/g, m => `\\${m}`)}%`;
+    where.push(`(s.title LIKE ? ESCAPE '\\' OR u.email LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\' OR s.user_id LIKE ? ESCAPE '\\'
+      OR EXISTS (SELECT 1 FROM turns tq WHERE tq.session_id = s.id AND tq.user_input LIKE ? ESCAPE '\\'))`);
+    params.push(like, like, like, like, like);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const rows = db.prepare(`
+    SELECT s.id, s.user_id, s.title, s.title_source, s.door, s.mode, s.created_at, s.updated_at,
+           u.email AS user_email, u.display_name AS user_display_name, u.role AS user_role,
+           (SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id) AS turn_count,
+           (SELECT MIN(t.user_rating) FROM turns t WHERE t.session_id = s.id) AS worst_rating
+    FROM sessions s
+    LEFT JOIN users u ON u.id = s.user_id
+    ${whereSql}
+    ORDER BY datetime(s.updated_at) DESC, s.rowid DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, lim, off);
+  const total = db.prepare(`SELECT COUNT(*) AS n FROM sessions s LEFT JOIN users u ON u.id = s.user_id ${whereSql}`).get(...params).n;
+  return {
+    total: Number(total || 0),
+    limit: lim,
+    offset: off,
+    sessions: rows.map(r => ({
+      id: r.id,
+      userId: r.user_id,
+      userEmail: r.user_email || '',
+      userDisplayName: r.user_display_name || r.user_id,
+      userRole: r.user_role || 'user',
+      signedIn: Boolean(r.user_email),
+      title: r.title,
+      titleSource: r.title_source || 'auto',
+      door: r.door,
+      mode: r.mode,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      turnCount: Number(r.turn_count || 0),
+      hasThumbsDown: Number(r.worst_rating) === -1
+    }))
+  };
 }

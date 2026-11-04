@@ -68,6 +68,7 @@ import {
   saveTurnFeedbackForUser,
   getSuperAdminOverview,
   getAnySessionWithTurnsForAdmin,
+  listAllSessionsForAdmin,
   setUserReviewerRole,
   DEFAULT_MONTHLY_TRIAL_LIMIT_INR
 } from '../src/engine/session-db.mjs';
@@ -104,7 +105,10 @@ import {
   updateInteractionReview,
   syncInteractionRating,
   exportInteractionLogs,
-  pruneInteractionLogs
+  pruneInteractionLogs,
+  findInteractionLogIdsForTurns,
+  ensureInteractionLogForTurn,
+  REVIEW_TAGS
 } from '../src/engine/interaction-log.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1218,6 +1222,36 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === 'GET' && url.pathname === '/api/admin/cases') {
+      const auth = resolveRequestAuth(req, url);
+      if (!auth.isSuperAdmin) {
+        sendJson(res, 403, { error: 'Forbidden: Super-Admin access is required to list all users\' cases.' });
+        return;
+      }
+      sendJson(res, 200, listAllSessionsForAdmin({
+        q: url.searchParams.get('q') || '',
+        limit: url.searchParams.get('limit') || 50,
+        offset: url.searchParams.get('offset') || 0
+      }));
+      return;
+    }
+
+    const turnAuditMatch = url.pathname.match(/^\/api\/admin\/turns\/(\d+)\/audit$/);
+    if (req.method === 'POST' && turnAuditMatch) {
+      const auth = resolveRequestAuth(req, url);
+      if (!auth.isSuperAdmin) {
+        sendJson(res, 403, { error: 'Forbidden: Super-Admin access is required to audit answers.' });
+        return;
+      }
+      const entry = ensureInteractionLogForTurn(Number(turnAuditMatch[1]));
+      if (!entry) {
+        sendJson(res, 404, { error: 'Answer not found' });
+        return;
+      }
+      sendJson(res, 200, { entry, reviewTags: REVIEW_TAGS });
+      return;
+    }
+
     if (req.method === 'GET' && url.pathname.startsWith('/api/admin/sessions/')) {
       const auth = resolveRequestAuth(req, url);
       if (!auth.isSuperAdmin) {
@@ -1230,6 +1264,8 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 404, { error: `Session not found: ${sessionId}` });
         return;
       }
+      const audits = findInteractionLogIdsForTurns((session.turns || []).map(t => t.id));
+      session.turns = (session.turns || []).map(t => ({ ...t, audit: audits[t.id] || null }));
       sendJson(res, 200, { session });
       return;
     }

@@ -522,3 +522,29 @@ test('interaction log, share links and expert suggestions work end-to-end with t
   const mine = await json(await fetch(`${baseUrl}/api/suggestions/mine`, { headers: bearer(member.token) }));
   assert.equal(mine.body.mine[0].status, 'approved');
 });
+
+test('Super-Admin sees all users\' cases with readable names and can audit any answer; others cannot', async () => {
+  const bearer = token => ({ Authorization: ['Bearer', token].join(' ') });
+  const guestId = 'synthetic-allcases-guest';
+  const { result } = await analyze('analyze', { userId: guestId, door: 'unified', mode: 'auto', rawInput: 'help me draft a rent agreement' });
+  assert.equal(result.session.title, 'Draft · Rent agreement');
+
+  assert.equal((await fetch(`${baseUrl}/api/admin/cases`, { headers: { 'x-nyaya-user-id': guestId } })).status, 403);
+  const admin = await (await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'admin@nyaya.ai', password: 'nyaya-admin-2026' })
+  })).json();
+  const cases = await (await fetch(`${baseUrl}/api/admin/cases?q=${encodeURIComponent(guestId)}`, { headers: bearer(admin.token) })).json();
+  const found = cases.sessions.find(s => s.id === result.session.id);
+  assert.ok(found, JSON.stringify(cases));
+  assert.equal(found.signedIn, false);
+
+  const turnId = result.session.turns[0].id;
+  assert.equal((await fetch(`${baseUrl}/api/admin/turns/${turnId}/audit`, { method: 'POST', headers: { 'x-nyaya-user-id': guestId } })).status, 403);
+  const audit = await (await fetch(`${baseUrl}/api/admin/turns/${turnId}/audit`, { method: 'POST', headers: bearer(admin.token) })).json();
+  assert.ok(audit.entry.id);
+  assert.equal(audit.entry.turnId, turnId);
+  const viewed = await (await fetch(`${baseUrl}/api/admin/sessions/${result.session.id}`, { headers: bearer(admin.token) })).json();
+  assert.equal(viewed.session.turns[0].audit.logId, audit.entry.id);
+});
