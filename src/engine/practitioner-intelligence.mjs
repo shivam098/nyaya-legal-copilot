@@ -13,7 +13,7 @@ import {
   searchStatutoryProvisionsSemantic,
   searchPractitionerLessonsSemantic
 } from './semantic-statutory-index.mjs';
-import { detectRequestIntent } from './civil-criminal-rules.mjs';
+import { detectRequestIntent, isAdvisoryQuery } from './civil-criminal-rules.mjs';
 import {
   detectIndianState,
   evaluateMaintainabilityAndOusters,
@@ -1068,6 +1068,55 @@ export function runPractitionerIntelligence({
         keyIngredientTranslation: null,
         topClarifyingQuestion: drafting.clarifyingQuestions[0]?.question || null,
         quickReplies: drafting.clarifyingQuestions[0]?.quickReplies || []
+      }
+    };
+  }
+
+  // Advisory questions (business setup/compliance, general "how does the law work") are answered directly.
+  // The dispute fact sheet, dispute questions and litigation audits do not apply to them.
+  // This is re-checked on the cumulative text every turn, so a follow-up that reveals a dispute leaves this path.
+  if (isAdvisoryQuery({ mode, domainInfo, rawInput: cumulativeInput })) {
+    const isCorporate = domainInfo.domain === 'corporate-roc' || mode === 'company-advisor';
+    const searchText = isCorporate
+      ? `${cumulativeInput} Companies Act 2013 incorporation one person company private limited LLP Act 2008 RoC MCA compliance`
+      : cumulativeInput;
+    return {
+      requestIntent: 'advisory',
+      factReadiness: {
+        kind: 'advisory',
+        intakeStage: 'full-roadmap',
+        shouldClarifyFirst: false,
+        wordCount: cumulativeInput.split(/\s+/).filter(Boolean).length,
+        factDimensionsConfirmed: 0,
+        totalSlots: 0,
+        slots: [],
+        detectedState: detectIndianState(cumulativeInput, caseState),
+        confirmedSlotIds: [],
+        missingDimensions: []
+      },
+      ingredientTranslations: [],
+      factProbing: { firCognizabilityAnalysis: null, clarifyingQuestions: [] },
+      foresightAndPrayer: null,
+      matchedTrajectories: [],
+      maintainabilityAudit: null,
+      paperTrailAudit: null,
+      forumElection: null,
+      flankRisks: [],
+      jurisdictionState: detectIndianState(cumulativeInput, caseState),
+      semanticStatutoryCluster: searchStatutoryProvisionsSemantic(searchText, { topK: 2, expandCluster: false }),
+      semanticPractitionerLessons: searchPractitionerLessonsSemantic(cumulativeInput, domainInfo.domain || '', 2),
+      bilingualDraftInstruction: isCorporate
+        ? 'Prepare, in BOTH formal Hindi (देवनागरी) and English, a short plain-language comparison note of the business structures discussed (liability, ownership, investors, yearly compliance) and a step-by-step registration checklist with [PLACEHOLDERS] for the founder\'s details.'
+        : 'Prepare, in BOTH formal Hindi (देवनागरी) and English, a short plain-language note answering this legal question with the steps the person can take, using [PLACEHOLDERS] for personal details.',
+      crossExaminationInstruction: null,
+      instantTriage: {
+        generatedAtMs: Date.now(),
+        headline: isCorporate ? '🏢 Business setup & compliance' : '📘 Legal question',
+        immediateReassurance: 'Here is a direct answer; I will ask only about the facts that change it.',
+        firstMoveNow: null,
+        keyIngredientTranslation: null,
+        topClarifyingQuestion: null,
+        quickReplies: []
       }
     };
   }

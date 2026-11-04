@@ -116,8 +116,17 @@ export function detectLegalDomain({ door = '', mode = '', caseState = {}, rawInp
     };
   }
 
+  if (isCorporateSetupOrComplianceText(text)) {
+    return {
+      domain: 'corporate-roc',
+      forum: 'mca-roc',
+      isConsumerForum: false,
+      label: 'Companies Act, 2013 & LLP Act, 2008 (MCA21 / RoC)'
+    };
+  }
+
   // Explicit subTrack or forum from the dedicated Civil, Family & Criminal door or Forum selector
-  if (caseState.subTrack === 'cheque-bounce-138' || /\b(section\s+138|s\.?\s*138|cheque\s+bounc|cheque\s+dishonour|dishonoured\s+cheque|return\s+memo|insufficient\s+funds|funds\s+insufficient|negotiable\s+instruments)\b/i.test(text)) {
+  if (caseState.subTrack === 'cheque-bounce-138' || /\bcheques?\b[^.\n]{0,40}?\b(bounc\w*|dishono\w*|returned\s+unpaid)\b/i.test(text) || /\b(section\s+138|s\.?\s*138|cheque\s+bounc|cheque\s+dishonour|dishonoured\s+cheque|return\s+memo|insufficient\s+funds|funds\s+insufficient|negotiable\s+instruments)\b/i.test(text)) {
     return {
       domain: 'cheque-bounce-138',
       forum: 'judicial-magistrate-ni138',
@@ -250,12 +259,57 @@ export function detectLegalDomain({ door = '', mode = '', caseState = {}, rawInp
     };
   }
 
+  if (CONSUMER_SIGNAL_RX.test(text)) {
+    return {
+      domain: 'consumer',
+      forum: 'consumer-commission',
+      isConsumerForum: true,
+      label: 'Consumer Protection Act, 2019 (NCH 1915 / Sectoral Ombudsman / Consumer Commission)'
+    };
+  }
+
+  // No recognisable domain: do not force consumer law onto an unrelated question.
   return {
-    domain: 'consumer',
-    forum: 'consumer-commission',
-    isConsumerForum: true,
-    label: 'Consumer Protection Act, 2019 (NCH 1915 / Sectoral Ombudsman / Consumer Commission)'
+    domain: 'general',
+    forum: 'to-be-determined',
+    isConsumerForum: false,
+    label: 'General Indian Law (area to be confirmed)'
   };
+}
+
+const CONSUMER_SIGNAL_RX = /\b(consumer|bought|buy|purchas\w*|paid|payment|order(?:ed)?|deliver\w*|refund\w*|replace\w*|warranty|guarantee|defect\w*|faulty|damaged|repair\w*|service\s+(?:centre|center|provider)|deficien\w*|product|seller|shop(?:keeper)?|dealer|showroom|e-?commerce|amazon|flipkart|myntra|meesho|swiggy|zomato|insurance|insurer|claim|policy|bank|credit\s+card|debit\s+card|upi|loan|emi|hospital|doctor|medical\s+negligence|airline|flight|irctc|telecom|broadband|electricity|courier|booking|ticket|subscription|overcharg\w*|mrp|invoice|bill|unfair\s+trade|customer\s+care|ncH\s*1915|kharid\w*|wapas)\b/i;
+
+const CORPORATE_ENTITY_RX = /\b(one[\s-]person\s+company|opc|private\s+limited|pvt\.?\s*ltd|llp|limited\s+liability\s+partnership|sole\s+proprietor(?:ship)?|proprietorship\s+firm|section\s+8\s+company|startup\s+india|dpiit)\b/i;
+const CORPORATE_SETUP_VERB_RX = /\b(register\w*|registration|incorporat\w*|form(?:ing)?|set\s*up|setting\s+up|start(?:ing)?|create|creating|open(?:ing)?|launch\w*|choose|choosing|convert\w*|vs\.?|versus|better|which|what\s+(?:kind|type)|solo\s+founder|co-?founder)\b/i;
+const CORPORATE_SETUP_PHRASE_RX = /\b(solo\s+founder|what\s+(?:kind|type)\s+of\s+(?:company|entity|business\s+structure|firm)|(?:start|register|incorporate|set\s*up|create|open|form)\w*\s+(?:a\s+|an\s+|my\s+|our\s+)?(?:new\s+|own\s+)?(?:company|startup|start-up|business\s+entity))\b/i;
+const ROC_COMPLIANCE_RX = /\b(roc|registrar\s+of\s+companies|mca\s*21|mca\s+portal|director\s+identification|din\s+(?:number|kyc|application)|dir-?3|inc-?\d+[a-z]?|aoc-?4|mgt-?7|adt-?1|annual\s+(?:return|filing|compliance)|company\s+compliance|strike[\s-]?off|spice\s*\+?)\b/i;
+const NOT_CORPORATE_SETUP_RX = /\b(refund|defect\w*|warranty|cheat\w*|fraud|not\s+paid|unpaid|salary|terminat\w*|fired|cheque|bounc\w*|legal\s+notice|complaint\s+against|harass\w*|police|fir|court|evict\w*|consumer\s+(?:court|commission|forum)|customer\s+care)\b/i;
+
+/**
+ * True when the user is asking how to set up or keep a business entity compliant (MCA / RoC), rather than
+ * fighting with some company. "XYZ Pvt Ltd refused my refund" is a consumer dispute, not company advisory.
+ */
+export function isCorporateSetupOrComplianceText(text = '') {
+  const t = String(text || '');
+  if (ROC_COMPLIANCE_RX.test(t)) return true;
+  if (NOT_CORPORATE_SETUP_RX.test(t)) return false;
+  if (CORPORATE_SETUP_PHRASE_RX.test(t)) return true;
+  return CORPORATE_ENTITY_RX.test(t) && CORPORATE_SETUP_VERB_RX.test(t);
+}
+
+/**
+ * Advisory questions ("how do I..., which is better..., what is the law on...") with no dispute in them should be
+ * answered directly instead of being pushed through the dispute fact sheet.
+ */
+const DISPUTE_SIGNAL_RX = /\b(refus\w*|not\s+(?:return|refund|pay|paid|giving|deliver)\w*|cheat\w*|fraud|threat\w*|harass\w*|beat|assault|police|fir|arrest|court|case\s+(?:filed|against)|notice\s+(?:from|received)|received\s+(?:a\s+)?notice|dispute|evict\w*|terminat\w*|fired|withheld|deducted|defect\w*|damaged|stolen|bounc\w*|breach\w*|violat\w*|against\s+me|sued|complain\w*|demand\w*|deny|denied)\b/i;
+
+export function isAdvisoryQuery({ mode = '', domainInfo = {}, rawInput = '' } = {}) {
+  const text = String(rawInput || '');
+  if (mode === 'company-advisor' || domainInfo.domain === 'corporate-roc') {
+    return ROC_COMPLIANCE_RX.test(text) || !NOT_CORPORATE_SETUP_RX.test(text);
+  }
+  if (domainInfo.domain === 'general') return !DISPUTE_SIGNAL_RX.test(text);
+  return false;
 }
 
 /**
@@ -407,7 +461,9 @@ export function autoSenseIntakeFromText({ door = '', mode = '', caseState = {}, 
     } else {
       resolvedDoor = 'start';
       resolvedMode = 'messy-dump-intake';
-      autoDetectedCategoryLabel = `New Dispute — ${domainInfo.label.split('(')[0].trim()}`;
+      autoDetectedCategoryLabel = isAdvisoryQuery({ domainInfo, rawInput: text })
+        ? 'Legal Question — General Guidance'
+        : `New Dispute — ${domainInfo.label.split('(')[0].trim()}`;
     }
   }
 

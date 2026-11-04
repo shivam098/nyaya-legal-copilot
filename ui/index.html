@@ -3922,7 +3922,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                       <label htmlFor="follow-up-text" class="text-xs font-semibold text-zinc-700 block">
                         Ask about anything unclear, or tell us what changed
                       </label>
-                      <div class="flex flex-col sm:flex-row gap-2">
+                      <div class="relative flex items-center gap-2">
                         <input
                           id="follow-up-text"
                           type="text"
@@ -3933,18 +3933,21 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                               runAnalysis(activeSession?.mode, followUpText.trim());
                             }
                           }}
-                          placeholder="e.g., What does that mean for me, and what should I do first?"
-                          class="flex-1 text-xs px-3.5 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-900 focus:outline-none focus:border-zinc-400"
+                          placeholder="Type your reply or question…"
+                          class="flex-1 min-w-0 text-sm px-4 py-2.5 rounded-full border border-zinc-200 bg-zinc-50 text-zinc-900 focus:outline-none focus:border-zinc-400"
                         />
+                        <div class="shrink-0">
+                          <VoiceInput compact inputId="follow-up-text" setText={setFollowUpText} voice={voice} disabled={loading || Boolean(ingestProgress)} />
+                        </div>
                         <button
                           onClick={() => runAnalysis(activeSession?.mode, followUpText.trim())}
                           disabled={loading || !followUpText.trim() || voice.busy}
-                          class="px-4 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition disabled:opacity-40 whitespace-nowrap"
+                          aria-label="Send follow-up"
+                          class="shrink-0 h-10 px-4 rounded-full bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 transition disabled:bg-zinc-200 disabled:text-zinc-400 whitespace-nowrap"
                         >
-                          {loading ? 'Preparing your answer...' : 'Ask a follow-up →'}
+                          {loading ? '…' : 'Send →'}
                         </button>
                       </div>
-                      <VoiceInput inputId="follow-up-text" setText={setFollowUpText} voice={voice} disabled={loading || Boolean(ingestProgress)} />
                     </div>
                     <div class="flex flex-wrap items-center gap-2 text-xs">
                       <button
