@@ -161,3 +161,17 @@ test('expert suggestions: submit, send back, revise, approve into a lesson Nyaya
   assert.equal(retired.status, 'retired');
   assert.ok(!lessons.listAllPractitionerLessons().some(l => l.id === approved.lessonId), 'retiring removes the lesson');
 });
+
+test('Super-Admin can share any user\'s conversation as a view-only link that works for everyone', () => {
+  const session = seedConversation('owner-admin-share', 1);
+  assert.throws(() => shares.createSessionShare({ ownerUserId: 'random-user', sessionId: session.id }), /not found/);
+  const { share, token } = shares.createSessionShare({ ownerUserId: 'admin-x', sessionId: session.id, actingAsAdmin: true, expiresInDays: 7 });
+  assert.equal(share.createdByAdmin, true);
+  assert.equal(shares.readSharedConversation(token).turns.length, 1, 'anyone with the link can read it');
+  const ownerView = shares.listSessionShares({ ownerUserId: 'owner-admin-share', sessionId: session.id });
+  assert.equal(ownerView.length, 1, 'the owner sees the admin-created link');
+  assert.equal(shares.listSessionShares({ ownerUserId: 'admin-x', sessionId: session.id }).length, 0, 'without admin rights the admin id alone sees nothing');
+  assert.equal(shares.listSessionShares({ ownerUserId: 'admin-x', sessionId: session.id, actingAsAdmin: true }).length, 1);
+  assert.equal(shares.revokeSessionShare({ ownerUserId: 'owner-admin-share', shareId: share.id }).active, false, 'the owner can turn it off');
+  assert.equal(shares.readSharedConversation(token), null);
+});

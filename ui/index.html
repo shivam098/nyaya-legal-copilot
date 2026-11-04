@@ -732,7 +732,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
     /**
      * Owner-side panel to create, copy and revoke read-only share links for the current conversation.
      */
-    function ShareConversationSheet({ sessionId, buildAuthHeaders, onClose }) {
+    function ShareConversationSheet({ sessionId, buildAuthHeaders, onClose, ownerLabel = '' }) {
       const [expiresInDays, setExpiresInDays] = useState(7);
       const [includeDocuments, setIncludeDocuments] = useState(false);
       const [recipientLabel, setRecipientLabel] = useState('');
@@ -804,8 +804,12 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
         <div class="rounded-2xl border border-zinc-200 bg-white p-4 space-y-3 text-sm shadow-sm">
           <div class="flex items-start justify-between gap-2">
             <div>
-              <div class="font-semibold text-zinc-900">🔗 Share with your lawyer</div>
-              <div class="text-xs text-zinc-500">They get a read-only copy of this conversation so far. They can't edit it or see your later messages.</div>
+              <div class="font-semibold text-zinc-900">{ownerLabel ? '🔗 Share a view-only link' : '🔗 Share with your lawyer'}</div>
+              <div class="text-xs text-zinc-500">
+                {ownerLabel
+                  ? `Anyone with the link can read this conversation (owned by ${ownerLabel}) up to now — no sign-in needed, and they can't edit it. The owner also sees this link and can turn it off.`
+                  : "They get a read-only copy of this conversation so far. They can't edit it or see your later messages."}
+              </div>
             </div>
             <button type="button" onClick={onClose} aria-label="Close share" class="w-8 h-8 rounded-full text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 shrink-0">✕</button>
           </div>
@@ -871,6 +875,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                         {s.active ? `Expires ${formatShareDate(s.expiresAt)}` : s.revokedAt ? 'Turned off' : 'Expired'}
                         {' · '}{s.viewCount ? `opened ${s.viewCount}×, last ${formatShareDate(s.lastViewedAt)}` : 'not opened yet'}
                         {s.includeDocuments ? ' · with documents' : ''}
+                        {s.createdByAdmin ? ' · shared by Nyaya admin' : ''}
                       </div>
                     </div>
                     {s.active && <button type="button" onClick={() => revoke(s.id)} class="shrink-0 px-3 py-1.5 rounded-full border border-red-200 text-red-700 hover:bg-red-50">Turn off</button>}
@@ -1548,6 +1553,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
       const [offset, setOffset] = useState(0);
       const [loading, setLoading] = useState(false);
       const [viewing, setViewing] = useState(null);
+      const [sharingOpen, setSharingOpen] = useState(false);
       const [err, setErr] = useState('');
       const PAGE = 30;
 
@@ -1577,6 +1583,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
           const json = await res.json();
           if (!res.ok) throw new Error(json.error || 'Could not open the case');
           setViewing(json.session);
+          setSharingOpen(false);
         } catch (e) {
           setErr(e.message);
         }
@@ -1593,7 +1600,22 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                   {viewing.userEmail ? `🔐 ${viewing.userEmail}` : `👤 Guest (${viewing.userId})`} · {viewing.turns?.length || 0} answer(s) · started {formatShareDate(viewing.createdAt)} · read-only
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setSharingOpen(v => !v)}
+                class={`shrink-0 text-xs font-medium px-3 py-1.5 rounded-full border ${sharingOpen ? 'bg-zinc-900 text-white border-zinc-900' : 'border-zinc-200 hover:border-zinc-400 text-zinc-700'}`}
+              >
+                🔗 Share
+              </button>
             </div>
+            {sharingOpen && (
+              <ShareConversationSheet
+                sessionId={viewing.id}
+                buildAuthHeaders={buildAuthHeaders}
+                onClose={() => setSharingOpen(false)}
+                ownerLabel={viewing.userEmail || `guest ${viewing.userId}`}
+              />
+            )}
             <div class="space-y-3 max-h-[32rem] overflow-y-auto pr-1">
               {(viewing.turns || []).map(t => (
                 <div key={t.id} class="rounded-xl border border-zinc-200 p-3 space-y-2">

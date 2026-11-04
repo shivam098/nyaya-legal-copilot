@@ -29,6 +29,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_shares_session ON session_shares(session_id, owner_user_id);
 `);
 
+try {
+  const shareCols = db.prepare('PRAGMA table_info(session_shares)').all();
+  if (!shareCols.some(c => c.name === 'created_by_user_id')) {
+    db.exec(`ALTER TABLE session_shares ADD COLUMN created_by_user_id TEXT DEFAULT ''`);
+  }
+} catch {
+  // ignore
+}
+
 export const SHARE_EXPIRY_CHOICES_DAYS = [1, 7, 30];
 const DOC_MARKER = 'ATTACHED FOLDER / TEXT DOCUMENTS:';
 
@@ -48,18 +57,24 @@ function shareRowToPublic(r) {
     revokedAt: r.revoked_at || '',
     active: !r.revoked_at && !expired,
     viewCount: Number(r.view_count || 0),
-    lastViewedAt: r.last_viewed_at || ''
+    lastViewedAt: r.last_viewed_at || '',
+    createdByAdmin: Boolean(r.created_by_user_id && r.created_by_user_id !== r.owner_user_id)
   };
 }
 
 /**
- * Creates a share link for a session the user owns. Returns { share, token } or throws.
- * The raw token is returned only here; it cannot be recovered later.
+ * Creates a share link. The session owner can share their own conversation; a Super-Admin (actingAsAdmin)
+ * can share anyone's. The link is always recorded against the real owner, so the owner also sees it in
+ * their list and can turn it off, and created_by_user_id keeps an audit trail of who created it.
+ * Returns { share, token } or throws. The raw token is returned only here; it cannot be recovered later.
  */
-export function createSessionShare({ ownerUserId, sessionId, expiresInDays = 7, includeDocuments = false, recipientLabel = '' } = {}) {
-  const owner = String(ownerUserId || '').trim();
-  const session = db.prepare('SELECT id FROM sessions WHERE id = ? AND user_id = ?').get(String(sessionId || ''), owner);
-  if (!owner || !session) throw new Error('Conversation not found');
+export function createSessionShare({ ownerUserId, sessionId, expiresInDays = 7, includeDocuments = false, recipientLabel = '', actingAsAdmin = false } = {}) {
+  const requester = String(ownerUserId || '').trim();
+  const session = actingAsAdmin
+    ? db.prepare('SELECT id, user_id FROM sessions WHERE id = ?').get(String(sessionId || ''))
+    : db.prepare('SELECT id, user_id FROM sessions WHERE id = ? AND user_id = ?').get(String(sessionId || ''), requester);
+  if (!requester || !session) throw new Error('Conversation not found');
+  const owner = session.user_id;
   const maxTurn = Number(db.prepare('SELECT COALESCE(MAX(turn_index), 0) AS n FROM turns WHERE session_id = ?').get(session.id).n || 0);
   if (maxTurn < 1) throw new Error('There is nothing to share yet');
   const days = SHARE_EXPIRY_CHOICES_DAYS.includes(Number(expiresInDays)) ? Number(expiresInDays) : 7;
@@ -77,20 +92,25 @@ export function createSessionShare({ ownerUserId, sessionId, expiresInDays = 7, 
     expires_at: new Date(now.getTime() + days * 86_400_000).toISOString()
   };
   db.prepare(`
-    INSERT INTO session_shares (id, session_id, owner_user_id, token_hash, upto_turn_index, include_documents, recipient_label, created_at, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(row.id, row.session_id, row.owner_user_id, row.token_hash, row.upto_turn_index, row.include_documents, row.recipient_label, row.created_at, row.expires_at);
-  return { share: shareRowToPublic({ ...row, revoked_at: '', view_count: 0, last_viewed_at: '' }), token };
+    INSERT INTO session_shares (id, session_id, owner_user_id, token_hash, upto_turn_index, include_documents, recipient_label, created_at, expires_at, created_by_user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(row.id, row.session_id, row.owner_user_id, row.token_hash, row.upto_turn_index, row.include_documents, row.recipient_label, row.created_at, row.expires_at, requester);
+  return { share: shareRowToPublic({ ...row, created_by_user_id: requester, revoked_at: '', view_count: 0, last_viewed_at: '' }), token };
 }
 
-export function listSessionShares({ ownerUserId, sessionId } = {}) {
-  return db.prepare('SELECT * FROM session_shares WHERE session_id = ? AND owner_user_id = ? ORDER BY created_at DESC')
-    .all(String(sessionId || ''), String(ownerUserId || ''))
-    .map(shareRowToPublic);
+/** Owner sees links for their conversation; a Super-Admin (actingAsAdmin) sees every link for any conversation. */
+export function listSessionShares({ ownerUserId, sessionId, actingAsAdmin = false } = {}) {
+  const rows = actingAsAdmin
+    ? db.prepare('SELECT * FROM session_shares WHERE session_id = ? ORDER BY created_at DESC').all(String(sessionId || ''))
+    : db.prepare('SELECT * FROM session_shares WHERE session_id = ? AND owner_user_id = ? ORDER BY created_at DESC')
+      .all(String(sessionId || ''), String(ownerUserId || ''));
+  return rows.map(shareRowToPublic);
 }
 
-export function revokeSessionShare({ ownerUserId, shareId } = {}) {
-  const r = db.prepare('SELECT * FROM session_shares WHERE id = ? AND owner_user_id = ?').get(String(shareId || ''), String(ownerUserId || ''));
+export function revokeSessionShare({ ownerUserId, shareId, actingAsAdmin = false } = {}) {
+  const r = actingAsAdmin
+    ? db.prepare('SELECT * FROM session_shares WHERE id = ?').get(String(shareId || ''))
+    : db.prepare('SELECT * FROM session_shares WHERE id = ? AND owner_user_id = ?').get(String(shareId || ''), String(ownerUserId || ''));
   if (!r) return null;
   if (!r.revoked_at) {
     db.prepare('UPDATE session_shares SET revoked_at = ? WHERE id = ?').run(new Date().toISOString(), r.id);
