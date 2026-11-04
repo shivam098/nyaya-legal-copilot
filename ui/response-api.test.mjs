@@ -568,3 +568,30 @@ test('off-topic questions get a polite decline without a model call; "answer any
   assert.match(requests.at(-1).messages[0].content, /confirmed this message has a legal side/);
   assert.notEqual(override.result.model, 'scope-guard');
 });
+
+test('Super-Admin shares another user\'s case; the link opens for anyone without signing in', async () => {
+  const bearer = token => ({ Authorization: ['Bearer', token].join(' ') });
+  const ownerId = 'synthetic-admin-share-owner';
+  const { result } = await analyze('analyze', { userId: ownerId, door: 'unified', mode: 'auto', rawInput: 'My landlord is not returning my security deposit for the admin share test' });
+  const stranger = await fetch(`${baseUrl}/api/sessions/${result.session.id}/shares`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-nyaya-user-id': 'synthetic-stranger' }, body: JSON.stringify({})
+  });
+  assert.equal(stranger.status, 404);
+  const admin = await (await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'admin@nyaya.ai', password: 'nyaya-admin-2026' })
+  })).json();
+  const created = await (await fetch(`${baseUrl}/api/sessions/${result.session.id}/shares`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...bearer(admin.token) }, body: JSON.stringify({ expiresInDays: 7 })
+  })).json();
+  assert.ok(created.sharePath, JSON.stringify(created));
+  const token = created.sharePath.split('/').pop();
+  const opened = await fetch(`${baseUrl}/api/shared/${token}`);
+  assert.equal(opened.status, 200);
+  assert.match((await opened.json()).shared.turns[0].question, /admin share test/);
+  const ownerList = await (await fetch(`${baseUrl}/api/sessions/${result.session.id}/shares`, { headers: { 'x-nyaya-user-id': ownerId } })).json();
+  assert.equal(ownerList.shares.length, 1);
+  assert.equal(ownerList.shares[0].createdByAdmin, true);
+  const revoked = await fetch(`${baseUrl}/api/shares/${created.share.id}`, { method: 'DELETE', headers: bearer(admin.token) });
+  assert.equal(revoked.status, 200);
+  assert.equal((await fetch(`${baseUrl}/api/shared/${token}`)).status, 404);
+});

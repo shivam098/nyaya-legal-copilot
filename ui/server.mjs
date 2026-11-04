@@ -841,10 +841,12 @@ const server = http.createServer(async (req, res) => {
     const shareCollectionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/shares$/);
     if (shareCollectionMatch && (req.method === 'GET' || req.method === 'POST')) {
       const body = req.method === 'POST' ? await readJsonBody(req) : null;
-      const userId = resolveRequestUserId(req, url, body);
+      const shareAuth = resolveRequestAuth(req, url, body, res);
+      const userId = shareAuth.userId;
+      const actingAsAdmin = Boolean(shareAuth.isSuperAdmin);
       const sessionId = decodeURIComponent(shareCollectionMatch[1]);
       if (req.method === 'GET') {
-        sendJson(res, 200, { shares: listSessionShares({ ownerUserId: userId, sessionId }) });
+        sendJson(res, 200, { shares: listSessionShares({ ownerUserId: userId, sessionId, actingAsAdmin }) });
         return;
       }
       try {
@@ -853,12 +855,13 @@ const server = http.createServer(async (req, res) => {
           sessionId,
           expiresInDays: body.expiresInDays,
           includeDocuments: Boolean(body.includeDocuments),
-          recipientLabel: body.recipientLabel || ''
+          recipientLabel: body.recipientLabel || '',
+          actingAsAdmin
         });
         sendJson(res, 200, {
           share: created.share,
           sharePath: `/share/${created.token}`,
-          shares: listSessionShares({ ownerUserId: userId, sessionId })
+          shares: listSessionShares({ ownerUserId: userId, sessionId, actingAsAdmin })
         });
       } catch (shareErr) {
         sendJson(res, 404, { error: shareErr.message || 'Could not create share link' });
@@ -867,14 +870,16 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'DELETE' && url.pathname.startsWith('/api/shares/')) {
-      const userId = resolveRequestUserId(req, url);
+      const shareAuth = resolveRequestAuth(req, url, null, res);
+      const userId = shareAuth.userId;
+      const actingAsAdmin = Boolean(shareAuth.isSuperAdmin);
       const shareId = decodeURIComponent(url.pathname.replace('/api/shares/', ''));
-      const revoked = revokeSessionShare({ ownerUserId: userId, shareId });
+      const revoked = revokeSessionShare({ ownerUserId: userId, shareId, actingAsAdmin });
       if (!revoked) {
         sendJson(res, 404, { error: 'Share link not found' });
         return;
       }
-      sendJson(res, 200, { share: revoked, shares: listSessionShares({ ownerUserId: userId, sessionId: revoked.sessionId }) });
+      sendJson(res, 200, { share: revoked, shares: listSessionShares({ ownerUserId: userId, sessionId: revoked.sessionId, actingAsAdmin }) });
       return;
     }
 
