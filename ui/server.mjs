@@ -89,6 +89,7 @@ import {
   revokeSessionShare,
   readSharedConversation
 } from '../src/engine/share-links.mjs';
+import { classifyLegalScope, buildOutOfScopeReply } from '../src/engine/scope-guard.mjs';
 import {
   isSuggestionReviewer,
   submitImprovementSuggestion,
@@ -272,6 +273,58 @@ function buildInteractionLogBase(req, endpoint, { auth = null, body = null } = {
     ipHash: signals.ipHash,
     userAgent: String(req.headers['user-agent'] || '')
   };
+}
+
+/**
+ * Decides whether a message is outside Nyaya's legal scope and, if so, saves and logs a polite decline
+ * (no model call). Returns null when the message should be answered normally.
+ */
+function handleOutOfScopeIfNeeded({ body, auth, userId, existingSession, effectiveRawInput, autoSensed, hasImages, logBase }) {
+  if (body.scopeOverride) return null;
+  const priorText = (existingSession?.turns || []).map(t => t.userInput || '').join('\n');
+  const scope = classifyLegalScope({
+    text: effectiveRawInput,
+    priorText,
+    hasAttachments: Boolean(hasImages || effectiveRawInput.includes('ATTACHED FOLDER / TEXT DOCUMENTS:') || existingSession?.folderDigest),
+    domain: autoSensed.domainInfo?.domain || ''
+  });
+  if (!scope.outOfScope) return null;
+  const reply = buildOutOfScopeReply({ text: effectiveRawInput, category: scope.category });
+  const engineResult = {
+    domainInfo: autoSensed.domainInfo,
+    autoDetectedCategoryLabel: 'Outside legal scope',
+    effectiveDoor: autoSensed.door,
+    effectiveMode: autoSensed.mode,
+    scopeGuard: { outOfScope: true, category: scope.category, reason: scope.reason },
+    practitionerIntelligence: {
+      factReadiness: { kind: 'out-of-scope', intakeStage: 'declined', shouldClarifyFirst: false, slots: [] },
+      factProbing: { clarifyingQuestions: [] }
+    },
+    responseCompletion: { incomplete: false, reason: 'scope-guard' }
+  };
+  const billingEntry = { model: 'scope-guard', totalTokens: 0, estimatedInr: 0, estimatedUsd: 0, latencyMs: 0 };
+  const session = saveOrAppendSessionTurn({
+    userId,
+    sessionId: existingSession?.id || body.sessionId,
+    title: body.saveCaseTitle || existingSession?.title,
+    door: autoSensed.door,
+    mode: autoSensed.mode,
+    caseState: autoSensed.caseState,
+    userInput: effectiveRawInput,
+    imagesCount: 0,
+    engineResult,
+    assistantMarkdown: reply,
+    model: 'scope-guard',
+    ...auth.signals
+  });
+  logCompletedInteraction(logBase, {
+    engineResult,
+    session,
+    responseText: reply,
+    llmRes: { model: 'scope-guard', billingEntry },
+    isFollowUp: Boolean(existingSession?.turns?.length)
+  });
+  return { reply, engineResult, session, billingEntry };
 }
 
 function readLogFilters(url) {
@@ -1476,6 +1529,27 @@ const server = http.createServer(async (req, res) => {
           ...folderInferred.inferredReasons
         ];
 
+        const declined = handleOutOfScopeIfNeeded({ body, auth, userId, existingSession, effectiveRawInput, autoSensed, hasImages, logBase });
+        if (declined) {
+          for (const stepId of ['session', 'rules', 'clerk', 'evidence', 'llm']) {
+            sendEvent('step', { stepId, status: 'done', detail: stepId === 'llm' ? 'This is outside Nyaya\'s legal scope.' : 'Skipped' });
+          }
+          sendEvent('delta', { delta: declined.reply });
+          sendEvent('complete', {
+            userId,
+            userQuota: getUserMonthlyUsageQuota(userId, auth.signals),
+            session: declined.session,
+            sessions: listSessionsForUser(userId, 50),
+            engineResult: declined.engineResult,
+            adviceMarkdown: declined.reply,
+            model: 'scope-guard',
+            billingEntry: declined.billingEntry,
+            billingTotals: scopeBillingForUser(readBillingLedger(), userId).totals
+          });
+          res.end();
+          return;
+        }
+
         // Per-Turn Intent Classifier (prevents burning Opus 4.6 tokens on simple date/fact follow-ups)
         const turnIntent = classifyTurnIntent(userQuestionOnly, isFollowUpTurn);
 
@@ -1722,7 +1796,7 @@ const server = http.createServer(async (req, res) => {
           };
         }
 
-        const systemPrompt = buildAnalysisSystemPrompt({ mode: effectiveMode, isFollowUpTurn });
+        const systemPrompt = buildAnalysisSystemPrompt({ mode: effectiveMode, isFollowUpTurn, scopeOverride: Boolean(body.scopeOverride) });
 
         // Pass any newly uploaded images (`images` is already filtered to unsyncedImages by the client) on both initial and follow-up turns!
         const sendImagesToSenior = hasImages ? rankedImages.slice(0, 6) : [];
@@ -1928,6 +2002,27 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
       const effectiveMode = autoSensed.mode;
       const inferredCaseState = autoSensed.caseState;
 
+      const declinedSync = handleOutOfScopeIfNeeded({
+        body, auth, userId, existingSession, effectiveRawInput, autoSensed,
+        hasImages: Array.isArray(images) && images.length > 0,
+        logBase
+      });
+      if (declinedSync) {
+        pendingLog = null;
+        sendJson(res, 200, {
+          userId,
+          userQuota: getUserMonthlyUsageQuota(userId, auth.signals),
+          session: declinedSync.session,
+          sessions: listSessionsForUser(userId, 50),
+          engineResult: declinedSync.engineResult,
+          adviceMarkdown: declinedSync.reply,
+          model: 'scope-guard',
+          billingEntry: declinedSync.billingEntry,
+          billingTotals: scopeBillingForUser(readBillingLedger(), userId).totals
+        });
+        return;
+      }
+
       const engineResult = computeCaseEngine(inferredCaseState, {
         door: effectiveDoor,
         mode: effectiveMode,
@@ -1962,7 +2057,8 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
       }
       const systemPrompt = buildAnalysisSystemPrompt({
         mode: effectiveMode,
-        isFollowUpTurn: Boolean(existingSession?.turns?.length)
+        isFollowUpTurn: Boolean(existingSession?.turns?.length),
+        scopeOverride: Boolean(body.scopeOverride)
       });
 
       const imageSummary = Array.isArray(images) && images.length > 0

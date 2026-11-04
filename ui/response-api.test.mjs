@@ -548,3 +548,23 @@ test('Super-Admin sees all users\' cases with readable names and can audit any a
   const viewed = await (await fetch(`${baseUrl}/api/admin/sessions/${result.session.id}`, { headers: bearer(admin.token) })).json();
   assert.equal(viewed.session.turns[0].audit.logId, audit.entry.id);
 });
+
+test('off-topic questions get a polite decline without a model call; "answer anyway" reaches the model', async () => {
+  const guestId = 'synthetic-scope-guest';
+  const before = requests.length;
+  const { result } = await analyze('analyze-stream', { userId: guestId, door: 'unified', mode: 'auto', rawInput: 'How to impress my crush?' });
+  assert.equal(requests.length, before, 'no provider call for an off-topic question');
+  assert.equal(result.model, 'scope-guard');
+  assert.equal(result.engineResult.scopeGuard.outOfScope, true);
+  assert.match(result.adviceMarkdown, /ChatGPT/);
+  assert.equal(result.session.turns.length, 1, 'the decline is saved so it can be reviewed');
+
+  const sync = await analyze('analyze', { userId: `${guestId}-sync`, door: 'unified', mode: 'auto', rawInput: 'Give me a recipe for paneer butter masala' });
+  assert.equal(sync.result.model, 'scope-guard');
+  assert.equal(requests.length, before);
+
+  const override = await analyze('analyze-stream', { userId: guestId, sessionId: result.session.id, door: 'unified', mode: 'auto', rawInput: 'How to impress my crush?', scopeOverride: true });
+  assert.equal(requests.length, before + 1, 'override sends it to the model');
+  assert.match(requests.at(-1).messages[0].content, /confirmed this message has a legal side/);
+  assert.notEqual(override.result.model, 'scope-guard');
+});

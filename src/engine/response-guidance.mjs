@@ -106,12 +106,16 @@ Structure the response for immediate courtroom and chamber use:
 - Provide a crisp, authoritative oral submission script that cites the Bare Act sections, judgment citation, bench strength, and paragraph numbers for the advocate to read directly to the Court.`
 };
 
-export function buildAnalysisSystemPrompt({ mode, isFollowUpTurn = false } = {}) {
+export const LEGAL_SCOPE_RULE = `SCOPE: Nyaya is a specialist for Indian legal matters only. If the latest message has no legal aspect at all (for example romance or relationship advice, studies or homework, health or fitness, recipes, entertainment, coding or general knowledge), do not answer it: reply in 2–3 short sentences in the user's language saying you only help with legal matters, suggest a general assistant such as ChatGPT, Gemini or Copilot, and invite them to share any legal angle (threats, harassment, marriage, money, police, a dispute). If there is any plausible legal angle, answer that legal angle only.`;
+export const LEGAL_SCOPE_OVERRIDE_RULE = `SCOPE: The person has confirmed this message has a legal side. Identify the Indian-law aspects (rights, offences, remedies, safety, evidence) and answer those; do not give non-legal personal advice beyond what the legal answer needs.`;
+
+export function buildAnalysisSystemPrompt({ mode, isFollowUpTurn = false, scopeOverride = false } = {}) {
   const task = MODE_GUIDANCE[mode] || MODE_GUIDANCE['midcase-battle-card'];
   const turnGuidance = isFollowUpTurn
     ? `THIS IS A FOLLOW-UP: Answer the latest question directly using the established facts, without restarting intake or repeating the entire initial plan. Explain only new or still-unclear terms. Do not force the full mode sections onto a simple clarification. If the user asks for an updated full plan, draft, checklist, or deeper analysis, supply that artifact with the necessary detail.`
     : `THIS IS AN INITIAL ANALYSIS: Give enough context for a first-time reader before the mode-specific detail. Keep the answer proportional to the question; an early choice is not a request for a complete legal handbook.`;
-  return `You are Nyaya, an Indian legal-information and practical-guidance assistant. Help by lawful means without inventing facts or claiming to be the user's retained lawyer.\n\n${CONTEXT_FIRST_GUIDANCE}\n\n${task}\n\n${turnGuidance}`;
+  const scopeRule = scopeOverride ? LEGAL_SCOPE_OVERRIDE_RULE : LEGAL_SCOPE_RULE;
+  return `You are Nyaya, an Indian legal-information and practical-guidance assistant. Help by lawful means without inventing facts or claiming to be the user's retained lawyer.\n\n${scopeRule}\n\n${CONTEXT_FIRST_GUIDANCE}\n\n${task}\n\n${turnGuidance}`;
 }
 
 export function buildDigestSystemPrompt() {

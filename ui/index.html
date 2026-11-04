@@ -2679,7 +2679,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
       /**
        * Live SSE Streaming Analysis with Real-Time Thinking & Progress Stepper
        */
-      const runAnalysis = async (modeOverride, customFollowUp = null, overrideModel = null, forceFullRoadmap = false) => {
+      const runAnalysis = async (modeOverride, customFollowUp = null, overrideModel = null, forceFullRoadmap = false, scopeOverride = false) => {
         if (voice.isActive()) {
           setError('Stop voice input and review the transcription before submitting.');
           return;
@@ -2790,6 +2790,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
               model: overrideModel || selectedModel,
               caseState,
               forceFullRoadmap: Boolean(forceFullRoadmap),
+              scopeOverride: Boolean(scopeOverride),
               rawInput,
               images: unsyncedImages.slice(0, 10),
               folderPath: folderScanSummary?.folderPath || '',
@@ -5014,6 +5015,31 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                   class="markdown-body max-w-none"
                   dangerouslySetInnerHTML={renderFormattedMarkdown(streamingMarkdown || result?.adviceMarkdown || '')}
                 />
+
+                {!loading && result?.engineResult?.scopeGuard?.outOfScope && (
+                  <div class="flex flex-wrap items-center gap-2 text-xs">
+                    <button
+                      type="button"
+                      disabled={voice.busy}
+                      onClick={() => {
+                        const lastTurn = activeSession?.turns?.[activeSession.turns.length - 1];
+                        const lastQuestion = String(lastTurn?.userInput || unifiedNotes || '').split('ATTACHED FOLDER / TEXT DOCUMENTS:')[0].trim();
+                        runAnalysis(activeSession?.mode || 'auto', lastQuestion, null, false, true);
+                      }}
+                      class="px-3 py-2 rounded-full bg-zinc-900 text-white font-medium hover:bg-zinc-800 disabled:opacity-50"
+                    >
+                      ⚖️ It's a legal matter — answer anyway
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => submitTurnFeedback(-1, 'User disputes the out-of-scope decline: says this is a legal question')}
+                      class="px-3 py-2 rounded-full border border-zinc-200 text-zinc-700 hover:border-zinc-400"
+                    >
+                      🚩 Flag for review
+                    </button>
+                    {feedbackSavedMsg && <span class="text-zinc-500">{feedbackSavedMsg}</span>}
+                  </div>
+                )}
 
                 {!loading && result && !streamingMarkdown && (
                   <>
