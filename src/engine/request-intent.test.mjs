@@ -77,3 +77,38 @@ test('LLM-proposed questions never duplicate the cards (drafting cards are autho
   assert.ok(!ids.includes('dup'));
   assert.equal(ids.includes('new'), before < 4);
 });
+
+test('company formation questions route to company advisory, not consumer law, with no dispute questions', () => {
+  for (const text of [
+    'What kind of company should I create if I am a solo founder aiming to provide AI-based business solutions to customers?',
+    'OPC vs Pvt Ltd which is better for me',
+    'ROC rejected my INC-20A filing and imposed penalty'
+  ]) {
+    const { auto, pi } = analyse(text);
+    assert.equal(auto.domainInfo.domain, 'corporate-roc', text);
+    assert.equal(auto.mode, 'company-advisor', text);
+    assert.equal(pi.factReadiness.kind, 'advisory', text);
+    assert.equal(pi.factReadiness.slots.length, 0, text);
+    assert.equal(pi.factProbing.clarifyingQuestions.length, 0, text);
+  }
+});
+
+test('a dispute with a private limited company stays a consumer dispute', () => {
+  const { auto, pi } = analyse('XYZ Pvt Ltd refused to refund my money for a defective laptop');
+  assert.equal(auto.domainInfo.domain, 'consumer');
+  assert.notEqual(pi.factReadiness.kind, 'advisory');
+});
+
+test('unrecognised questions are not forced into consumer law', () => {
+  const info = analyse('How do I legally change my name?');
+  assert.equal(info.auto.domainInfo.domain, 'general');
+  assert.equal(info.auto.domainInfo.isConsumerForum, false);
+  assert.equal(info.pi.factReadiness.kind, 'advisory');
+  const dispute = analyse('My neighbour is threatening me and blocking my path');
+  assert.equal(dispute.auto.domainInfo.isConsumerForum, false);
+  assert.notEqual(dispute.pi.factReadiness.kind, 'advisory');
+});
+
+test('cheque bounce is detected even when words sit between cheque and bounced', () => {
+  assert.equal(analyse('Cheque of Rs 2 lakh bounced 27 days ago').auto.domainInfo.domain, 'cheque-bounce-138');
+});
