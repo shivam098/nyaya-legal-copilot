@@ -60,3 +60,9 @@ Code: `src/engine/improvement-suggestions.mjs`.
   - Auto names refresh as Nyaya learns more about the matter.
   - A name the user typed (`sessions.title_source = 'user'`) is never replaced.
   - On startup, old automatic names such as `[Dispute] User Role: …` are upgraded once. They are re-routed with today's rules.
+
+## Permanent public link
+
+- **Permanent link:** https://shivam098.github.io/nyaya. It is a GitHub Pages site in `shivam098/nyaya` that forwards to the current Cloudflare quick-tunnel address. It keeps the path, so `/share/<token>` links keep working.
+- **After each tunnel restart:** run `./scripts/update-public-link.ps1 -TunnelUrl <new https://*.trycloudflare.com>`.
+- **Share links:** start the server with `NYAYA_PUBLIC_BASE_URL=https://shivam098.github.io/nyaya` so that share links use the permanent address instead of the tunnel's.

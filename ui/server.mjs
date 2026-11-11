@@ -1014,6 +1014,7 @@ const server = http.createServer(async (req, res) => {
         userQuota: auth.quota,
         monthlyTrialCapInr: DEFAULT_MONTHLY_TRIAL_LIMIT_INR,
         googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+        publicBaseUrl: String(process.env.NYAYA_PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
         models: CURATED_MODELS,
         stages: procedure.stages,
         tacticsCount: tactics.length,
