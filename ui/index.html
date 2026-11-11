@@ -763,7 +763,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Could not create the link');
-          setLink(`${window.location.origin}${data.sharePath}`);
+          setLink(`${window.NYAYA_PUBLIC_BASE || window.location.origin}${data.sharePath}`);
           setShares(data.shares || []);
         } catch (err) {
           setMessage(err.message);
@@ -1949,6 +1949,8 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
           });
           if (res.ok) {
             const data = await res.json();
+            // Stable public address (e.g. a GitHub Pages redirect) so share links survive tunnel restarts.
+            window.NYAYA_PUBLIC_BASE = data.publicBaseUrl || '';
             if (data.models?.length) setModels(data.models);
             if (data.billing) setBilling(data.billing);
             if (data.userQuota) setUserQuota(data.userQuota);
