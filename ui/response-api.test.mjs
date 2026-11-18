@@ -595,3 +595,19 @@ test('Super-Admin shares another user\'s case; the link opens for anyone without
   assert.equal(revoked.status, 200);
   assert.equal((await fetch(`${baseUrl}/api/shared/${token}`)).status, 404);
 });
+
+test('a short follow-up keeps the conversation\'s area of law instead of being re-classified on its own words', async () => {
+  for (const endpoint of ['analyze', 'analyze-stream']) {
+    const userId = `synthetic-routing-${endpoint}`;
+    const first = await analyze(endpoint, { userId, door: 'unified', mode: 'auto', rawInput: 'My landlord is not returning my security deposit of Rs 60,000 after I vacated the flat in Pune' });
+    assert.equal(first.result.engineResult.domainInfo.domain, 'tenancy-civil', endpoint);
+    const follow = await analyze(endpoint, {
+      userId,
+      sessionId: first.result.session.id,
+      door: 'unified',
+      mode: first.result.session.mode,
+      rawInput: 'No written demand yet. The agreement says refund within 30 days'
+    });
+    assert.equal(follow.result.engineResult.domainInfo.domain, 'tenancy-civil', `${endpoint}: follow-up re-routed to ${follow.result.engineResult.domainInfo.domain}`);
+  }
+});

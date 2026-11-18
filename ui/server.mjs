@@ -685,6 +685,14 @@ async function scanLocalFolder(folderInput) {
   };
 }
 
+function buildRoutingText(priorTurns = [], currentInput = '') {
+  const marker = 'ATTACHED FOLDER / TEXT DOCUMENTS:';
+  const prior = (Array.isArray(priorTurns) ? priorTurns : [])
+    .map(t => String(t?.userInput || '').split(marker)[0].trim())
+    .filter(Boolean);
+  return prior.length ? `${prior.join('\n')}\n${currentInput}` : currentInput;
+}
+
 function computeCaseEngine(
   caseState = {},
   {
@@ -698,7 +706,9 @@ function computeCaseEngine(
   } = {}
 ) {
   const today = caseState.evaluationDate || new Date().toISOString().slice(0, 10);
-  const domainInfo = detectLegalDomain({ door, mode, caseState, rawInput });
+  // The area of law is decided on the whole conversation, so a short follow-up ("no written demand yet")
+  // keeps the matter's real area instead of being re-classified on its own words.
+  const domainInfo = detectLegalDomain({ door, mode, caseState, rawInput: buildRoutingText(priorTurns, rawInput) });
   const paidAmountInr = extractPaidAmountInr(rawInput, caseState.paidAmountInr);
 
   // Only run Consumer Protection Act 2019 calculators when the matter is actually in the Consumer Forum!
@@ -1524,7 +1534,7 @@ const server = http.createServer(async (req, res) => {
           door,
           mode,
           caseState: folderInferred.inferredCaseState,
-          rawInput: effectiveRawInput
+          rawInput: buildRoutingText(existingSession?.turns, effectiveRawInput)
         });
         const effectiveDoor = autoSensed.door;
         const effectiveMode = autoSensed.mode;
@@ -2003,7 +2013,7 @@ ${userQuestionOnly || 'Explain the supplied situation and the most useful next s
         door,
         mode,
         caseState: folderInferred.inferredCaseState,
-        rawInput: effectiveRawInput
+        rawInput: buildRoutingText(existingSession?.turns, effectiveRawInput)
       });
       const effectiveDoor = autoSensed.door;
       const effectiveMode = autoSensed.mode;
