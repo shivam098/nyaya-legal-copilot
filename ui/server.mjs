@@ -115,7 +115,8 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, '..');
 const htmlPath = path.join(__dirname, 'index.html');
-const voiceAssets = new Map([
+const clientAssets = new Map([
+  ['/draft-composer.mjs', path.join(__dirname, 'draft-composer.mjs')],
   ['/voice-input.mjs', path.join(__dirname, 'voice-input.mjs')],
   ['/voice-romanization.mjs', path.join(__dirname, 'voice-romanization.mjs')],
   ['/vendor/sanscript.js', path.join(rootDir, 'node_modules/@indic-transliteration/sanscript/sanscript.js')]
@@ -993,8 +994,8 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === 'GET' && voiceAssets.has(url.pathname)) {
-      let source = fs.readFileSync(voiceAssets.get(url.pathname), 'utf8');
+    if (req.method === 'GET' && clientAssets.has(url.pathname)) {
+      let source = fs.readFileSync(clientAssets.get(url.pathname), 'utf8');
       if (url.pathname === '/vendor/sanscript.js') {
         const license = fs.readFileSync(path.join(rootDir, 'node_modules/@indic-transliteration/sanscript/LICENSE'), 'utf8');
         source = `/*\n${license}\n*/\n${source}`;
