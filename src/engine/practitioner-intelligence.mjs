@@ -317,19 +317,19 @@ export function evaluateConversationalFactProbing({
         clarifyingQuestions.push({
           id: 'probe-138-dates-and-docs',
           slot: 'incidentTimelineAndState',
-          question: 'To confirm your exact statutory clock: (1) What is the exact date on the Bank Return Memo, (2) Have you sent the 30-day demand notice yet, and (3) What documents do you have (original cheque, return memo, invoice/chat)?',
+          question: 'How long ago did the cheque bounce, and have you sent the legal demand notice yet?',
           whyLawyerAsks: 'Section 138 NI Act has an unforgiving 30-day notice window from the Return Memo and jurisdiction lies at the PAYEE\'S bank branch (Section 142(2)(a)).',
           quickReplies: [
-            'Cheque bounced within the last 30 days — I have the original cheque & bank return memo',
-            'More than 30 days passed since return memo, but the cheque is still within 3-month validity',
-            'I already sent the 15-day notice and the drawer still has not paid'
+            'Within the last 30 days — no notice sent yet',
+            'More than 30 days ago — no notice sent yet',
+            'Notice already sent, and they still haven\'t paid'
           ]
         });
       } else if (domainInfo.domain === 'inheritance-partition') {
         clarifyingQuestions.push({
           id: 'probe-partition-facts',
           slot: 'statutoryIngredientsAndValue',
-          question: 'Before we draft your strategy: (1) Did the owner pass away without a Will (intestate), (2) Who currently holds possession/papers, and (3) Is any co-heir trying to sell or transfer the property right now?',
+          question: 'What is happening with the property right now?',
           whyLawyerAsks: 'Determines whether we need an immediate written bank/Sub-Registrar objection + Civil Partition Suit with an Order 39 Rules 1 & 2 CPC Temporary Injunction.',
           quickReplies: [
             'Died without a Will — another family member is trying to sell/transfer without giving my share',
@@ -341,23 +341,25 @@ export function evaluateConversationalFactProbing({
         clarifyingQuestions.push({
           id: 'probe-consumer-facts-and-proof',
           slot: 'paperTrailAndAdmissions',
-          question: 'Before prescribing your next move: (1) How much did you pay and when, (2) Did the company/service centre give a written refusal or job sheet, and (3) What proof do you have (invoice, warranty card, WhatsApp/email, photos)?',
+          question: 'What has the company or service centre told you so far?',
           whyLawyerAsks: 'A seasoned practitioner checks if we can resolve this fast via a written job-sheet demand + Brand Grievance Officer + NCH 1915 / RBI / Insurance Ombudsman before spending time in Consumer Court.',
           quickReplies: [
-            'I have the invoice & chats — company refused orally without giving a written job sheet',
-            'I already complained to customer care / NCH 1915 and they rejected my claim in writing',
-            'I am the business/service provider and a customer is demanding an unfair refund'
+            'They refused only verbally — nothing in writing',
+            'They rejected my complaint in writing',
+            'I am the business — a customer is demanding a refund'
           ]
         });
       } else {
         clarifyingQuestions.push({
           id: 'probe-general-facts-and-docs',
           slot: 'authorityAndForumStatus',
-          question: 'To point you to the right step, tell me: (1) what has happened so far and when, (2) what you have in writing, and (3) what outcome you want.',
-          whyLawyerAsks: 'The stage you are at and the proof you hold decide which law applies and where to go first.',
+          // A catch-all for matters with no specific question. The model's own, more specific question replaces it.
+          generic: true,
+          question: 'Where does this stand right now?',
+          whyLawyerAsks: 'The stage you are at decides which law applies and where to go first.',
           quickReplies: [
-            'Nothing has been sent or filed yet — I want to know my options',
-            'A notice, complaint or report has already been sent or received',
+            'Nothing has been sent or filed yet',
+            'A notice, complaint or police report has been made',
             'A case is already running in a court or tribunal'
           ]
         });
@@ -689,7 +691,8 @@ export function mergeDynamicClarifyingQuestions(practitionerIntelligence, dynami
   if (practitionerIntelligence.factReadiness?.kind === 'drafting') return;
   if (practitionerIntelligence.factReadiness && !practitionerIntelligence.factReadiness.shouldClarifyFirst) return;
   const normalize = q => String(q || '').toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/^\s*\d+[.)]\s*/, '').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean).slice(0, 8).join(' ');
-  const existing = practitionerIntelligence.factProbing.clarifyingQuestions || [];
+  // The model's own question is specific to the facts, so it replaces the catch-all card rather than adding a second question.
+  const existing = (practitionerIntelligence.factProbing.clarifyingQuestions || []).filter(q => !q.generic);
   const seen = new Set(existing.map(q => normalize(q.question)));
   const additions = dynamicQuestions.filter(q => {
     const key = normalize(q.question);
@@ -697,6 +700,7 @@ export function mergeDynamicClarifyingQuestions(practitionerIntelligence, dynami
     seen.add(key);
     return true;
   });
+  if (additions.length === 0) return;
   practitionerIntelligence.factProbing.clarifyingQuestions = [...existing, ...additions].slice(0, 4);
 }
 
@@ -1140,14 +1144,18 @@ export function runPractitionerIntelligence({
   });
 
   // Adaptive 0..N Question Filtering:
-  // Remove questions whose slot is already confirmed across the cumulative CaseFactSheet!
+  // Remove questions whose slot is already confirmed across the cumulative CaseFactSheet, and questions the
+  // person already answered by tapping one of their quick replies (a chip's wording may not match the slot rules).
   const confirmedSet = new Set(factReadiness.confirmedSlotIds || []);
-  let adaptiveQuestions = (rawFactProbing.clarifyingQuestions || []).filter(
+  const answeredText = String(cumulativeInput || '').toLowerCase();
+  const alreadyAnswered = q => (q.quickReplies || []).some(r => r && answeredText.includes(String(r).toLowerCase()));
+  const unanswered = (rawFactProbing.clarifyingQuestions || []).filter(q => !alreadyAnswered(q));
+  let adaptiveQuestions = unanswered.filter(
     q => !q.slot || !confirmedSet.has(q.slot)
   );
   // If we are still in clarify-first mode and all template slots happened to match regexes, keep at least 1 high-value question
-  if (factReadiness.shouldClarifyFirst && adaptiveQuestions.length === 0 && rawFactProbing.clarifyingQuestions?.length > 0) {
-    adaptiveQuestions = rawFactProbing.clarifyingQuestions.slice(0, 1);
+  if (factReadiness.shouldClarifyFirst && adaptiveQuestions.length === 0 && unanswered.length > 0) {
+    adaptiveQuestions = unanswered.slice(0, 1);
   }
   // If >= 4 slots are confirmed (full-roadmap ready), 0 clarifying questions are needed unless 1 slot remains open
   // Once the gate decides a full answer is due, no question card is shown: the gate and the card must agree.

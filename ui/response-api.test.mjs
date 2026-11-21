@@ -84,10 +84,10 @@ after(async () => {
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
-async function analyze(endpoint, body) {
+async function analyze(endpoint, body, headers = {}) {
   const response = await fetch(`${baseUrl}/api/${endpoint}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify({ model: 'test-model', images: [], ...body })
   });
   assert.equal(response.status, 200);
@@ -547,6 +547,54 @@ test('Super-Admin sees all users\' cases with readable names and can audit any a
   assert.equal(audit.entry.turnId, turnId);
   const viewed = await (await fetch(`${baseUrl}/api/admin/sessions/${result.session.id}`, { headers: bearer(admin.token) })).json();
   assert.equal(viewed.session.turns[0].audit.logId, audit.entry.id);
+});
+
+test('Super-Admin continues a user\'s conversation as a new chat; the original thread is unchanged', async () => {
+  const bearer = token => ({ Authorization: ['Bearer', token].join(' ') });
+  const ownerId = 'synthetic-fork-owner';
+  const { result } = await analyze('analyze', { userId: ownerId, door: 'unified', mode: 'auto', rawInput: 'My landlord is not returning my security deposit of Rs 40,000 for the fork test' });
+  const originalId = result.session.id;
+
+  const refused = await fetch(`${baseUrl}/api/admin/sessions/${originalId}/fork`, { method: 'POST', headers: { 'x-nyaya-user-id': ownerId } });
+  assert.equal(refused.status, 403);
+
+  const admin = await (await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'admin@nyaya.ai', password: 'nyaya-admin-2026' })
+  })).json();
+  const originalBefore = await (await fetch(`${baseUrl}/api/admin/sessions/${originalId}`, { headers: bearer(admin.token) })).json();
+  const meBefore = await (await fetch(`${baseUrl}/api/auth/me`, { headers: bearer(admin.token) })).json();
+  const spendBefore = meBefore.userQuota?.monthlySpendInr;
+
+  const forkRes = await fetch(`${baseUrl}/api/admin/sessions/${originalId}/fork`, { method: 'POST', headers: bearer(admin.token) });
+  assert.equal(forkRes.status, 201);
+  const fork = (await forkRes.json()).session;
+  assert.notEqual(fork.id, originalId);
+  assert.equal(fork.userId, meBefore.userId);
+  assert.equal(fork.forkedFrom.sessionId, originalId);
+  assert.equal(fork.forkedFrom.copiedTurns, 1);
+  assert.match(fork.title, /^Audit copy · /);
+  assert.equal(fork.turns[0].userInput, result.session.turns[0].userInput);
+  assert.equal(fork.turns[0].assistantMarkdown, result.session.turns[0].assistantMarkdown);
+  assert.equal(fork.turns[0].costInr, 0);
+  const spendAfter = (await (await fetch(`${baseUrl}/api/auth/me`, { headers: bearer(admin.token) })).json()).userQuota?.monthlySpendInr;
+  assert.equal(spendAfter, spendBefore, 'copied answers are not billed to the admin');
+
+  const followUp = await analyze('analyze', { sessionId: fork.id, door: 'unified', mode: 'auto', rawInput: 'What if the agreement says 30 days?' }, bearer(admin.token));
+  assert.equal(followUp.result.session.id, fork.id);
+  assert.equal(followUp.result.session.turns.length, 2);
+  assert.match(followUp.result.session.title, /^Audit copy · /);
+
+  const originalAfter = await (await fetch(`${baseUrl}/api/admin/sessions/${originalId}`, { headers: bearer(admin.token) })).json();
+  assert.deepEqual(
+    originalAfter.session.turns.map(t => [t.id, t.userInput, t.assistantMarkdown]),
+    originalBefore.session.turns.map(t => [t.id, t.userInput, t.assistantMarkdown])
+  );
+  assert.equal(originalAfter.session.userId, ownerId);
+  assert.equal(originalAfter.session.updatedAt, originalBefore.session.updatedAt);
+  const ownerView = await (await fetch(`${baseUrl}/api/sessions/${fork.id}`, { headers: { 'x-nyaya-user-id': ownerId } }));
+  assert.equal(ownerView.status, 404, 'the audit copy is private to the admin');
 });
 
 test('off-topic questions get a polite decline without a model call; "answer anyway" reaches the model', async () => {

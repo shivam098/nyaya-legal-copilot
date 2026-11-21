@@ -83,6 +83,9 @@ try {
       if (!isLegacyAutoTitle(row.title)) markUser.run(row.id);
     }
   }
+  if (!cols.some(c => c.name === 'fork_source_json')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN fork_source_json TEXT DEFAULT ''`);
+  }
 
   const userCols = db.prepare(`PRAGMA table_info(users)`).all();
   if (!userCols.some(c => c.name === 'password_hash')) {
@@ -354,6 +357,7 @@ export function getSessionWithTurnsForUser(userId, sessionId) {
     mode: s.mode,
     caseState: JSON.parse(s.case_state_json || '{}'),
     folderDigest: s.folder_digest || '',
+    forkedFrom: parseForkSource(s.fork_source_json),
     createdAt: s.created_at,
     updatedAt: s.updated_at,
     turns: turns.map(t => ({
@@ -373,6 +377,62 @@ export function getSessionWithTurnsForUser(userId, sessionId) {
       createdAt: t.created_at
     }))
   };
+}
+
+function parseForkSource(json) {
+  if (!json) return null;
+  try {
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Super-Admin: copies any user's conversation into a new conversation owned by the admin, so the admin can
+ * continue it and audit the new answers while the original thread stays exactly as it was. The original
+ * session and its turns are only read. Copied turns carry no cost, so the admin's spend and quota are unchanged.
+ */
+export function forkSessionForAdmin(sourceSessionId, adminUserId) {
+  const source = getAnySessionWithTurnsForAdmin(sourceSessionId);
+  if (!source) return null;
+  const cleanAdminId = String(adminUserId || '').trim();
+  if (!cleanAdminId) throw new Error('An admin user is required to copy a conversation');
+  ensureUserRecord(cleanAdminId);
+
+  const now = new Date().toISOString();
+  const newId = `session-${crypto.randomUUID().slice(0, 12)}`;
+  const forkSource = {
+    sessionId: source.id,
+    title: source.title,
+    owner: source.userEmail || `guest ${source.userId}`,
+    copiedTurns: source.turns.length,
+    copiedAt: now
+  };
+  const title = `Audit copy · ${source.title}`.slice(0, 200);
+  const insertTurn = db.prepare(`
+    INSERT INTO turns (
+      session_id, turn_index, user_input, images_count, folder_path,
+      engine_result_json, assistant_markdown, model, tokens, cost_inr, latency_ms, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?)
+  `);
+  db.exec('BEGIN');
+  try {
+    db.prepare(`
+      INSERT INTO sessions (id, user_id, title, door, mode, case_state_json, folder_digest, created_at, updated_at, title_source, fork_source_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'user', ?)
+    `).run(newId, cleanAdminId, title, source.door || 'midcase', source.mode || 'auto', JSON.stringify(source.caseState || {}),
+      source.folderDigest || '', now, now, JSON.stringify(forkSource));
+    for (const t of source.turns) {
+      insertTurn.run(newId, t.turnIndex, t.userInput || '', Number(t.imagesCount || 0), t.folderPath || '',
+        JSON.stringify(t.engineResult ?? null), t.assistantMarkdown || '', t.model || 'unknown', t.createdAt || now);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  return getSessionWithTurnsForUser(cleanAdminId, newId);
 }
 
 export function saveOrAppendSessionTurn({

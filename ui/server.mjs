@@ -68,6 +68,7 @@ import {
   saveTurnFeedbackForUser,
   getSuperAdminOverview,
   getAnySessionWithTurnsForAdmin,
+  forkSessionForAdmin,
   listAllSessionsForAdmin,
   setUserReviewerRole,
   DEFAULT_MONTHLY_TRIAL_LIMIT_INR
@@ -1319,6 +1320,22 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       sendJson(res, 200, { entry, reviewTags: REVIEW_TAGS });
+      return;
+    }
+
+    const forkMatch = url.pathname.match(/^\/api\/admin\/sessions\/([^/]+)\/fork$/);
+    if (req.method === 'POST' && forkMatch) {
+      const auth = resolveRequestAuth(req, url);
+      if (!auth.isSuperAdmin) {
+        sendJson(res, 403, { error: 'Forbidden: Super-Admin access is required to continue another user\'s conversation.' });
+        return;
+      }
+      const session = forkSessionForAdmin(decodeURIComponent(forkMatch[1]), auth.userId);
+      if (!session) {
+        sendJson(res, 404, { error: 'Session not found' });
+        return;
+      }
+      sendJson(res, 201, { session, sessions: listSessionsForUser(auth.userId, 100) });
       return;
     }
 

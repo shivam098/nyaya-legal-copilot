@@ -1759,13 +1759,14 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
     /**
      * Super-Admin: every user's cases (signed-in and guest), with a read-only viewer and per-answer audit.
      */
-    function AllUsersCasesPanel({ buildAuthHeaders, onSuggestRule }) {
+    function AllUsersCasesPanel({ buildAuthHeaders, onSuggestRule, onContinueAsNewChat }) {
       const [q, setQ] = useState('');
       const [list, setList] = useState({ sessions: [], total: 0 });
       const [offset, setOffset] = useState(0);
       const [loading, setLoading] = useState(false);
       const [viewing, setViewing] = useState(null);
       const [sharingOpen, setSharingOpen] = useState(false);
+      const [copying, setCopying] = useState(false);
       const [err, setErr] = useState('');
       const PAGE = 30;
 
@@ -1804,7 +1805,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
       if (viewing) {
         return (
           <div class="space-y-3">
-            <div class="flex items-start justify-between gap-2">
+            <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
               <div class="min-w-0">
                 <button type="button" onClick={() => setViewing(null)} class="text-xs text-zinc-500 hover:text-zinc-900">← All cases</button>
                 <h4 class="text-sm font-semibold text-zinc-900 mt-1">{viewing.title}</h4>
@@ -1812,14 +1813,36 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                   {viewing.userEmail ? `🔐 ${viewing.userEmail}` : `👤 Guest (${viewing.userId})`} · {viewing.turns?.length || 0} answer(s) · started {formatShareDate(viewing.createdAt)} · read-only
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setSharingOpen(v => !v)}
-                class={`shrink-0 text-xs font-medium px-3 py-1.5 rounded-full border ${sharingOpen ? 'bg-zinc-900 text-white border-zinc-900' : 'border-zinc-200 hover:border-zinc-400 text-zinc-700'}`}
-              >
-                🔗 Share
-              </button>
+              <div class="shrink-0 flex flex-wrap sm:justify-end gap-1.5">
+                <button
+                  type="button"
+                  disabled={copying}
+                  onClick={async () => {
+                    setCopying(true);
+                    setErr('');
+                    try {
+                      await onContinueAsNewChat(viewing.id);
+                    } catch (e) {
+                      setErr(e.message);
+                    } finally {
+                      setCopying(false);
+                    }
+                  }}
+                  title="Copy this conversation into a new chat of your own. Ask follow-ups and audit the answers; the original stays unchanged."
+                  class="text-xs font-medium px-3 py-1.5 rounded-full bg-zinc-900 text-white hover:bg-zinc-800 disabled:opacity-50"
+                >
+                  {copying ? 'Copying…' : '↪ Continue as new chat'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSharingOpen(v => !v)}
+                  class={`text-xs font-medium px-3 py-1.5 rounded-full border ${sharingOpen ? 'bg-zinc-900 text-white border-zinc-900' : 'border-zinc-200 hover:border-zinc-400 text-zinc-700'}`}
+                >
+                  🔗 Share
+                </button>
+              </div>
             </div>
+            {err && <p class="text-xs text-red-700">{err}</p>}
             {sharingOpen && (
               <ShareConversationSheet
                 sessionId={viewing.id}
@@ -2588,6 +2611,18 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
         setPendingQuestion(null);
       };
 
+      // Super-Admin: copy someone's conversation into a new chat of your own, continue it and audit the new answers.
+      // The original conversation is never changed.
+      const continueAsAuditCopy = async (sessionId) => {
+        const res = await fetch(`/api/admin/sessions/${encodeURIComponent(sessionId)}/fork`, { method: 'POST', headers: buildAuthHeaders() });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Could not copy the conversation');
+        if (Array.isArray(json.sessions)) setSessions(json.sessions);
+        setHistoryScope('mine');
+        await resumeSession(json.session.id);
+        window.scrollTo({ top: 0 });
+      };
+
       const resumeSession = async (sessionId) => {
         voice.reset();
         setError(null);
@@ -3249,6 +3284,36 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
         }
       };
 
+      // A single question card answers in one tap, like a chat suggestion; several cards are answered together.
+      const answerQuestionCard = async (questionId, option) => {
+        if (loading || voice.busy) return;
+        const typedText = followUpText;
+        setFollowUpText('');
+        setSelectedQuickReplies({});
+        if (!(await runAnalysis(activeSession?.mode || result?.engineResult?.effectiveMode || 'auto', composeFollowUp({ [questionId]: option }, typedText)))) {
+          setFollowUpText(typedText);
+          setResult(result);
+          setStreamingMarkdown('');
+        }
+      };
+
+      const focusReplyBox = () => {
+        const box = followUpInputRef.current;
+        if (!box) return;
+        box.focus();
+        box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      };
+
+      // The catch-all card asks something the reply has usually already asked in its own words, so showing both
+      // gives the person two questions and no clear place to answer. The reply box answers the reply's question.
+      const questionCards = (() => {
+        const cards = result?.engineResult?.practitionerIntelligence?.factProbing?.clarifyingQuestions || [];
+        if (!cards.length) return [];
+        const lastParagraph = String(result?.adviceMarkdown || '').trim().split(/\n\s*\n/).pop() || '';
+        if (cards.every(q => q.generic) && lastParagraph.includes('?')) return [];
+        return cards;
+      })();
+
       const copyText = (text) => {
         navigator.clipboard.writeText(text);
         setCopied(true);
@@ -3621,6 +3686,10 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
       const turnText = (raw) => stripPromptWrapper(String(raw || '').split(DOCUMENT_MARKER)[0]);
       // Follow-up turns repeat earlier documents on the server; only flag documents where they first appear.
       const latestDocsAreNew = turnHasDocs(latestUserRaw) && !(historyTurns.length && turnHasDocs(historyTurns[historyTurns.length - 1].userInput));
+      // An audit copy (Super-Admin "Continue as new chat"): the first copiedTurns answers are the original user's.
+      const auditCopy = activeSession?.forkedFrom || null;
+      const auditCopiedTurns = Number(auditCopy?.copiedTurns || 0);
+      const canAuditTurn = (turn) => currentUser?.role === 'superadmin' && auditCopy && turn?.id && Number(turn.turnIndex) > auditCopiedTurns;
 
       useEffect(() => {
         if (loading && latestQuestionRef.current) {
@@ -4422,6 +4491,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                 {historyScope === 'all' && currentUser?.role === 'superadmin' ? (
                   <AllUsersCasesPanel
                     buildAuthHeaders={buildAuthHeaders}
+                    onContinueAsNewChat={continueAsAuditCopy}
                     onSuggestRule={(prefill) => { setSuggestPanel({ placement: 'top', prefill }); setShowHistory(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
                   />
                 ) : sessions.length === 0 ? (
@@ -5377,6 +5447,11 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
 
             {inConversation && (
               <div class="chat-thread space-y-8 pb-44">
+                {auditCopy && (
+                  <div class="text-xs rounded-xl border border-amber-200 bg-amber-50 text-amber-950 px-3 py-2">
+                    Audit copy of {auditCopy.owner}'s conversation. The original stays unchanged; your questions continue only here.
+                  </div>
+                )}
                 {historyTurns.map((t, idx) => (
                   <div key={t.id} class="space-y-4">
                     <UserBubble
@@ -5392,7 +5467,15 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                           <ChatIcon name="copy" />
                         </button>
                       </div>
+                      {canAuditTurn(t) && <div class="mt-2"><TurnAuditBox key={t.id} turnId={t.id} buildAuthHeaders={buildAuthHeaders} /></div>}
                     </div>
+                    {auditCopy && Number(t.turnIndex) === auditCopiedTurns && (
+                      <div class="flex items-center gap-3 text-[11px] text-zinc-500">
+                        <span class="flex-1 border-t border-zinc-200"></span>
+                        Original conversation ends · your audit continues
+                        <span class="flex-1 border-t border-zinc-200"></span>
+                      </div>
+                    )}
                   </div>
                 ))}
 
@@ -5545,6 +5628,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                           </button>
                           {feedbackSavedMsg && <span class="text-xs text-emerald-700 ml-2">{feedbackSavedMsg}</span>}
                         </div>
+                        {canAuditTurn(latestTurn) && <TurnAuditBox key={latestTurn.id} turnId={latestTurn.id} buildAuthHeaders={buildAuthHeaders} />}
                         {turnRating === -1 && (
                           <div class="w-full flex gap-2 mt-1">
                             <input
@@ -5569,56 +5653,29 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                         {suggestPanel?.placement === 'result' && (
                           <SuggestImprovementPanel buildAuthHeaders={buildAuthHeaders} prefill={suggestPanel.prefill} onClose={() => setSuggestPanel(null)} />
                         )}
-                        {result?.engineResult?.practitionerIntelligence?.factProbing?.clarifyingQuestions?.length > 0 && (
-                          <div class="p-3.5 sm:p-4 rounded-2xl bg-white border border-zinc-200 space-y-3 text-sm">
-                            <div class="flex flex-wrap items-center justify-between gap-2">
-                              <div class="font-medium text-zinc-800">
+                        {questionCards.length > 0 && (
+                          <div class="question-card p-3.5 sm:p-4 rounded-2xl bg-white border border-zinc-200 space-y-3 text-sm">
+                            {questionCards.length > 1 && (
+                              <div class="text-xs text-zinc-500">
                                 {result?.engineResult?.practitionerIntelligence?.factReadiness?.kind === 'drafting'
-                                  ? '📝 A few terms for your document — pick what applies, or type your own below:'
-                                  : "💬 Pick one fact per question. You can also add a note below."}
+                                  ? 'A few terms for your document. Tap one answer for each, then send.'
+                                  : 'Tap one answer for each question, then send.'}
                               </div>
-                              {Object.keys(selectedQuickReplies).length > 0 && (
-                                <button
-                                  type="button"
-                                  disabled={loading || voice.busy}
-                                  onClick={sendFollowUp}
-                                  class="px-3 py-1.5 rounded-full bg-zinc-900 hover:bg-zinc-800 text-white font-medium text-xs transition disabled:opacity-50"
-                                >
-                                  ✓ Confirm Selected Facts ({Object.keys(selectedQuickReplies).length}) & Continue →
-                                </button>
-                              )}
-                              {result?.engineResult?.practitionerIntelligence?.factReadiness?.intakeStage === 'clarify-first' && Object.keys(selectedQuickReplies).length === 0 && (
-                                <button
-                                  type="button"
-                                  disabled={loading || voice.busy}
-                                  onClick={() => runAnalysis(
-                                    activeSession?.mode || result?.engineResult?.effectiveMode || 'auto',
-                                    result.engineResult.practitionerIntelligence.factReadiness.kind === 'drafting'
-                                      ? 'Please prepare the complete document now with the terms shared so far, using clear placeholders for anything not yet given.'
-                                      : 'Please generate the complete legal roadmap, statutory analysis, and ready-to-use draft based on the facts shared so far, using placeholders for any unconfirmed details.',
-                                    null,
-                                    true
-                                  )}
-                                  class="px-3 py-1 rounded-full border border-zinc-300 text-zinc-700 font-medium text-xs hover:border-zinc-500 transition disabled:opacity-50"
-                                >
-                                  {result?.engineResult?.practitionerIntelligence?.factReadiness?.kind === 'drafting' ? 'Skip — draft with blanks →' : 'Skip — give full answer →'}
-                                </button>
-                              )}
-                            </div>
-                            {result.engineResult.practitionerIntelligence.factProbing.clarifyingQuestions.map((cq) => (
-                              <div key={cq.id} class="space-y-1.5 pt-3 border-t border-zinc-100">
-                                <div class="font-medium text-zinc-900">{cq.question}</div>
-                                <div class="text-xs text-zinc-500">{cq.whyLawyerAsks}</div>
-                                <div class="flex flex-wrap gap-1.5 pt-0.5">
+                            )}
+                            {questionCards.map((cq, cIdx) => (
+                              <div key={cq.id} class={`space-y-1.5 ${cIdx > 0 ? 'pt-3 border-t border-zinc-100' : ''}`}>
+                                <div class="font-medium text-zinc-900">{String(cq.question || '').replace(/^\s*\d+[.)]\s*/, '')}</div>
+                                {cq.whyLawyerAsks && <div class="text-xs text-zinc-500">{cq.whyLawyerAsks}</div>}
+                                <div class="flex flex-wrap gap-1.5 pt-1">
                                   {(cq.quickReplies || []).map((qr, qIdx) => {
                                     const isSelected = selectedQuickReplies[cq.id] === qr;
                                     return (
                                       <button
                                         key={qIdx}
                                         type="button"
-                                        aria-pressed={isSelected}
+                                        aria-pressed={questionCards.length > 1 ? isSelected : undefined}
                                         disabled={loading || voice.busy}
-                                        onClick={() => toggleQuickReplyChip(cq.id, qr)}
+                                        onClick={() => questionCards.length === 1 ? answerQuestionCard(cq.id, qr) : toggleQuickReplyChip(cq.id, qr)}
                                         class={`text-left text-[13px] px-3 py-1.5 rounded-full border transition disabled:opacity-50 ${
                                           isSelected
                                             ? 'bg-zinc-900 text-white border-zinc-900'
@@ -5632,6 +5689,42 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                                 </div>
                               </div>
                             ))}
+                            <div class="flex flex-wrap items-center gap-x-3 gap-y-2 pt-1 text-xs">
+                              {questionCards.length > 1 && Object.keys(selectedQuickReplies).length > 0 && (
+                                <button
+                                  type="button"
+                                  disabled={loading || voice.busy}
+                                  onClick={sendFollowUp}
+                                  class="px-3 py-1.5 rounded-full bg-zinc-900 hover:bg-zinc-800 text-white font-medium transition disabled:opacity-50"
+                                >
+                                  Send {Object.keys(selectedQuickReplies).length === 1 ? 'answer' : `${Object.keys(selectedQuickReplies).length} answers`}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={focusReplyBox}
+                                class="font-medium text-zinc-700 hover:text-zinc-900 underline underline-offset-2"
+                              >
+                                ✎ Type your own answer
+                              </button>
+                              {result?.engineResult?.practitionerIntelligence?.factReadiness?.intakeStage === 'clarify-first' && Object.keys(selectedQuickReplies).length === 0 && (
+                                <button
+                                  type="button"
+                                  disabled={loading || voice.busy}
+                                  onClick={() => runAnalysis(
+                                    activeSession?.mode || result?.engineResult?.effectiveMode || 'auto',
+                                    result.engineResult.practitionerIntelligence.factReadiness.kind === 'drafting'
+                                      ? 'Please prepare the complete document now with the terms shared so far, using clear placeholders for anything not yet given.'
+                                      : 'Please generate the complete legal roadmap, statutory analysis, and ready-to-use draft based on the facts shared so far, using placeholders for any unconfirmed details.',
+                                    null,
+                                    true
+                                  )}
+                                  class="ml-auto text-zinc-500 hover:text-zinc-900 transition disabled:opacity-50"
+                                >
+                                  {result?.engineResult?.practitionerIntelligence?.factReadiness?.kind === 'drafting' ? 'Skip — draft with blanks' : 'Skip — give full answer'}
+                                </button>
+                              )}
+                            </div>
                           </div>
                         )}
                         <details open={result?.engineResult?.effectiveMode === 'lawyer-research-bench'} class="text-xs">
@@ -6119,7 +6212,7 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
               <div class="chat-composer-dock">
                 <div class="max-w-2xl mx-auto px-3 sm:px-6">
                   {!loading && Object.keys(selectedQuickReplies).length > 0 && (
-                    <div class="mb-1.5 text-[11px] text-zinc-600 px-3">✓ {Object.keys(selectedQuickReplies).length} fact(s) selected — they'll be sent with your message</div>
+                    <div class="mb-1.5 text-[11px] text-zinc-600 px-3">✓ {Object.keys(selectedQuickReplies).length === 1 ? '1 answer' : `${Object.keys(selectedQuickReplies).length} answers`} selected — sent with your message</div>
                   )}
                   <div class="chat-composer">
                     <textarea
@@ -6150,7 +6243,6 @@ Under **Section 138 of the Negotiable Instruments Act, 1881**, you must dispatch
                       {loading ? <span class="w-3 h-3 rounded-sm bg-current" aria-hidden="true"></span> : <ChatIcon name="send" />}
                     </button>
                   </div>
-                  <p class="mt-1.5 text-center text-[10px] text-zinc-400">Nyaya gives legal information, not a lawyer's opinion. Check important details.</p>
                 </div>
               </div>
             )}

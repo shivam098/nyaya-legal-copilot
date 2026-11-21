@@ -78,6 +78,43 @@ test('LLM-proposed questions never duplicate the cards (drafting cards are autho
   assert.equal(ids.includes('new'), before < 4);
 });
 
+test('the catch-all question asks one thing its answers fit, and the model\'s own question replaces it', () => {
+  const text = 'police wala dhamki de raha hai ki ganja plant kar dega agar paise nahi diye';
+  const cards = analyse(text).pi.factProbing.clarifyingQuestions;
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].generic, true);
+  assert.doesNotMatch(cards[0].question, /\(\d\)/, 'a single question, not a numbered list');
+
+  const unchanged = analyse(text).pi;
+  mergeDynamicClarifyingQuestions(unchanged, []);
+  assert.deepEqual(unchanged.factProbing.clarifyingQuestions.map(q => q.id), [cards[0].id], 'no model question: keep the catch-all');
+
+  const replaced = analyse(text).pi;
+  mergeDynamicClarifyingQuestions(replaced, [{ id: 'llm-1', question: 'Is the officer still near you, or has he left?', quickReplies: ['He is still here', 'He has left'] }]);
+  assert.deepEqual(replaced.factProbing.clarifyingQuestions.map(q => q.id), ['llm-1']);
+
+  for (const input of ['cheque bounced', 'the service centre refused my warranty repair']) {
+    for (const q of analyse(input).pi.factProbing.clarifyingQuestions) {
+      assert.doesNotMatch(q.question, /\(\d\)/, `${input}: ${q.question}`);
+      assert.ok(!q.generic, 'specific questions are kept alongside the model\'s');
+    }
+  }
+});
+
+test('a question answered by tapping one of its replies is not asked again', () => {
+  const opening = 'My client cheque bounced';
+  const first = analyse(opening).pi.factProbing.clarifyingQuestions[0];
+  assert.equal(first.id, 'probe-138-dates-and-docs');
+  const reply = first.quickReplies[0];
+  // The server routes a follow-up on the whole conversation, not on the short reply alone.
+  const auto = autoSenseIntakeFromText({ door: 'unified', mode: 'auto', caseState: {}, rawInput: `${opening}\n${reply}` });
+  const next = runPractitionerIntelligence({
+    rawInput: reply, priorTurns: [{ userInput: opening }], domainInfo: auto.domainInfo, caseState: auto.caseState, isFollowUpTurn: true, mode: auto.mode
+  });
+  assert.equal(auto.domainInfo.domain, 'cheque-bounce-138');
+  assert.ok(!next.factProbing.clarifyingQuestions.some(q => q.id === first.id), JSON.stringify(next.factProbing.clarifyingQuestions));
+});
+
 test('company formation questions route to company advisory, not consumer law, with no dispute questions', () => {
   for (const text of [
     'What kind of company should I create if I am a solo founder aiming to provide AI-based business solutions to customers?',
