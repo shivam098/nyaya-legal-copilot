@@ -73,11 +73,41 @@ export function detectActiveProvider(requestedModel = '') {
 let cachedGhToken = null;
 let cachedGhAt = 0;
 
-function getCopilotToken() {
-  if (process.env.GH_TOKEN) return process.env.GH_TOKEN.trim();
+// Accounts that must never pay for or authenticate model calls (repository-only accounts).
+const BLOCKED_COPILOT_LOGINS = new Set(
+  String(process.env.NYAYA_BLOCKED_COPILOT_LOGINS ?? 'shivam098').split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+);
+
+/**
+ * The Copilot token for model calls. It comes from GH_TOKEN, or from the gh login named in NYAYA_COPILOT_GH_USER.
+ * There is deliberately no fallback to whichever gh account happens to be active, and the token's owner is
+ * checked against BLOCKED_COPILOT_LOGINS before first use.
+ */
+async function getCopilotToken() {
   const now = Date.now();
   if (cachedGhToken && now - cachedGhAt < 10 * 60 * 1000) return cachedGhToken;
-  cachedGhToken = execSync('gh auth token', { encoding: 'utf8' }).trim();
+  const account = String(process.env.NYAYA_COPILOT_GH_USER || '').trim();
+  let token = String(process.env.GH_TOKEN || '').trim();
+  if (!token) {
+    if (!account) throw new Error('Copilot account not set: set NYAYA_COPILOT_GH_USER to the GitHub login that should run Nyaya\'s model calls.');
+    if (BLOCKED_COPILOT_LOGINS.has(account.toLowerCase())) throw new Error(`GitHub account "${account}" is not allowed to run model calls.`);
+    try {
+      token = execSync(`gh auth token --hostname github.com --user ${JSON.stringify(account)}`, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        env: { ...process.env, GH_TOKEN: '', GITHUB_TOKEN: '', GH_HOST: '' }
+      }).trim();
+    } catch {
+      token = '';
+    }
+    if (!token) throw new Error(`No GitHub sign-in for "${account}". Run: gh auth login --hostname github.com (as ${account}).`);
+  }
+  const res = await fetch('https://api.github.com/user', { headers: { Authorization: `token ${token}`, 'User-Agent': 'nyaya' } });
+  if (!res.ok) throw new Error(`The GitHub sign-in for model calls is invalid or expired (${res.status}). Sign in again with gh auth login.`);
+  const login = String((await res.json()).login || '');
+  if (BLOCKED_COPILOT_LOGINS.has(login.toLowerCase())) throw new Error(`GitHub account "${login}" is not allowed to run model calls.`);
+  if (account && login.toLowerCase() !== account.toLowerCase()) throw new Error(`The model token belongs to "${login}", not "${account}".`);
+  cachedGhToken = token;
   cachedGhAt = now;
   return cachedGhToken;
 }
@@ -325,7 +355,7 @@ export async function callCopilotModel({
   let headers = { 'Content-Type': 'application/json' };
 
   if (provider === 'copilot-local') {
-    headers['Authorization'] = `Bearer ${getCopilotToken()}`;
+    headers['Authorization'] = `Bearer ${await getCopilotToken()}`;
     headers['Copilot-Integration-Id'] = 'vscode-chat';
     headers['Editor-Version'] = 'vscode/1.96.0';
   } else if (provider === 'ollama') {
